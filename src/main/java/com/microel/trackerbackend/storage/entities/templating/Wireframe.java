@@ -1,0 +1,76 @@
+package com.microel.trackerbackend.storage.entities.templating;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.templating.model.dto.StepItem;
+import com.vladmihalcea.hibernate.type.json.JsonType;
+import lombok.*;
+import org.hibernate.annotations.*;
+import org.springframework.lang.Nullable;
+import org.springframework.transaction.annotation.Transactional;
+
+import javax.persistence.*;
+import javax.persistence.CascadeType;
+import javax.persistence.Entity;
+import javax.persistence.Table;
+import java.sql.Timestamp;
+import java.util.List;
+import java.util.Set;
+
+@Entity
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@TypeDef(name = "json", typeClass = JsonType.class)
+@Table(name = "wireframes")
+public class Wireframe {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long wireframeId;
+    private WireframeType wireframeType;
+    @Column(length = 64)
+    private String name;
+    @Column(length = 512)
+    private String description;
+    @Type(type = "json")
+    @Column(columnDefinition = "jsonb")
+    private List<StepItem> steps;
+    @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    @JoinColumn(name = "f_wireframe_id")
+    @BatchSize(size = 25)
+    private Set<TaskStage> stages;
+    @ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    @BatchSize(size = 25)
+    private List<DefaultObserver> defaultObservers;
+    private Timestamp created;
+    @ManyToOne
+    @OnDelete(action = OnDeleteAction.NO_ACTION)
+    @JoinColumn(name = "f_employee_id")
+    private Employee creator;
+    @Column(columnDefinition = "boolean default false")
+    private Boolean deleted;
+    private String listViewType;
+    private String detailedViewType;
+
+    public static Wireframe toDropdownList(Wireframe source){
+        Wireframe newWireframe = new Wireframe();
+        newWireframe.setWireframeId(source.getWireframeId());
+        newWireframe.setName(source.getName());
+        newWireframe.setDeleted(source.getDeleted());
+        return newWireframe;
+    }
+
+    @Override
+    public String toString() {
+        return name;
+    }
+
+    @JsonIgnore
+    public TaskStage getFirstStage(){
+        return getStages().stream().filter(stage -> stage.getOrderIndex() == 0).findFirst().orElse(null);
+    }
+
+
+}

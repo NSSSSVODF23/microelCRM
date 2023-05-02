@@ -1,0 +1,135 @@
+package com.microel.trackerbackend.storage.dispatchers;
+
+import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
+import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
+import com.microel.trackerbackend.storage.OffsetPageable;
+import com.microel.trackerbackend.storage.entities.comments.Attachment;
+import com.microel.trackerbackend.storage.entities.comments.Comment;
+import com.microel.trackerbackend.storage.entities.comments.dto.CommentData;
+import com.microel.trackerbackend.storage.entities.comments.dto.CommentDto;
+import com.microel.trackerbackend.storage.entities.task.Task;
+import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
+import com.microel.trackerbackend.storage.exceptions.IllegalFields;
+import com.microel.trackerbackend.storage.exceptions.NotOwner;
+import com.microel.trackerbackend.storage.repositories.CommentRepository;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Component;
+
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Component
+public class CommentDispatcher {
+    private final CommentRepository commentRepository;
+    private final AttachmentDispatcher attachmentDispatcher;
+    private final TaskDispatcher taskDispatcher;
+
+    public CommentDispatcher(CommentRepository commentRepository, AttachmentDispatcher attachmentDispatcher, @Lazy TaskDispatcher taskDispatcher) {
+        this.commentRepository = commentRepository;
+        this.attachmentDispatcher = attachmentDispatcher;
+        this.taskDispatcher = taskDispatcher;
+    }
+
+    public Page<CommentDto> getComments(Long taskId, Long offset, Integer limit) {
+        return commentRepository.findAllByParent_TaskIdAndDeletedIsFalse(taskId, new OffsetPageable(offset, limit, Sort.by(Sort.Direction.DESC, "created")));
+    }
+
+    public Comment create(CommentData data, Employee currentUser) throws EmptyFile, WriteError, EntryNotFound {
+        Task targetTask = taskDispatcher.getTask(data.getTaskId());
+
+
+
+        List<Attachment> attachments = new ArrayList<>();
+
+        if (data.getFiles().size() > 0) {
+            attachments = attachmentDispatcher.saveAttachments(data.getFiles());
+        }
+
+        Comment comment = commentRepository.save(
+                Comment.builder()
+                        .deleted(false)
+                        .edited(false)
+                        .created(Timestamp.from(Instant.now()))
+                        .creator(currentUser)
+                        .message(data.getText())
+                        .replyComment(data.getReplyComment())
+                        .attachments(attachments)
+                        .parent(targetTask)
+                        .build()
+        );
+
+        targetTask.setLastComment(comment);
+
+        return comment;
+    }
+
+    public List<Long> getTaskIdsByGlobalSearch(String globalSearchValue) {
+        Page<Comment> comments = commentRepository.findAll(((root, query, cb) ->
+                cb.and(cb.isTrue(
+                        cb.function("fts", Boolean.class, root.get("message"), cb.literal(globalSearchValue))))
+        ), Pageable.unpaged());
+        return comments.stream().map(comment -> comment.getParent().getTaskId()).collect(Collectors.toList());
+    }
+
+    public Comment update(Comment editedComment, Employee employeeWhoMadeTheChange) throws NotOwner, IllegalFields, EntryNotFound {
+
+        // Check if the comment has an ID, if not throw an exception
+        if (editedComment.getCommentId() == null) {
+            throw new IllegalFields("Идентификатор комментария не может быть пустым");
+        }
+
+        // We check that the employee who made changes to the comment is the owner of this comment,
+        // if this is not the case, we throw an exception
+        if (!editedComment.getCreator().equals(employeeWhoMadeTheChange)) {
+            throw new NotOwner("Вы не являетесь владельцем этого комментария");
+        }
+
+        // Check if the comment message is empty throw an exception
+        if (editedComment.getMessage().isBlank()) {
+            throw new IllegalFields("Сообщение комментария не может быть пустым");
+        }
+
+        Comment comment = commentRepository.findById(editedComment.getCommentId()).orElse(null);
+
+        // If a comment with this ID is not found, throw an exception.
+        if (comment == null) {
+            throw new EntryNotFound("Комментарий с таким идентификатором не найден");
+        }
+
+        // Check if the message matches the content of an existing comment
+        if (comment.getMessage().equals(editedComment.getMessage())) {
+            throw new IllegalFields("Сообщение комментария не было отредактировано");
+        }
+
+        comment.setMessage(editedComment.getMessage());
+        comment.setEdited(true);
+
+        return commentRepository.save(comment);
+    }
+
+    public Comment delete(Long commentId, Employee currentUser) throws EntryNotFound, NotOwner {
+        // Getting a comment from the database by ID
+        Comment comment = commentRepository.findById(commentId).orElse(null);
+
+        // Check if the comment has been received, if not, throw an exception
+        if (comment == null) {
+            throw new EntryNotFound("Комментарий с таким идентификатором не найден");
+        }
+
+        // Check if the user is the owner of the comment
+        if (!comment.getCreator().equals(currentUser)) {
+            throw new NotOwner("Вы не являетесь владельцем этого комментария");
+        }
+
+        comment.setDeleted(true);
+
+        return commentRepository.save(comment);
+    }
+}
