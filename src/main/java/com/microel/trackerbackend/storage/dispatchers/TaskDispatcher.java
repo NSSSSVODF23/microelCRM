@@ -29,10 +29,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.persistence.criteria.CriteriaBuilder;
-import javax.persistence.criteria.JoinType;
-import javax.persistence.criteria.Path;
-import javax.persistence.criteria.Predicate;
+import javax.persistence.criteria.*;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -489,7 +486,10 @@ public class TaskDispatcher {
             if (template != null && !template.isEmpty())
                 predicates.add(root.join("modelWireframe").get("wireframeId").in(template));
 
-            predicates.add(cb.or(root.join("employeesObservers", JoinType.LEFT).get("login").in(employee.getLogin()), root.join("departmentsObservers", JoinType.LEFT).join("employees").get("login").in(employee.getLogin())));
+            Join<Object, Object> joinDep = root.join("departmentsObservers", JoinType.LEFT);
+            Join<Object, Object> joinEmp = root.join("employeesObservers", JoinType.LEFT);
+
+            predicates.add(cb.or(joinEmp.in(employee), joinDep.join("employees", JoinType.LEFT).in(employee)));
 
             predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
             predicates.add(cb.equal(root.get("deleted"), false));
@@ -503,11 +503,15 @@ public class TaskDispatcher {
         return taskRepository.count((root, query, cb) -> {
             ArrayList<Predicate> predicates = new ArrayList<>();
 
-            predicates.add(cb.or(root.join("employeesObservers", JoinType.LEFT).get("login").in(employee.getLogin()), root.join("departmentsObservers", JoinType.LEFT).join("employees").get("login").in(employee.getLogin())));
+            Join<Object, Object> joinDep = root.join("departmentsObservers", JoinType.LEFT);
+            Join<Object, Object> joinEmp = root.join("employeesObservers", JoinType.LEFT);
+
+            predicates.add(cb.or(joinEmp.in(employee), joinDep.join("employees", JoinType.LEFT).in(employee)));
 
             predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
             predicates.add(cb.equal(root.get("deleted"), false));
             query.distinct(true);
+
             return cb.and(predicates.toArray(Predicate[]::new));
         });
     }
