@@ -483,9 +483,12 @@ public class TaskDispatcher {
     public Page<Task> getIncomingTasks(Integer page, Integer limit, Employee employee, Set<Long> template) {
         return taskRepository.findAll((root, query, cb) -> {
             ArrayList<Predicate> predicates = new ArrayList<>();
-            if (template != null && !template.isEmpty())
-                predicates.add(root.join("modelWireframe").get("wireframeId").in(template));
-
+            if (template != null && !template.isEmpty()) {
+                Join<Object, Object> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
+                CriteriaBuilder.In<Object> inModelWireframe = cb.in(joinWfrm.get("wireframeId"));
+                template.forEach(inModelWireframe::value);
+                predicates.add(inModelWireframe);
+            }
             Join<Object, Object> joinDep = root.join("departmentsObservers", JoinType.LEFT);
             Join<Object, Object> joinEmp = root.join("employeesObservers", JoinType.LEFT);
 
