@@ -167,7 +167,7 @@ public class TaskDispatcher {
             if(employeeTask != null) {
                 predicates.add(cb.or(
                         root.join("employeesObservers", JoinType.LEFT).get("login").in(employeeTask.getLogin()),
-                        root.join("departmentsObservers", JoinType.LEFT).join("employees").get("login").in(employeeTask.getLogin())));
+                        root.join("departmentsObservers", JoinType.LEFT).join("employees", JoinType.LEFT).get("login").in(employeeTask.getLogin())));
                 predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
             }
 
@@ -533,7 +533,7 @@ public class TaskDispatcher {
             predicates.add(
                     cb.or(
                             root.join("employeesObservers", JoinType.LEFT).get("login").in(whose.getLogin()),
-                            root.join("departmentsObservers", JoinType.LEFT).join("employees").get("login").in(whose.getLogin())
+                            root.join("departmentsObservers", JoinType.LEFT).join("employees", JoinType.LEFT).get("login").in(whose.getLogin())
                     )
             );
 
