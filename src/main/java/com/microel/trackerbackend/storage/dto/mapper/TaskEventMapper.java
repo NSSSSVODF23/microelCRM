@@ -10,7 +10,6 @@ public class TaskEventMapper {
         if (taskEvent == null) return null;
         return TaskEventDto.builder()
                 .taskEventId(taskEvent.getTaskEventId())
-                .task(TaskMapper.toDto(taskEvent.getTask()))
                 .created(taskEvent.getCreated())
                 .creator(EmployeeMapper.toDto(taskEvent.getCreator()))
                 .message(taskEvent.getMessage())
@@ -23,7 +22,6 @@ public class TaskEventMapper {
         if (taskEvent == null) return null;
         return TaskEvent.builder()
                 .taskEventId(taskEvent.getTaskEventId())
-                .task(TaskMapper.fromDto(taskEvent.getTask()))
                 .created(taskEvent.getCreated())
                 .creator(EmployeeMapper.fromDto(taskEvent.getCreator()))
                 .message(taskEvent.getMessage())
