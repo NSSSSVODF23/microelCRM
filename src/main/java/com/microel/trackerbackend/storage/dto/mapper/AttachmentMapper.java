@@ -13,7 +13,6 @@ public class AttachmentMapper {
     public static AttachmentDto toDto(@Nullable Attachment attachment) {
         if(attachment == null) return null;
         return AttachmentDto.builder()
-                .comments(attachment.getComments() == null? new ArrayList<>() : attachment.getComments().stream().map(CommentMapper::toDto).collect(Collectors.toList()))
                 .created(attachment.getCreated())
                 .mimeType(attachment.getMimeType())
                 .modified(attachment.getModified())
@@ -27,7 +26,6 @@ public class AttachmentMapper {
     public static Attachment fromDto(@Nullable AttachmentDto attachment) {
         if(attachment == null) return null;
         return Attachment.builder()
-                .comments(attachment.getComments() == null? new ArrayList<>() : attachment.getComments().stream().map(CommentMapper::fromDto).collect(Collectors.toList()))
                 .created(attachment.getCreated())
                 .mimeType(attachment.getMimeType())
                 .modified(attachment.getModified())
