@@ -29,12 +29,11 @@ public class Street {
     private String prefix;
     @ManyToOne
     @JoinColumn(name = "f_city_id")
-    @JsonManagedReference
     private City city;
     @Column(columnDefinition = "boolean default false")
     private Boolean deleted;
     @OneToMany(mappedBy = "street", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
-    @JsonBackReference
+    @JsonIgnore
     @BatchSize(size = 25)
     private Set<House> houses;
 

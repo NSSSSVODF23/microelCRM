@@ -26,7 +26,6 @@ public class House {
     private Short build;
     @ManyToOne
     @OnDelete(action = OnDeleteAction.NO_ACTION)
-    @JsonManagedReference
     private Street street;
 
     @JsonIgnore

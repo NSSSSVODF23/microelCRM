@@ -25,7 +25,7 @@ public class City {
     private Boolean deleted;
     @OneToMany(mappedBy = "city")
     @BatchSize(size = 25)
-    @JsonBackReference
+    @JsonIgnore
     private Set<Street> streets;
 
     @Override
