@@ -3,16 +3,15 @@ package com.microel.trackerbackend.controllers.configuration;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.trackerbackend.controllers.configuration.entity.DefaultCitiesConf;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
-import com.microel.trackerbackend.parsers.AddressCorrectingPool;
-import com.microel.trackerbackend.parsers.OldTrackerParserSettings;
-import com.microel.trackerbackend.parsers.UncreatedTasksPool;
+import com.microel.trackerbackend.parsers.oldtracker.AddressCorrectingPool;
+import com.microel.trackerbackend.parsers.oldtracker.OldTrackerParserSettings;
+import com.microel.trackerbackend.parsers.oldtracker.UncreatedTasksPool;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Component
 public class ConfigurationStorage {

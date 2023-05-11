@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.repositories;
 
+import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.Street;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -13,4 +14,6 @@ public interface StreetRepository extends JpaRepository<Street, Long>, JpaSpecif
     Optional<Street> findByName(String name);
 
     List<Street> findByNameLikeIgnoreCaseAndCity_CityId(String substring, Long cityId);
+
+    Optional<Street> findFirstByNameContainingIgnoreCaseAndCity(String name, City city);
 }

@@ -1,11 +1,14 @@
 package com.microel.trackerbackend.storage.entities.address;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.*;
 import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
 import javax.persistence.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 @Entity
@@ -47,6 +50,54 @@ public class Address {
         this.city = City.builder().name(cityName).deleted(false).build();
     }
 
+    public String getAddressName() {
+        StringBuilder addressName = new StringBuilder();
+        if(city != null) {
+            addressName.append(city.getName(), 0, 4).append(".");
+        }
+        if(street  != null) {
+            addressName.append(" ");
+            if(street.getPrefix() != null){
+                addressName.append(street.getPrefix()).append(".");
+            }
+            if(street.getName() != null){
+                addressName.append(street.getName());
+            }
+        }
+        if(houseNum != null) {
+            addressName.append(" ").append(houseNum);
+        }
+        if(fraction != null) {
+            addressName.append("/").append(fraction);
+        }
+        if(letter != null) {
+            addressName.append(letter);
+        }
+        if(build != null) {
+            addressName.append(" стр.").append(build);
+        }
+        if(apartmentNum != null) {
+            addressName.append(" кв.").append(apartmentNum);
+        }
+        if(entrance != null) {
+            addressName.append(" под.").append(entrance);
+        }
+        if(floor != null) {
+            addressName.append(" эт.").append(floor);
+        }
+        if(apartmentMod != null) {
+            addressName.append(" (").append(apartmentMod).append(")");
+        }
+        return addressName.toString();
+    }
+
+    public void setHouse(House house){
+        this.houseNum = house.getHouseNum();
+        this.fraction = house.getFraction();
+        this.letter = house.getLetter();
+        this.build = house.getBuild();
+    }
+
     @Override
     public String toString() {
         return "Address{" +
@@ -81,5 +132,9 @@ public class Address {
     @Override
     public int hashCode() {
         return Objects.hash(getCity(), getDistrict(), getStreet(), getHouseNum(), getFraction(), getLetter(), getBuild(), getEntrance(), getFloor(), getApartmentNum(), getApartmentMod());
+    }
+
+    public static int compareName(Address a, Address b) {
+        return a.getAddressName().compareTo(b.getAddressName());
     }
 }

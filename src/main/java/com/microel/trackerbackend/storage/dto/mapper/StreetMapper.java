@@ -10,7 +10,7 @@ public class StreetMapper {
         if (street == null) return null;
         return StreetDto.builder()
                 .streetId(street.getStreetId())
-                .city(CityMapper.toDto(street.getCity()))
+                .prefix(street.getPrefix())
                 .deleted(street.getDeleted())
                 .name(street.getName())
                 .build();
@@ -21,7 +21,7 @@ public class StreetMapper {
         if (street == null) return null;
         return Street.builder()
                 .streetId(street.getStreetId())
-                .city(CityMapper.fromDto(street.getCity()))
+                .prefix(street.getPrefix())
                 .deleted(street.getDeleted())
                 .name(street.getName())
                 .build();

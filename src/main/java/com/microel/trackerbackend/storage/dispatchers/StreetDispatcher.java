@@ -7,8 +7,11 @@ import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.repositories.StreetRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
+import javax.persistence.criteria.Predicate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -64,5 +67,39 @@ public class StreetDispatcher {
 
     public Boolean isExist(Long streetId) {
         return streetRepository.existsById(streetId);
+    }
+
+    public Street createIfAbsent(String name, @Nullable String prefix, City city) {
+        Street street = streetRepository.findFirstByNameContainingIgnoreCaseAndCity(name, city).orElse(null);
+        String trimmedPrefix = prefix != null ? prefix.trim().replaceAll("\\.", "") : null;
+        if (street == null) {
+            street = streetRepository.save(Street.builder()
+                    .name(name)
+                    .prefix(trimmedPrefix)
+                    .city(city)
+                    .deleted(false)
+                    .build());
+        } else {
+            if (!street.getName().equals(name)) {
+                street.setName(name);
+                street.setPrefix(trimmedPrefix);
+                street = streetRepository.save(street);
+            } else if (street.getPrefix() == null || !street.getPrefix().equals(trimmedPrefix)) {
+                street.setPrefix(trimmedPrefix);
+                street = streetRepository.save(street);
+            }
+        }
+        return street;
+    }
+
+    public List<Street> containsInName(String[] subQuery) {
+        return streetRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            for (String sub : subQuery) {
+                predicates.add(cb.like(cb.lower(root.get("name")), "%" + sub.toLowerCase() + "%"));
+                predicates.add(cb.like(cb.lower(root.get("altNames")), "%" + sub.toLowerCase() + "%"));
+            }
+            return cb.or(predicates.toArray(Predicate[]::new));
+        });
     }
 }

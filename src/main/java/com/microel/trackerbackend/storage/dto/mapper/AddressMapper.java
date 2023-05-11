@@ -20,6 +20,7 @@ public class AddressMapper {
                 .floor(address.getFloor())
                 .apartmentNum(address.getApartmentNum())
                 .apartmentMod(address.getApartmentMod())
+                .addressName(address.getAddressName())
                 .build();
     }
     @Nullable

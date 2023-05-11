@@ -23,4 +23,6 @@ public class AddressDto {
 
     private Short apartmentNum;
     private String apartmentMod;
+
+    private String addressName;
 }

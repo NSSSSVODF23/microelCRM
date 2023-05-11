@@ -1,8 +1,7 @@
 package com.microel.trackerbackend.services.api;
 
 import com.microel.trackerbackend.misc.SimpleMessage;
-import com.microel.trackerbackend.parsers.OldTracker;
-import com.microel.trackerbackend.storage.entities.chat.Chat;
+import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;

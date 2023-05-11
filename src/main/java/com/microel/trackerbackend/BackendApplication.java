@@ -1,5 +1,6 @@
 package com.microel.trackerbackend;
 
+import com.microel.trackerbackend.parsers.addresses.AddressParser;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -9,6 +10,8 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 @EnableTransactionManagement
 @EnableScheduling
 public class BackendApplication {
+    public BackendApplication() {
+    }
 
     public static void main(String[] args) {
         SpringApplication.run(BackendApplication.class, args);

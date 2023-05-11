@@ -8,15 +8,18 @@ import com.microel.trackerbackend.modules.exception.DateRangeReadException;
 import com.microel.trackerbackend.modules.transport.ChangeTaskObserversDTO;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.modules.transport.IDuration;
-import com.microel.trackerbackend.parsers.AddressCorrectingPool;
-import com.microel.trackerbackend.parsers.OldTracker;
-import com.microel.trackerbackend.parsers.OldTrackerParserSettings;
+import com.microel.trackerbackend.parsers.addresses.AddressParser;
+import com.microel.trackerbackend.parsers.oldtracker.AddressCorrectingPool;
+import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
+import com.microel.trackerbackend.parsers.oldtracker.OldTrackerParserSettings;
 import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dispatchers.*;
+import com.microel.trackerbackend.storage.dto.address.AddressDto;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
+import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
@@ -90,6 +93,8 @@ public class PrivateRequestController {
     private final ChatDispatcher chatDispatcher;
     private final TelegramController telegramController;
     private final OldTracker oldTracker;
+    private final AddressParser addressParser;
+    private final AddressDispatcher addressDispatcher;
 
     public PrivateRequestController(WireframeDispatcher wireframeDispatcher, TaskDispatcher taskDispatcher,
                                     StreetDispatcher streetDispatcher, CityDispatcher cityDispatcher,
@@ -98,7 +103,10 @@ public class PrivateRequestController {
                                     DepartmentDispatcher departmentsDispatcher, PositionDispatcher positionDispatcher,
                                     AuthorizationProvider authorizationProvider, AttachmentRepository attachmentRepository,
                                     TaskEventDispatcher taskEventDispatcher, StompController stompController,
-                                    TaskTagDispatcher taskTagDispatcher, TaskFieldsSnapshotDispatcher taskFieldsSnapshotDispatcher, NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher, ChatDispatcher chatDispatcher, TelegramController telegramController, OldTracker oldTracker) {
+                                    TaskTagDispatcher taskTagDispatcher, TaskFieldsSnapshotDispatcher taskFieldsSnapshotDispatcher,
+                                    NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher,
+                                    ChatDispatcher chatDispatcher, TelegramController telegramController,
+                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.streetDispatcher = streetDispatcher;
@@ -120,6 +128,8 @@ public class PrivateRequestController {
         this.chatDispatcher = chatDispatcher;
         this.telegramController = telegramController;
         this.oldTracker = oldTracker;
+        this.addressParser = addressParser;
+        this.addressDispatcher = addressDispatcher;
     }
 
     // Создание шаблона задачи
@@ -300,11 +310,11 @@ public class PrivateRequestController {
     // Получение страницу с задачами используя фильтрацию
     @GetMapping("tasks")
     public ResponseEntity<Page<TaskDto>> getTasks(@RequestParam Integer page, @RequestParam Integer limit,
-                                               @RequestParam @Nullable List<TaskStatus> status, @RequestParam @Nullable Set<Long> template,
-                                               @RequestParam @Nullable String templateFilter, @RequestParam @Nullable String globalContext,
-                                               @RequestParam @Nullable String author, @RequestParam @Nullable String dateOfCreation,
-                                               @RequestParam @Nullable Set<Long> exclusionIds, @RequestParam @Nullable Set<Long> tags,
-                                               @RequestParam @Nullable Boolean onlyMy, HttpServletRequest request) {
+                                                  @RequestParam @Nullable List<TaskStatus> status, @RequestParam @Nullable Set<Long> template,
+                                                  @RequestParam @Nullable String templateFilter, @RequestParam @Nullable String globalContext,
+                                                  @RequestParam @Nullable String author, @RequestParam @Nullable String dateOfCreation,
+                                                  @RequestParam @Nullable Set<Long> exclusionIds, @RequestParam @Nullable Set<Long> tags,
+                                                  @RequestParam @Nullable Boolean onlyMy, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         List<FilterModelItem> filtersList = null;
         try {
@@ -326,12 +336,12 @@ public class PrivateRequestController {
         Instant startDBRequest = Instant.now();
 
         Page<Task> tasks = null;
-        if(onlyMy != null && onlyMy){
+        if (onlyMy != null && onlyMy) {
             tasks = taskDispatcher.getTasks(page, limit, null, template, filtersList,
-                    globalContext, author, creationRange, tags, exclusionIds , employee);
-        }else{
+                    globalContext, author, creationRange, tags, exclusionIds, employee);
+        } else {
             tasks = taskDispatcher.getTasks(page, limit, status, template, filtersList,
-                    globalContext, author, creationRange, tags, exclusionIds , null);
+                    globalContext, author, creationRange, tags, exclusionIds, null);
         }
 
         Instant endDBRequest = Instant.now();
@@ -1196,6 +1206,12 @@ public class PrivateRequestController {
         }
     }
 
+    // Отправляет список адресов как подсказки к автодополнению
+    @GetMapping("suggestions/address")
+    public ResponseEntity<List<AddressDto>> getAddressSuggestions(@RequestParam String query) {
+        return ResponseEntity.ok(addressDispatcher.getSuggestions(query));
+    }
+
     // Получает объект парсера трекера
     @GetMapping("parser/tracker")
     public ResponseEntity<OldTracker> getTrackerParser() {
@@ -1239,6 +1255,14 @@ public class PrivateRequestController {
         oldTracker.createTasksFromCorrectedAddresses(pool);
         return ResponseEntity.ok().build();
     }
+
+    // Сигнал парсеру адресов начать
+    @PostMapping("parser/addresses/start")
+    public ResponseEntity<Void> startAddressesParser() {
+        addressParser.startParse();
+        return ResponseEntity.ok().build();
+    }
+
 
     private Employee getEmployeeFromRequest(HttpServletRequest request) {
         if (request.getCookies() == null) throw new ResponseException("Не авторизован");

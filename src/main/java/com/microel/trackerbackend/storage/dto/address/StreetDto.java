@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.dto.address;
 
+import com.microel.trackerbackend.parsers.addresses.StreetResponse;
 import lombok.*;
 
 @Getter
@@ -11,6 +12,6 @@ import lombok.*;
 public class StreetDto {
     private Long streetId;
     private String name;
-    private CityDto city;
+    private String prefix;
     private Boolean deleted;
 }
