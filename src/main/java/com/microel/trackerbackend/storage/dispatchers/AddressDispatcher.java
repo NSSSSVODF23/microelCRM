@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
 import java.util.*;
+import java.util.Comparator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -199,8 +200,7 @@ public class AddressDispatcher {
             filteredSuggestions = filteredSuggestionsWithoutHouse;
         }
 
-//        filteredSuggestions.sort(Address::compareName);
-        return filteredSuggestions.stream().map(AddressMapper::toDto).collect(Collectors.toList());
+        return filteredSuggestions.stream().sorted(Address::compareTo).map(AddressMapper::toDto).collect(Collectors.toList());
     }
 
     @Getter

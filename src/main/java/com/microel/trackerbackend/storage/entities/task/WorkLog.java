@@ -2,14 +2,20 @@ package com.microel.trackerbackend.storage.entities.task;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
+import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
+import com.vladmihalcea.hibernate.type.json.JsonType;
 import lombok.*;
-import org.hibernate.annotations.BatchSize;
-import org.hibernate.annotations.OnDelete;
-import org.hibernate.annotations.OnDeleteAction;
+import org.hibernate.annotations.*;
 
 import javax.persistence.*;
+import javax.persistence.CascadeType;
+import javax.persistence.Entity;
+import javax.persistence.Table;
 import java.sql.Timestamp;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
@@ -20,11 +26,12 @@ import java.util.Set;
 @Getter
 @Setter
 @Table(name = "work_logs")
+@TypeDef(name = "json", typeClass = JsonType.class)
 public class WorkLog {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long workLogId;
-    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     private Chat chat;
     @OneToMany(mappedBy = "workLog")
     @JsonManagedReference
@@ -37,6 +44,9 @@ public class WorkLog {
     @ManyToMany()
     @BatchSize(size = 25)
     private Set<Employee> employees;
+    @Type(type = "json")
+    @Column(columnDefinition = "jsonb")
+    private Set<AcceptingEntry> acceptedEmployees;
     @ManyToOne()
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JoinColumn(name = "f_task_id")
@@ -52,6 +62,11 @@ public class WorkLog {
         if (!(o instanceof WorkLog)) return false;
         WorkLog workLog = (WorkLog) o;
         return Objects.equals(getWorkLogId(), workLog.getWorkLogId());
+    }
+
+    public Set<AcceptingEntry> getAcceptedEmployees() {
+        if(acceptedEmployees == null) return acceptedEmployees = new HashSet<>();
+        return acceptedEmployees;
     }
 
     @Override

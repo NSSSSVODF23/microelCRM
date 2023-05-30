@@ -1,8 +1,8 @@
-package com.microel.trackerbackend.controllers.telegram;
+package com.microel.trackerbackend.controllers.telegram.handle;
 
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 
-public class MessageConverter {
+public class Decorator {
     public final static String DOMEN = "http://127.0.0.1:4200/";
 
     public static String convert(Notification notification) {

@@ -39,7 +39,7 @@ public class AuthorizationProvider {
         Employee employee = employeeDispatcher.getEmployee(login);
 
         if (employee == null || employee.getDeleted()) throw new EntryNotFound("Пользователь не найден");
-        if (employee.getPassword().isBlank()) throw new IllegalFields("Вход не возможен, у данного пользователя нет пароля");
+        if (Objects.isNull(employee.getPassword()) || employee.getPassword().isBlank()) throw new IllegalFields("Вход не возможен, у данного пользователя нет пароля");
 
         if (passwordService.decryptPassword(password, employee.getPassword())) {
             return TokenChain.builder().token(generateToken(employee)).refreshToken(generateRefreshToken(employee)).build();

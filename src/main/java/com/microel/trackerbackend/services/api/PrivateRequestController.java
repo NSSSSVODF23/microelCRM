@@ -17,19 +17,21 @@ import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dispatchers.*;
 import com.microel.trackerbackend.storage.dto.address.AddressDto;
+import com.microel.trackerbackend.storage.dto.comment.CommentDto;
+import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
+import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
-import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
-import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
 import com.microel.trackerbackend.storage.entities.chat.MessageData;
+import com.microel.trackerbackend.storage.entities.chat.SuperMessage;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
+import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.TaskJournalItem;
 import com.microel.trackerbackend.storage.entities.comments.dto.CommentData;
-import com.microel.trackerbackend.storage.entities.comments.dto.CommentDto;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskFieldsSnapshot;
@@ -46,19 +48,23 @@ import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldIte
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
 import com.microel.trackerbackend.storage.exceptions.*;
 import com.microel.trackerbackend.storage.repositories.AttachmentRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.javatuples.Triplet;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.util.Pair;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import javax.servlet.http.HttpServletRequest;
-import java.io.IOException;
+import javax.servlet.http.HttpServletResponse;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -69,6 +75,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Controller
+@Slf4j
 @RequestMapping("api/private")
 public class PrivateRequestController {
 
@@ -571,7 +578,7 @@ public class PrivateRequestController {
             Comment comment = commentDispatcher.create(body, currentUser);
             Set<Employee> taskObservers = comment.getParent().getAllEmployeesObservers(currentUser);
             notificationDispatcher.createNotification(taskObservers, Notification.newComment(comment));
-            stompController.createComment(comment);
+            stompController.createComment(Objects.requireNonNull(CommentMapper.toDto(comment), "Созданные комментарий равен null"), body.getTaskId().toString());
             return ResponseEntity.ok(comment);
         } catch (EmptyFile e) {
             throw new ResponseException("Нельзя сохранить пустой файл");
@@ -588,7 +595,7 @@ public class PrivateRequestController {
         Employee currentUser = getEmployeeFromRequest(request);
         try {
             Comment comment = commentDispatcher.update(body, currentUser);
-            stompController.updateComment(comment);
+            stompController.updateComment(CommentMapper.toDto(comment), comment.getParent().getTaskId().toString());
             return ResponseEntity.ok(comment);
         } catch (EntryNotFound | NotOwner | IllegalFields e) {
             throw new ResponseException(e.getMessage());
@@ -601,7 +608,7 @@ public class PrivateRequestController {
         Employee currentUser = getEmployeeFromRequest(request);
         try {
             Comment comment = commentDispatcher.delete(commentId, currentUser);
-            stompController.deleteComment(comment);
+            stompController.deleteComment(CommentMapper.toDto(comment), comment.getParent().getTaskId().toString());
             return ResponseEntity.ok(comment);
         } catch (EntryNotFound | NotOwner e) {
             throw new ResponseException(e.getMessage());
@@ -611,7 +618,7 @@ public class PrivateRequestController {
     // Получает страницу с комментариями и событиями в конкретной задаче
     @GetMapping("task/{id}/journal")
     public ResponseEntity<Page<TaskJournalItem>> getTaskJournal(@PathVariable Long id, @RequestParam Long offset, @RequestParam Integer limit) {
-        Page<CommentDto> comments = commentDispatcher.getComments(id, offset, limit);
+        Page<Comment> comments = commentDispatcher.getComments(id, offset, limit).map(CommentMapper::fromDto);
         List<TaskJournalItem> commentItems = comments.getContent().stream().map(commentDto -> (TaskJournalItem) commentDto).collect(Collectors.toList());
         if (comments.getTotalElements() == 0L) {
             List<TaskEvent> taskEvents = taskEventDispatcher.getTaskEvents(id);
@@ -620,7 +627,7 @@ public class PrivateRequestController {
             commentItems.addAll(taskEventsItems);
             commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
         } else if (comments.isLast()) {
-            CommentDto firstComment = comments.getContent().get(0);
+            Comment firstComment = comments.getContent().get(0);
             List<TaskEvent> taskEvents = new ArrayList<>();
             if (offset == 0) {
                 taskEvents = taskEventDispatcher.getTaskEvents(id);
@@ -632,8 +639,8 @@ public class PrivateRequestController {
             commentItems.addAll(taskEventsItems);
             commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
         } else {
-            CommentDto firstComment = comments.getContent().get(0);
-            CommentDto lastComment = comments.getContent().get(comments.getContent().size() - 1);
+            Comment firstComment = comments.getContent().get(0);
+            Comment lastComment = comments.getContent().get(comments.getContent().size() - 1);
             List<TaskEvent> taskEvents = new ArrayList<>();
             if (offset == 0) {
                 taskEvents = taskEventDispatcher.getTaskEventsTo(id, lastComment.getCreated());
@@ -789,18 +796,104 @@ public class PrivateRequestController {
 
     // Получает файл прикрепленный к задаче
     @GetMapping("attachment/{id}")
-    public ResponseEntity<byte[]> getAttachmentFile(@PathVariable String id) {
+    public void getAttachmentFile(@PathVariable String id,
+                                  @RequestHeader(value = "Range", required = false) String rangeHeader,
+                                  HttpServletResponse response) {
+        // Пытаемся найти вложение в базе данных по его id
         Attachment attachments = null;
         try {
             attachments = attachmentDispatcher.getAttachments(id);
         } catch (EntryNotFound e) {
             throw new ResponseException("Файл не найден");
         }
-        Path filePath = Path.of(attachments.getPath());
+
         try {
-            return ResponseEntity.ok().contentType(MediaType.parseMediaType(attachments.getMimeType())).contentLength(attachments.getSize()).body(Files.readAllBytes(filePath));
+            OutputStream os = response.getOutputStream();
+
+            // Получаем размер фала
+            long fileSize = Files.size(Path.of(attachments.getPath()));
+
+            byte[] buffer = new byte[1024];
+
+            try (RandomAccessFile file = new RandomAccessFile(attachments.getPath(), "r")) {
+                if (rangeHeader == null) {
+                    response.setHeader("Content-Type", attachments.getMimeType());
+                    response.setHeader("Content-Length", String.valueOf(fileSize));
+                    response.setStatus(HttpStatus.OK.value());
+                    long pos = 0;
+                    file.seek(pos);
+                    while (pos < fileSize - 1) {
+                        file.read(buffer);
+                        os.write(buffer);
+                        pos += buffer.length;
+                    }
+                    os.flush();
+                    return;
+                }
+
+                String[] ranges = rangeHeader.split("-");
+                long rangeStart = Long.parseLong(ranges[0].substring(6));
+                long rangeEnd = 1;
+                if (ranges.length > 1) {
+                    rangeEnd = Long.parseLong(ranges[1]);
+                } else {
+                    rangeEnd = fileSize - 1;
+                }
+                if (fileSize < rangeEnd) {
+                    rangeEnd = fileSize - 1;
+                }
+
+                String contentLength = String.valueOf((rangeEnd - rangeStart) + 1);
+                response.setHeader("Content-Type", attachments.getMimeType());
+                response.setHeader("Content-Length", contentLength);
+                response.setHeader("Accept-Ranges", "bytes");
+                response.setHeader("Content-Range", "bytes" + " " + rangeStart + "-" + rangeEnd + "/" + fileSize);
+                response.setStatus(HttpStatus.PARTIAL_CONTENT.value());
+                long pos = rangeStart;
+                file.seek(pos);
+                while (pos < rangeEnd) {
+                    file.read(buffer);
+                    os.write(buffer);
+                    pos += buffer.length;
+                }
+                os.flush();
+
+
+            } catch (FileNotFoundException e) {
+                response.setStatus(HttpStatus.NOT_FOUND.value());
+            }
+
         } catch (IOException e) {
-            throw new ResponseException("Не удалось прочитать файл");
+            response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        }
+    }
+
+    // Получает миниатюру
+    @GetMapping("thumbnail/{id}")
+    public void getAttachmentThumbnail(@PathVariable String id, HttpServletResponse response) {
+        // Пытаемся найти вложение в базе данных по его id
+        Attachment attachments = null;
+        try {
+            attachments = attachmentDispatcher.getAttachments(id);
+        } catch (EntryNotFound e) {
+            throw new ResponseException("Файл не найден");
+        }
+
+        if (attachments.getType() == AttachmentType.PHOTO || attachments.getType() == AttachmentType.VIDEO) {
+            if (attachments.getThumbnail() == null) {
+                response.setStatus(HttpStatus.NOT_FOUND.value());
+                return;
+            }
+            Path filePath = Path.of(attachments.getThumbnail());
+            try (InputStream inputStream = Files.newInputStream(filePath)) {
+                long size = Files.size(filePath);
+                response.setHeader("Content-Type", "image/jpeg");
+                response.setHeader("Content-Length", String.valueOf(size));
+                response.setStatus(HttpStatus.OK.value());
+                inputStream.transferTo(response.getOutputStream());
+            } catch (IOException e) {
+                response.setStatus(HttpStatus.NOT_FOUND.value());
+            }
         }
     }
 
@@ -823,15 +916,16 @@ public class PrivateRequestController {
     public ResponseEntity<Void> assignInstallers(@PathVariable Long taskId, @RequestBody Set<Employee> installers, HttpServletRequest request) {
         try {
             Employee employeeFromRequest = getEmployeeFromRequest(request);
-            Pair<Task, WorkLog> taskWorkLogPair = taskDispatcher.assignInstallers(taskId, installers, employeeFromRequest);
-            telegramController.assignInstallers(taskWorkLogPair.getFirst(), taskWorkLogPair.getSecond().getEmployees(), employeeFromRequest);
-            stompController.updateTask(taskWorkLogPair.getFirst());
-            Set<Employee> observers = taskWorkLogPair.getFirst().getAllEmployeesObservers(employeeFromRequest);
-            notificationDispatcher.createNotification(observers, Notification.taskProcessed(taskWorkLogPair.getSecond()));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.createdWorkLog(taskWorkLogPair.getFirst(), taskWorkLogPair.getSecond(), employeeFromRequest));
+            WorkLog workLog = taskDispatcher.assignInstallers(taskId, installers, employeeFromRequest);
+            telegramController.assignInstallers(workLog, employeeFromRequest);
+            stompController.updateTask(workLog.getTask());
+            stompController.createChat(ChatMapper.toDto(workLog.getChat()));
+            Set<Employee> observers = workLog.getTask().getAllEmployeesObservers(employeeFromRequest);
+            notificationDispatcher.createNotification(observers, Notification.taskProcessed(workLog));
+            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.createdWorkLog(workLog.getTask(), workLog, employeeFromRequest));
             stompController.createTaskEvent(taskId, taskEvent);
 
-        } catch (EntryNotFound | IllegalFields e) {
+        } catch (EntryNotFound | IllegalFields | TelegramApiException e) {
             throw new ResponseException(e.getMessage());
         }
         return ResponseEntity.ok().build();
@@ -841,10 +935,11 @@ public class PrivateRequestController {
     @PostMapping("task/{taskId}/force-close-work-log")
     public ResponseEntity<Void> forceCloseWorkLog(@PathVariable Long taskId, HttpServletRequest request) {
         try {
-            Pair<Task, WorkLog> taskWorkPair = taskDispatcher.forceCloseWorkLog(taskId, getEmployeeFromRequest(request));
-            stompController.updateTask(taskWorkPair.getFirst());
+            WorkLog taskWorkPair = taskDispatcher.forceCloseWorkLog(taskId, getEmployeeFromRequest(request));
+            stompController.updateTask(taskWorkPair.getTask());
+            stompController.closeChat(taskWorkPair.getChat());
 
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.forceCloseWorkLog(taskWorkPair.getFirst(), taskWorkPair.getSecond(), getEmployeeFromRequest(request)));
+            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.forceCloseWorkLog(taskWorkPair.getTask(), taskWorkPair, getEmployeeFromRequest(request)));
             stompController.createTaskEvent(taskId, taskEvent);
 
         } catch (EntryNotFound e) {
@@ -950,7 +1045,9 @@ public class PrivateRequestController {
         if (body == null) throw new ResponseException("В запросе нет данных необходимых для создания отдела");
         if (body.get("name") == null || body.get("name").isBlank())
             throw new ResponseException("В запросе нет имени отдела");
-        return ResponseEntity.ok(departmentsDispatcher.create(body.get("name"), body.get("description")));
+        Department department = departmentsDispatcher.create(body.get("name"), body.get("description"));
+        stompController.createDepartment(department);
+        return ResponseEntity.ok(department);
     }
 
     // Редактирует отдел
@@ -960,7 +1057,9 @@ public class PrivateRequestController {
         if (body.get("name") == null || body.get("name").isBlank())
             throw new ResponseException("В запросе нет имени отдела");
         try {
-            return ResponseEntity.ok(departmentsDispatcher.edit(id, body.get("name"), body.get("description")));
+            Department department = departmentsDispatcher.edit(id, body.get("name"), body.get("description"));
+            stompController.updateDepartment(department);
+            return ResponseEntity.ok(department);
         } catch (EntryNotFound e) {
             throw new ResponseException("Отдел с идентификатором " + id + " не найден в базе данных");
         }
@@ -970,7 +1069,9 @@ public class PrivateRequestController {
     @DeleteMapping("department/{id}")
     public ResponseEntity<Department> deleteDepartment(@PathVariable Long id) {
         try {
-            return ResponseEntity.ok(departmentsDispatcher.delete(id));
+            Department department = departmentsDispatcher.delete(id);
+            stompController.deleteDepartment(department);
+            return ResponseEntity.ok(department);
         } catch (EntryNotFound e) {
             throw new ResponseException("Отдел с идентификатором " + id + "не найден в базе данных");
         }
@@ -988,7 +1089,9 @@ public class PrivateRequestController {
         if (body == null) throw new ResponseException("В запросе нет данных необходимых для создания должности");
         if (body.getName() == null || body.getName().isBlank())
             throw new ResponseException("В запросе нет названия должности");
-        return ResponseEntity.ok(positionDispatcher.create(body.getName(), body.getDescription(), body.getAccess()));
+        Position position = positionDispatcher.create(body.getName(), body.getDescription(), body.getAccess());
+        stompController.createPosition(position);
+        return ResponseEntity.ok(position);
     }
 
     // Редактирует должность
@@ -998,7 +1101,9 @@ public class PrivateRequestController {
         if (body.getName() == null || body.getName().isBlank())
             throw new ResponseException("В запросе нет названия должности");
         try {
-            return ResponseEntity.ok(positionDispatcher.edit(id, body.getName(), body.getDescription(), body.getAccess()));
+            Position position = positionDispatcher.edit(id, body.getName(), body.getDescription(), body.getAccess());
+            stompController.updatePosition(position);
+            return ResponseEntity.ok(position);
         } catch (EntryNotFound e) {
             throw new ResponseException("Должность с идентификатором " + id + " не найдена в базе данных");
         }
@@ -1008,7 +1113,9 @@ public class PrivateRequestController {
     @DeleteMapping("position/{id}")
     public ResponseEntity<Position> deletePosition(@PathVariable Long id) {
         try {
-            return ResponseEntity.ok(positionDispatcher.delete(id));
+            Position position = positionDispatcher.delete(id);
+            stompController.deletePosition(position);
+            return ResponseEntity.ok(position);
         } catch (EntryNotFound e) {
             throw new ResponseException("Должность с идентификатором " + id + " не найдена в базе данных");
         }
@@ -1038,7 +1145,11 @@ public class PrivateRequestController {
         if (body.getDepartment() == null) throw new ResponseException("Сотруднику не присвоен отдел");
         if (body.getPosition() == null) throw new ResponseException("Сотруднику не присвоена должность");
         try {
-            return ResponseEntity.ok(employeeDispatcher.create(body.getFirstName(), body.getLastName(), body.getSecondName(), body.getLogin(), body.getPassword(), body.getAccess(), body.getInternalPhoneNumber(), body.getTelegramUserId(), body.getDepartment(), body.getPosition(), body.getOffsite()));
+            Employee employee = employeeDispatcher.create(body.getFirstName(), body.getLastName(), body.getSecondName(),
+                    body.getLogin(), body.getPassword(), body.getAccess(), body.getInternalPhoneNumber(),
+                    body.getTelegramUserId(), body.getDepartment(), body.getPosition(), body.getOffsite());
+            stompController.createEmployee(employee);
+            return ResponseEntity.ok(employee);
         } catch (AlreadyExists e) {
             throw new ResponseException("Сотрудник с данным логином уже существует");
         } catch (EntryNotFound e) {
@@ -1086,6 +1197,7 @@ public class PrivateRequestController {
     public ResponseEntity<Employee> deleteEmployee(@PathVariable String login) {
         try {
             Employee employee = employeeDispatcher.delete(login);
+            stompController.deleteEmployee(employee);
             return ResponseEntity.ok(employee);
         } catch (EntryNotFound e) {
             throw new ResponseException("Сотрудник с логином " + login + " не найден в базе данных");
@@ -1174,24 +1286,83 @@ public class PrivateRequestController {
     public ResponseEntity<Void> sendMessage(@PathVariable Long chatId, @RequestBody MessageData message, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         try {
-            Pair<Chat, ChatMessage> chatMessage = chatDispatcher.sendToChat(chatId, ChatMessage.of(message, employee));
-            stompController.createMessage(chatMessage.getSecond());
-            telegramController.broadcastChatMessage(chatMessage.getFirst(), chatMessage.getSecond());
+            telegramController.sendMessageFromWeb(chatId, message, employee);
             return ResponseEntity.ok().build();
-        } catch (EntryNotFound e) {
+        } catch (EntryNotFound | EmptyFile | WriteError | TelegramApiException | IllegalFields | IllegalMediaType e) {
             throw new ResponseException(e.getMessage());
         }
     }
 
+    // Редактирует сообщение в чате
+    @PatchMapping("chat/message/{messageId}")
+    public ResponseEntity<Void> editMessage(@PathVariable Long messageId, @RequestBody String text, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        try {
+            telegramController.updateMessageFromWeb(messageId, text, employee);
+        } catch (TelegramApiException | EntryNotFound | NotOwner | IllegalFields e) {
+            throw new ResponseException(e.getMessage());
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    // Удаляет сообщение из чата
+    @DeleteMapping("chat/message/{messageId}")
+    public ResponseEntity<Void> deleteMessage(@PathVariable Long messageId, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        try {
+            SuperMessage chatMessages = telegramController.deleteMessageFromWeb(messageId, employee);
+            return ResponseEntity.ok().build();
+        } catch (EntryNotFound | NotOwner | AlreadyDeleted | TelegramApiException e) {
+            throw new ResponseException(e.getMessage());
+        }
+    }
+
+    // Помечает сообщения как прочитанные
+    @PatchMapping("chat/messages/read")
+    public ResponseEntity<Void> setMessagesAsRead(@RequestBody Set<Long> messageIds, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        SuperMessage chatMessages = chatDispatcher.setMessagesAsRead(messageIds, employee);
+        if (chatMessages == null) return ResponseEntity.ok().build();
+        stompController.updateCountUnreadMessage(employee.getLogin(), chatMessages.getParentChatId(),
+                chatDispatcher.getUnreadMessagesCount(chatMessages.getParentChatId(), employee));
+        stompController.updateMessage(chatMessages);
+        return ResponseEntity.ok().build();
+    }
+
+    // Получает количество не прочитанных сообщений в чате
+    @GetMapping("chat/{chatId}/messages/unread-count")
+    public ResponseEntity<Long> getUnreadMessagesCount(@PathVariable Long chatId, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(chatDispatcher.getUnreadMessagesCount(chatId, employee));
+    }
+
     // Получает страницу с сообщениями из чата
     @GetMapping("chat/{chatId}/messages")
-    public ResponseEntity<Page<ChatMessage>> getChatMessages(@PathVariable Long chatId, @RequestParam Long first, @RequestParam Integer limit, HttpServletRequest request) {
+    public ResponseEntity<Page<SuperMessage>> getChatMessages(@PathVariable Long chatId, @RequestParam Long first, @RequestParam Integer limit, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         try {
             return ResponseEntity.ok(chatDispatcher.getChatMessages(chatId, first, limit));
         } catch (EntryNotFound e) {
             throw new ResponseException(e.getMessage());
         }
+    }
+
+    // Получает чат по chatId
+    @GetMapping("chat/{chatId}")
+    public ResponseEntity<Chat> getChat(@PathVariable Long chatId, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        try {
+            return ResponseEntity.ok(chatDispatcher.getChat(chatId));
+        } catch (EntryNotFound e) {
+            throw new ResponseException(e.getMessage());
+        }
+    }
+
+    // Получает список активных чатов сотрудника
+    @GetMapping("chats/my/active")
+    public ResponseEntity<List<Chat>> getMyActiveChats(HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(chatDispatcher.getMyActiveChats(employee));
     }
 
     // Получает активный чат задачи по taskId

@@ -52,6 +52,22 @@ public class Employee implements Observer{
     private EmployeeStatus status;
     private Timestamp lastSeen;
 
+    public static Employee getSystem() {
+        return Employee.builder()
+                .login("system")
+                .firstName("Система")
+                .deleted(false)
+                .build();
+    }
+
+    public String getFullName(){
+        if(firstName != null && lastName != null)
+            return firstName + " " + lastName;
+        if(firstName != null)
+            return firstName;
+        return login;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

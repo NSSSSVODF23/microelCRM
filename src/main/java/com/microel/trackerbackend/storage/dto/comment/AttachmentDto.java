@@ -1,8 +1,15 @@
 package com.microel.trackerbackend.storage.dto.comment;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
+import com.microel.trackerbackend.storage.exceptions.IllegalMediaType;
 import lombok.*;
+import org.springframework.lang.Nullable;
+import org.telegram.telegrambots.meta.api.methods.ParseMode;
+import org.telegram.telegrambots.meta.api.objects.InputFile;
+import org.telegram.telegrambots.meta.api.objects.media.*;
 
+import java.io.File;
 import java.sql.Timestamp;
 import java.util.List;
 
@@ -20,5 +27,10 @@ public class AttachmentDto {
     private Long size;
     private Timestamp created;
     private Timestamp modified;
-    private List<CommentDto> comments;
+    private String thumbnail;
+
+    @JsonIgnore
+    public InputFile getInputFile() {
+        return new InputFile(new File(path));
+    }
 }

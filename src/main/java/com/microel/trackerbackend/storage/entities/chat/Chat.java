@@ -8,6 +8,7 @@ import org.hibernate.annotations.BatchSize;
 
 import javax.persistence.*;
 import java.sql.Timestamp;
+import java.util.Objects;
 import java.util.Set;
 
 @Getter
@@ -21,6 +22,8 @@ public class Chat {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long chatId;
+    @Column(columnDefinition = "varchar(255) default ''")
+    private String title;
     @OneToMany(mappedBy = "parentChat", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @JsonIgnore
     @BatchSize(size = 25)
@@ -34,13 +37,17 @@ public class Chat {
     @BatchSize(size = 25)
     private Set<Employee> members;
     private Timestamp updated;
+    private Timestamp closed;
     @OneToOne()
     @JsonManagedReference
     @JoinColumn(name = "f_last_message_id")
     private ChatMessage lastMessage;
 
-    public void addMessage(ChatMessage message) {
-        message.setParentChat(this);
-        messages.add(message);
+    @Getter
+    @Setter
+    @AllArgsConstructor
+    public static class UnreadCounter{
+        private Long chatId;
+        private Long count;
     }
 }

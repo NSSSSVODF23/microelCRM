@@ -1,4 +1,10 @@
 package com.microel.trackerbackend.storage.exceptions;
 
-public class AlreadyExists extends Exception{
+import lombok.NoArgsConstructor;
+
+@NoArgsConstructor
+public class AlreadyExists extends CustomException{
+    public AlreadyExists(String message) {
+        super(message);
+    }
 }

@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.dto.comment;
 
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
+import com.microel.trackerbackend.storage.entities.comments.TaskJournalItem;
 import lombok.*;
 
 import java.sql.Timestamp;

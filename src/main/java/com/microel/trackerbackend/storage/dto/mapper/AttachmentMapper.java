@@ -20,6 +20,7 @@ public class AttachmentMapper {
                 .path(attachment.getPath())
                 .size(attachment.getSize())
                 .type(attachment.getType())
+                .thumbnail(attachment.getThumbnail())
                 .build();
     }
 @Nullable
@@ -33,6 +34,7 @@ public class AttachmentMapper {
                 .path(attachment.getPath())
                 .size(attachment.getSize())
                 .type(attachment.getType())
+                .thumbnail(attachment.getThumbnail())
                 .build();
     }
 }

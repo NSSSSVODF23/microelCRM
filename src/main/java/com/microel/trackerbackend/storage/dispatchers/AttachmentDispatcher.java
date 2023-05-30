@@ -5,6 +5,7 @@ import com.microel.trackerbackend.services.filemanager.FileSaver;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
+import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.repositories.AttachmentRepository;
 import org.springframework.data.domain.Sort;
@@ -28,18 +29,28 @@ public class AttachmentDispatcher {
 
     public Attachment getAttachments(String id) throws EntryNotFound {
         Attachment attachment = this.attachmentRepository.findById(id).orElse(null);
-        if(attachment == null) throw new EntryNotFound();
+        if (attachment == null) throw new EntryNotFound();
         return attachment;
     }
 
+    /**
+     * Получает список с данными файлов из web, сортирует и сохраняет их локально.
+     * Так же добавляет запись в таблицу вложений о сохраненном файле
+     *
+     * @param files Список {@link FileData} с данными фалов из web
+     * @return Список сохраненных в базе данных {@link Attachment}
+     * @throws EmptyFile  Попытка сохранить пустой файл
+     * @throws WriteError Если произошла ошибка при сохранении файла на диск
+     */
     public List<Attachment> saveAttachments(List<FileData> files) throws EmptyFile, WriteError {
         List<Attachment> result = new ArrayList<>();
         for (FileData file : files) {
 
             Timestamp modifiedTimestamp = Timestamp.from(Instant.ofEpochMilli(file.getModified()));
+            AttachmentType attachmentType = FileSaver.getAttachmentType(file);
 
             Attachment.AttachmentBuilder attachBuilder = Attachment.builder()
-                    .type(FileSaver.getAttachmentType(file))
+                    .type(attachmentType)
                     .mimeType(file.getType())
                     .created(Timestamp.from(Instant.now()))
                     .modified(modifiedTimestamp)
@@ -53,12 +64,12 @@ public class AttachmentDispatcher {
                 } else {
                     String newFileName = UUID.randomUUID() + "_" + file.getName();
                     file.setName(newFileName);
-                    String path = fileSaver.save(file);
-                    result.add(attachmentRepository.save(attachBuilder.name(newFileName).path(path).build()));
+                    FileSaver.ComplexPath path = fileSaver.save(file);
+                    result.add(attachmentRepository.save(attachBuilder.name(newFileName).path(path.getOriginal()).thumbnail(path.getThumbnail()).build()));
                 }
             } else {
-                String path = fileSaver.save(file);
-                result.add(attachmentRepository.save(attachBuilder.name(file.getName()).path(path).build()));
+                FileSaver.ComplexPath path = fileSaver.save(file);
+                result.add(attachmentRepository.save(attachBuilder.name(file.getName()).path(path.getOriginal()).thumbnail(path.getThumbnail()).build()));
             }
 
         }
@@ -75,5 +86,32 @@ public class AttachmentDispatcher {
 
     public Integer getCountByTask(Long taskId) {
         return getByTask(taskId).size();
+    }
+
+    public Attachment saveAttachment(FileData fileData) throws EmptyFile, WriteError {
+        Timestamp modifiedTimestamp = Timestamp.from(Instant.ofEpochMilli(fileData.getModified()));
+
+        Attachment.AttachmentBuilder attachBuilder = Attachment.builder()
+                .type(FileSaver.getAttachmentType(fileData))
+                .mimeType(fileData.getType())
+                .created(Timestamp.from(Instant.now()))
+                .modified(modifiedTimestamp)
+                .size((long) fileData.getData().length);
+
+        Attachment foundAttachment = attachmentRepository.findById(fileData.getName()).orElse(null);
+
+        if (foundAttachment != null) {
+            if (foundAttachment.getModified().equals(modifiedTimestamp) && foundAttachment.getSize() == fileData.getData().length) {
+                return foundAttachment;
+            } else {
+                String newFileName = UUID.randomUUID() + "_" + fileData.getName();
+                fileData.setName(newFileName);
+                FileSaver.ComplexPath path = fileSaver.save(fileData);
+                return attachmentRepository.save(attachBuilder.name(newFileName).path(path.getOriginal()).thumbnail(path.getThumbnail()).build());
+            }
+        } else {
+            FileSaver.ComplexPath path = fileSaver.save(fileData);
+            return attachmentRepository.save(attachBuilder.name(fileData.getName()).path(path.getOriginal()).thumbnail(path.getThumbnail()).build());
+        }
     }
 }

@@ -32,10 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.persistence.criteria.*;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 
@@ -233,7 +230,7 @@ public class TaskDispatcher {
         return tasks.stream().map(Task::getTaskId).collect(Collectors.toList());
     }
 
-    public Pair<Task, WorkLog> assignInstallers(Long taskId, Set<Employee> installers, Employee creator) throws EntryNotFound, IllegalFields {
+    public WorkLog assignInstallers(Long taskId, Set<Employee> installers, Employee creator) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
         WorkLog existed = workLogDispatcher.getActiveWorkLogByTask(task).orElse(null);
@@ -241,23 +238,29 @@ public class TaskDispatcher {
         WorkLog workLog = workLogDispatcher.createWorkLog(task, installers, creator);
         task.setTaskStatus(TaskStatus.PROCESSING);
         task.setUpdated(Timestamp.from(Instant.now()));
-        return Pair.of(taskRepository.save(task), workLog);
+        taskRepository.save(task);
+        return workLog;
     }
 
-    public Pair<Task, WorkLog> forceCloseWorkLog(Long taskId, Employee employeeFromRequest) throws EntryNotFound {
+    public WorkLog forceCloseWorkLog(Long taskId, Employee employeeFromRequest) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
         WorkLog workLog = workLogDispatcher.getActiveWorkLogByTask(task).orElse(null);
 
         if (workLog == null) throw new EntryNotFound("Не найдено ни одного журнала работ для принудительного закрытия");
 
+        Timestamp timestamp = Timestamp.from(Instant.now());
+
         workLog.setIsForceClosed(true);
-        workLog.setClosed(Timestamp.from(Instant.now()));
+        workLog.setClosed(timestamp);
+        workLog.getChat().setClosed(timestamp);
+        workLog.getTask().setTaskStatus(TaskStatus.ACTIVE);
+        workLog.getTask().setUpdated(timestamp);
 
-        task.setTaskStatus(TaskStatus.ACTIVE);
-        task.setUpdated(Timestamp.from(Instant.now()));
+//        task.setTaskStatus(TaskStatus.ACTIVE);
+//        task.setUpdated(Timestamp.from(Instant.now()));
 
-        return Pair.of(taskRepository.save(task), workLogDispatcher.save(workLog));
+        return workLogDispatcher.save(workLog);
     }
 
     public Task changeTaskObservers(Long id, Set<Long> departmentResponsibilities, Set<String> personalResponsibilities) throws EntryNotFound {

@@ -2,13 +2,11 @@ package com.microel.trackerbackend.storage.entities.address;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.*;
-import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
 import javax.persistence.*;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Comparator;
 import java.util.Objects;
 
 @Entity
@@ -18,7 +16,7 @@ import java.util.Objects;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Address {
+public class Address implements Comparable<Address> {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long addressId;
@@ -134,7 +132,19 @@ public class Address {
         return Objects.hash(getCity(), getDistrict(), getStreet(), getHouseNum(), getFraction(), getLetter(), getBuild(), getEntrance(), getFloor(), getApartmentNum(), getApartmentMod());
     }
 
-    public static int compareName(Address a, Address b) {
-        return a.getAddressName().compareTo(b.getAddressName());
+    @Override
+    @JsonIgnore
+    public int compareTo(@NonNull Address o) {
+        return Comparator.comparing(Address::getCity,Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Address::getStreet,Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Address::getHouseNum,Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Address::getFraction,Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Address::getLetter,Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Address::getBuild,Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Address::getEntrance,Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Address::getFloor,Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Address::getApartmentNum,Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Address::getApartmentMod,Comparator.nullsLast(Comparator.naturalOrder()))
+                .compare(this, o);
     }
 }

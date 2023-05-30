@@ -1,4 +1,10 @@
 package com.microel.trackerbackend.storage.exceptions;
 
-public class EditingNotPossible extends Exception{
+import lombok.NoArgsConstructor;
+
+@NoArgsConstructor
+public class EditingNotPossible extends CustomException{
+    public EditingNotPossible(String message) {
+        super(message);
+    }
 }

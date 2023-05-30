@@ -6,6 +6,7 @@ import lombok.*;
 import org.hibernate.annotations.BatchSize;
 
 import javax.persistence.*;
+import java.util.Comparator;
 import java.util.Set;
 
 @Entity
@@ -15,7 +16,7 @@ import java.util.Set;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class City {
+public class City implements Comparable<City> {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long cityId;
@@ -31,5 +32,11 @@ public class City {
     @Override
     public String toString() {
         return "City{" + name + "}";
+    }
+
+    @Override
+    @JsonIgnore
+    public int compareTo(@NonNull City o) {
+        return Comparator.comparing(City::getName).compare(this, o);
     }
 }

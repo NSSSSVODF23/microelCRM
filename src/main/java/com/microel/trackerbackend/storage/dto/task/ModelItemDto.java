@@ -26,4 +26,31 @@ public class ModelItemDto {
     private String stringData;
     private Timestamp timestampData;
     private Map<String, String> phoneData;
+
+    @JsonIgnore
+    public Object getValue() {
+        switch (wireframeFieldType) {
+            case ADDRESS:
+                return addressData;
+            case BOOLEAN:
+                return booleanData;
+            case FLOAT:
+                return floatData;
+            case INTEGER:
+                return integerData;
+            case LARGE_TEXT:
+            case LOGIN:
+            case SMALL_TEXT:
+            case CONNECTION_SERVICES:
+            case EQUIPMENTS:
+            case IP:
+            case REQUEST_INITIATOR:
+            case AD_SOURCE:
+                return stringData;
+            case PHONE_ARRAY:
+                return phoneData;
+            default:
+                return null;
+        }
+    }
 }

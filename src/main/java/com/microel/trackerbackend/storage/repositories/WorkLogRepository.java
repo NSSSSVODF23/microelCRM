@@ -12,4 +12,5 @@ public interface WorkLogRepository extends JpaRepository<WorkLog, Long>, JpaSpec
     Optional<WorkLog> findAllByTaskAndClosedIsNull(Task task);
 
     Optional<WorkLog> findAllByTask_TaskIdAndClosedIsNull(Long taskId);
+
 }

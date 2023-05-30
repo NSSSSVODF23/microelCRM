@@ -20,6 +20,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Component
@@ -209,5 +210,9 @@ public class EmployeeDispatcher {
         if (employeeRepository.existsById(employee.getLogin())) return false;
         employeeRepository.save(employee);
         return true;
+    }
+
+    public Optional<Employee> getByTelegramId(Long chatId) {
+        return employeeRepository.findByTelegramUserId(chatId.toString());
     }
 }

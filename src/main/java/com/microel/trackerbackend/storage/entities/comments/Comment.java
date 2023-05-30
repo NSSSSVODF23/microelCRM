@@ -1,7 +1,6 @@
 package com.microel.trackerbackend.storage.entities.comments;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
-import com.microel.trackerbackend.storage.entities.comments.dto.CommentDto;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import lombok.*;
@@ -31,7 +30,7 @@ public class Comment implements TaskJournalItem {
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JoinColumn(name = "f_employee_id")
     private Employee creator;
-    @ManyToMany(cascade = CascadeType.PERSIST)
+    @ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @BatchSize(size = 25)
     private List<Attachment> attachments;
     @ManyToOne
@@ -44,48 +43,4 @@ public class Comment implements TaskJournalItem {
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JsonBackReference
     private Task parent;
-
-    public CommentDto toDto() {
-        return new CommentDto() {
-            @Override
-            public Long getCommentId() {
-                return commentId;
-            }
-
-            @Override
-            public String getMessage() {
-                return message;
-            }
-
-            @Override
-            public Timestamp getCreated() {
-                return created;
-            }
-
-            @Override
-            public Employee getCreator() {
-                return creator;
-            }
-
-            @Override
-            public List<Attachment> getAttachments() {
-                return attachments;
-            }
-
-            @Override
-            public CommentDto getReplyComment() {
-                return replyComment != null ? replyComment.toDto() : null;
-            }
-
-            @Override
-            public Boolean getEdited() {
-                return edited;
-            }
-
-            @Override
-            public Boolean getDeleted() {
-                return deleted;
-            }
-        };
-    }
 }

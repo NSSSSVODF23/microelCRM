@@ -3,10 +3,11 @@ package com.microel.trackerbackend.storage.dispatchers;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.OffsetPageable;
+import com.microel.trackerbackend.storage.dto.comment.CommentDto;
+import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.dto.CommentData;
-import com.microel.trackerbackend.storage.entities.comments.dto.CommentDto;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
@@ -38,13 +39,12 @@ public class CommentDispatcher {
     }
 
     public Page<CommentDto> getComments(Long taskId, Long offset, Integer limit) {
-        return commentRepository.findAllByParent_TaskIdAndDeletedIsFalse(taskId, new OffsetPageable(offset, limit, Sort.by(Sort.Direction.DESC, "created")));
+        return commentRepository.findAllByParent_TaskIdAndDeletedIsFalse(taskId,
+                new OffsetPageable(offset, limit, Sort.by(Sort.Direction.DESC, "created"))).map(CommentMapper::toDto);
     }
 
     public Comment create(CommentData data, Employee currentUser) throws EmptyFile, WriteError, EntryNotFound {
         Task targetTask = taskDispatcher.getTask(data.getTaskId());
-
-
 
         List<Attachment> attachments = new ArrayList<>();
 

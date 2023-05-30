@@ -1,14 +1,23 @@
 package com.microel.trackerbackend.storage.entities.comments;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.microel.trackerbackend.storage.dto.comment.AttachmentDto;
+import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
+import org.springframework.lang.Nullable;
+import org.telegram.telegrambots.meta.api.methods.ParseMode;
+import org.telegram.telegrambots.meta.api.objects.media.*;
 
 import javax.persistence.*;
+import java.io.File;
 import java.sql.Timestamp;
 import java.util.List;
-import java.util.UUID;
 
+/**
+ * Сущность базы данных представляющая собой вложение, хранит в себе метаданные файла сохраненного на диске.
+ * На нее могут ссылаться комментарии к задаче и сообщения из чатов.
+ */
 @Entity
 @Getter
 @Setter
@@ -28,8 +37,93 @@ public class Attachment {
     private Long size;
     private Timestamp created;
     private Timestamp modified;
+    @Nullable
+    @Column(length = 2048)
+    private String thumbnail;
     @ManyToMany(mappedBy = "attachments")
     @JsonIgnore
     @BatchSize(size = 25)
     private List<Comment> comments;
+
+    @JsonIgnore
+    @Nullable
+    public static InputMedia getInputMedia(Attachment attachment) {
+        String name = attachment.getName();
+        AttachmentType type = attachment.getType();
+        String path = attachment.getPath();
+        if (name == null || name.isBlank() || path == null || path.isBlank())
+            throw new NullPointerException("Имя прикрепленного файла или путь до него пусты");
+        return switch (type) {
+            case PHOTO -> InputMediaPhoto.builder()
+                    .media("attach://" + name)
+                    .mediaName(name)
+                    .isNewMedia(true)
+                    .newMediaFile(new File(path))
+                    .parseMode(ParseMode.HTML)
+                    .build();
+            case VIDEO -> InputMediaVideo.builder()
+                    .media("attach://" + name)
+                    .mediaName(name)
+                    .isNewMedia(true)
+                    .newMediaFile(new File(path))
+                    .parseMode(ParseMode.HTML)
+                    .build();
+            case AUDIO -> InputMediaAudio.builder()
+                    .media("attach://" + name)
+                    .mediaName(name)
+                    .isNewMedia(true)
+                    .newMediaFile(new File(path))
+                    .parseMode(ParseMode.HTML)
+                    .build();
+            case DOCUMENT, FILE -> InputMediaDocument.builder()
+                    .media("attach://" + name)
+                    .mediaName(name)
+                    .isNewMedia(true)
+                    .newMediaFile(new File(path))
+                    .parseMode(ParseMode.HTML)
+                    .build();
+            default -> null;
+        };
+    }
+
+    @JsonIgnore
+    @Nullable
+    public static InputMedia getInputMedia(AttachmentDto attachment) {
+        String name = attachment.getName();
+        AttachmentType type = attachment.getType();
+        String path = attachment.getPath();
+        if (name == null || name.isBlank() || path == null || path.isBlank())
+            throw new NullPointerException("Имя прикрепленного файла или путь до него пусты");
+        return switch (type) {
+            case PHOTO -> InputMediaPhoto.builder()
+                    .media("attach://" + name)
+                    .mediaName(name)
+                    .isNewMedia(true)
+                    .newMediaFile(new File(path))
+                    .parseMode(ParseMode.HTML)
+                    .build();
+            case VIDEO -> InputMediaVideo.builder()
+                    .media("attach://" + name)
+                    .mediaName(name)
+                    .isNewMedia(true)
+                    .newMediaFile(new File(path))
+                    .parseMode(ParseMode.HTML)
+                    .build();
+            case AUDIO -> InputMediaAudio.builder()
+                    .media("attach://" + name)
+                    .mediaName(name)
+                    .isNewMedia(true)
+                    .newMediaFile(new File(path))
+                    .parseMode(ParseMode.HTML)
+                    .build();
+            case DOCUMENT, FILE -> InputMediaDocument.builder()
+                    .media("attach://" + name)
+                    .mediaName(name)
+                    .isNewMedia(true)
+                    .newMediaFile(new File(path))
+                    .parseMode(ParseMode.HTML)
+                    .build();
+            default -> null;
+        };
+    }
 }
