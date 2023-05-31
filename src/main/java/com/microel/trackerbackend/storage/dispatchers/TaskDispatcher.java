@@ -34,6 +34,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 
 @Component
@@ -60,7 +61,7 @@ public class TaskDispatcher {
         this.taskTagDispatcher = taskTagDispatcher;
     }
 
-    public Task createTask(Task sourceTask, Employee employee) throws IllegalFields {
+    public Task createTask(Task.CreationBody body, Employee employee) throws IllegalFields, EntryNotFound {
         // Создаем временный объект задачи
         Task createdTask = new Task();
         // Устанавливаем время создания задачи
@@ -70,8 +71,15 @@ public class TaskDispatcher {
         // Устанавливаем автора задачи
         createdTask.setCreator(employee);
 
+        //Проверяем есть ли установленный шаблон в запросе
+        if (body.getWireframeId() == null) throw new IllegalFields("Не установлен шаблон для создания задачи");
+        // Получаем шаблон задачи из бд по идентификатору и устанавливаем его в createdTask
+        Wireframe wireframe = wireframeDispatcher.getWireframeById(body.getWireframeId(), false);
+        // Если wireframe null то выбрасываем исключение
+        if (wireframe == null) throw new IllegalFields("В базе данных не найден шаблон для создания задачи");
+
         // Получаем список наблюдателей задачи по-умолчанию из шаблона
-        List<DefaultObserver> defaultObservers = sourceTask.getModelWireframe().getDefaultObservers();
+        List<DefaultObserver> defaultObservers = wireframe.getDefaultObservers();
         // Выбираем из базы данных действующих наблюдателей задачи
         List<Employee> employeesObservers = employeeDispatcher.getByIdSet(DefaultObserver.getSetOfEmployees(defaultObservers).stream().map(Employee::getLogin).collect(Collectors.toSet()));
         List<Department> departmentsObservers = departmentDispatcher.getByIdSet(DefaultObserver.getSetOfDepartments(defaultObservers).stream().map(Department::getDepartmentId).collect(Collectors.toSet()));
@@ -81,13 +89,7 @@ public class TaskDispatcher {
         // Устанавливаем отделы как наблюдателей задачи
         createdTask.setDepartmentsObservers(departmentsObservers);
 
-        //Проверяем есть ли установленный шаблон в запросе
-        if (sourceTask.getModelWireframe() == null) throw new IllegalFields("Не установлен шаблон для создания задачи");
 
-        // Получаем шаблон задачи из бд по идентификатору и устанавливаем его в createdTask
-        Wireframe wireframe = wireframeDispatcher.getWireframeById(sourceTask.getModelWireframe().getWireframeId(), false);
-        // Если wireframe null то выбрасываем исключение
-        if (wireframe == null) throw new IllegalFields("В базе данных не найден шаблон для создания задачи");
 
         createdTask.setCurrentStage(wireframe.getFirstStage());
 
@@ -97,33 +99,28 @@ public class TaskDispatcher {
         createdTask.setModelWireframe(wireframe);
 
         //Подготавливаем данные в задаче для сохранения
-        List<ModelItem> modelItems = modelItemDispatcher.prepareModelItems(ModelItemDispatcher.cleanToCreate(sourceTask.getFields()));
+        List<ModelItem> modelItems = modelItemDispatcher.prepareModelItems(ModelItemDispatcher.cleanToCreate(body.getFields()));
 
         // Устанавливаем поля задачи
         createdTask.setFields(modelItems);
 
         // Получаем все дочерние задачи из бд по идентификатору и устанавливаем их в createdTask
-        if (sourceTask.getChildren() != null && sourceTask.getChildren().size() > 0) {
+        if (body.getChildId() != null) {
 
-            List<Task> childrenFromDB = taskRepository.findAllById(sourceTask.getChildren().stream().map(Task::getTaskId).collect(Collectors.toList()));
-
-            Task savedTask = taskRepository.save(createdTask);
-            savedTask.setChildren(childrenFromDB);
-            return taskRepository.save(savedTask);
+            Task childrenFromDB = taskRepository.findById(body.getChildId()).orElseThrow(()->new EntryNotFound("Дочерняя задача не найдена в базе данных"));
+            createdTask.setChildren(Stream.of(childrenFromDB).collect(Collectors.toList()));
+            return taskRepository.save(createdTask);
         }
 
         // Получаем родительскую задачу из бд по идентификатору и устанавливаем её в createdTask
-        if (sourceTask.getParent() != null) {
+        if (body.getParentId() != null) {
 
-            Task parentFromDB = taskRepository.findById(sourceTask.getParent()).orElse(null);
+            Task parentFromDB = taskRepository.findById(body.getParentId()).orElseThrow(()->new EntryNotFound("Родительская задача не найдена в базе данных"));
 
-            if (parentFromDB != null) {
-                createdTask.setParent(parentFromDB.getTaskId());
-                parentFromDB.getChildren().add(createdTask);
-                Task saved = taskRepository.save(createdTask);
-                taskRepository.save(parentFromDB);
-                return saved;
-            }
+            createdTask.setParent(parentFromDB.getTaskId());
+            parentFromDB.getChildren().add(createdTask);
+            taskRepository.save(parentFromDB);
+            return taskRepository.save(createdTask);
         }
 
         return taskRepository.save(createdTask);

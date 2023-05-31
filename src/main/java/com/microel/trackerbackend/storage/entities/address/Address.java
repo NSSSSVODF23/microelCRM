@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.entities.address;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.*;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
@@ -16,6 +17,7 @@ import java.util.Objects;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Address implements Comparable<Address> {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -87,6 +89,9 @@ public class Address implements Comparable<Address> {
             addressName.append(" (").append(apartmentMod).append(")");
         }
         return addressName.toString();
+    }
+
+    public void setAddressName(String addressName) {
     }
 
     public void setHouse(House house){

@@ -4,10 +4,19 @@ import com.microel.trackerbackend.storage.dto.task.ModelItemDto;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import org.springframework.lang.Nullable;
 
+import java.util.HashMap;
+
 public class ModelItemMapper {
     @Nullable
     public static ModelItemDto toDto(@Nullable ModelItem modelItem) {
         if (modelItem == null) return null;
+        HashMap<String, String> phoneMap = modelItem.getPhoneData().entrySet().stream().reduce(new HashMap<String, String>(), (map, entry) -> {
+            map.put(entry.getKey(), entry.getValue());
+            return map;
+        }, (map1, map2) -> {
+            map1.putAll(map2);
+            return map1;
+        });
         return ModelItemDto.builder()
                 .modelItemId(modelItem.getModelItemId())
                 .name(modelItem.getName())
@@ -19,7 +28,9 @@ public class ModelItemMapper {
                 .addressData(AddressMapper.toDto(modelItem.getAddressData()))
                 .wireframeFieldType(modelItem.getWireframeFieldType())
                 .timestampData(modelItem.getTimestampData())
-                .phoneData(modelItem.getPhoneData())
+                .phoneData(phoneMap)
+                .textRepresentation(modelItem.getTextRepresentation())
+                .textRepresentationForTlg(modelItem.getTextRepresentationForTlg())
                 .build();
     }
 

@@ -26,6 +26,8 @@ public class ModelItemDto {
     private String stringData;
     private Timestamp timestampData;
     private Map<String, String> phoneData;
+    private String textRepresentation;
+    private String textRepresentationForTlg;
 
     @JsonIgnore
     public Object getValue() {

@@ -92,7 +92,7 @@ public class TelegramMessageFactory {
         StringBuilder messageBuilder = new StringBuilder();
         messageBuilder.append("Задача #").append(task.getTaskId()).append("\n\n");
         for (ModelItemDto field : fields) {
-            messageBuilder.append(Decorator.italic(field.getName())).append(": ").append(field.getValue()).append("\n");
+            messageBuilder.append(Decorator.italic(field.getName())).append(": ").append(field.getTextRepresentationForTlg()).append("\n\n");
         }
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)

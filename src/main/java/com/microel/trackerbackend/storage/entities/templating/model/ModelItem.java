@@ -2,6 +2,8 @@ package com.microel.trackerbackend.storage.entities.templating.model;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
@@ -13,6 +15,7 @@ import javax.persistence.*;
 import java.sql.Timestamp;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 @Entity
 @Getter
@@ -21,6 +24,7 @@ import java.util.Objects;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ModelItem {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -65,7 +69,7 @@ public class ModelItem {
 
     @Override
     public String toString() {
-        return "{"+name+":"+getValue()+"}";
+        return "{" + name + ":" + getValue() + "}";
     }
 
     public ModelItem cleanToCreate() {
@@ -131,5 +135,129 @@ public class ModelItem {
             default:
                 break;
         }
+    }
+
+    public String getTextRepresentation() {
+        switch (wireframeFieldType) {
+            case LARGE_TEXT:
+            case SMALL_TEXT:
+            case CONNECTION_SERVICES:
+            case EQUIPMENTS:
+            case IP:
+            case REQUEST_INITIATOR:
+            case AD_SOURCE:
+            case LOGIN:
+                return stringData;
+            case INTEGER:
+                return String.valueOf(integerData);
+            case FLOAT:
+                return String.valueOf(floatData);
+            case BOOLEAN:
+                return booleanData ? "Да" : "Нет";
+            case ADDRESS:
+                if(addressData == null) {
+                    return "Ошибка чтения адреса";
+                }
+                StringBuilder addressResult = new StringBuilder();
+                if (addressData.getCity() != null) {
+                    addressResult.append(addressData.getCity().getName());
+                }
+                if (addressData.getStreet() != null) {
+                    addressResult.append(" ").append(addressData.getStreet().getName());
+                }
+                if (addressData.getHouseNum() != null) {
+                    addressResult.append(" ").append(addressData.getHouseNum());
+                }
+                if (addressData.getFraction() != null) {
+                    addressResult.append("/").append(addressData.getFraction());
+                }
+                if (addressData.getLetter() != null) {
+                    addressResult.append(addressData.getLetter());
+                }
+                if (addressData.getBuild() != null) {
+                    addressResult.append(" стр.").append(addressData.getBuild());
+                }
+                if (addressData.getEntrance() != null) {
+                    addressResult.append(" под.").append(addressData.getEntrance());
+                }
+                if (addressData.getFloor() != null) {
+                    addressResult.append(" эт.").append(addressData.getFloor());
+                }
+                if (addressData.getApartmentNum() != null) {
+                    addressResult.append(" кв.").append(addressData.getApartmentNum());
+                }
+                if (addressData.getApartmentMod() != null) {
+                    addressResult.append(" ").append(addressData.getApartmentMod());
+                }
+                return addressResult.toString();
+            case PHONE_ARRAY:
+                return String.join(", ", phoneData.values());
+            default:
+                return null;
+        }
+    }
+
+    @JsonIgnore
+    public String getTextRepresentationForTlg() {
+        switch (wireframeFieldType) {
+            case LARGE_TEXT:
+            case SMALL_TEXT:
+            case CONNECTION_SERVICES:
+            case EQUIPMENTS:
+            case IP:
+            case REQUEST_INITIATOR:
+            case AD_SOURCE:
+            case LOGIN:
+                return stringData;
+            case INTEGER:
+                return String.valueOf(integerData);
+            case FLOAT:
+                return String.valueOf(floatData);
+            case BOOLEAN:
+                return booleanData ? "Да" : "Нет";
+            case ADDRESS:
+                if(addressData == null) {
+                    return "Ошибка чтения адреса";
+                }
+                StringBuilder addressResult = new StringBuilder();
+                if (addressData.getCity() != null) {
+                    addressResult.append(addressData.getCity().getName());
+                }
+                if (addressData.getStreet() != null) {
+                    addressResult.append(" ").append(addressData.getStreet().getName());
+                }
+                if (addressData.getHouseNum() != null) {
+                    addressResult.append(" ").append(addressData.getHouseNum());
+                }
+                if (addressData.getFraction() != null) {
+                    addressResult.append("/").append(addressData.getFraction());
+                }
+                if (addressData.getLetter() != null) {
+                    addressResult.append(addressData.getLetter());
+                }
+                if (addressData.getBuild() != null) {
+                    addressResult.append(" стр.").append(addressData.getBuild());
+                }
+                if (addressData.getEntrance() != null) {
+                    addressResult.append(" под.").append(addressData.getEntrance());
+                }
+                if (addressData.getFloor() != null) {
+                    addressResult.append(" эт.").append(addressData.getFloor());
+                }
+                if (addressData.getApartmentNum() != null) {
+                    addressResult.append(" кв.").append(addressData.getApartmentNum());
+                }
+                if (addressData.getApartmentMod() != null) {
+                    addressResult.append(" ").append(addressData.getApartmentMod());
+                }
+                return addressResult.toString();
+            case PHONE_ARRAY:
+                return phoneData.values().stream().map(phone-> "+7"+phone.substring(1).replaceAll(" ","")).map(Decorator::phone).collect(Collectors.joining("\n"));
+            default:
+                return null;
+        }
+    }
+
+    public void setTextRepresentation(String textRepresentation) {
     }
 }

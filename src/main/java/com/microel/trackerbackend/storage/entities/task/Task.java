@@ -10,6 +10,7 @@ import com.microel.trackerbackend.storage.entities.team.util.Department;
 import com.microel.trackerbackend.storage.entities.templating.TaskStage;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
+import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import lombok.*;
 import org.hibernate.annotations.*;
 
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Task {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -96,11 +98,23 @@ public class Task {
 
     private Long parent;
 
-    @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE})
+    @OneToMany(cascade = {CascadeType.MERGE, CascadeType.REMOVE})
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JoinColumn(name = "f_parent_id")
     @BatchSize(size = 25)
     private List<Task> children;
+
+    /**
+     * Создает отсортированный список полей для отображения в элементе списка
+     * @return Список полей задачи
+     */
+    public List<ModelItem> getListItemFields(){
+        return modelWireframe.getAllFields().stream()
+                .filter(f->f.getListViewIndex()!=null)
+                .sorted(Comparator.comparing(FieldItem::getListViewIndex))
+                .map(fieldItem -> fields.stream().filter(f->f.getId().equals(fieldItem.getId())).findFirst().orElse(null))
+                .collect(Collectors.toList());
+    }
 
     @Override
     public String toString() {
@@ -173,5 +187,17 @@ public class Task {
 
     public Set<Employee> getAllEmployeesObservers() {
         return getAllEmployeesObservers(null);
+    }
+
+    /**
+     * Объект для получения информации о задаче для создания
+     */
+    @Getter
+    @Setter
+    public static class CreationBody{
+        private Long wireframeId;
+        private List<ModelItem> fields;
+        private Long childId;
+        private Long parentId;
     }
 }

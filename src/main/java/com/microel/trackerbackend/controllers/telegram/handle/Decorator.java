@@ -75,6 +75,9 @@ public class Decorator {
     public static String mention(String text, String id) {
         return "<a href=\"tg://user?id=" + id + "\">" + text + "</a>";
     }
+    public static String phone(String phone) {
+        return "<a href=\"tel:" + phone + "\">" + phone + "</a>";
+    }
     public static String code(String text){
         return "<code>" + text + "</code>";
     }

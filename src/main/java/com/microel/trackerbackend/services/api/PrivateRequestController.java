@@ -221,7 +221,7 @@ public class PrivateRequestController {
 
     // Создание новой задачи
     @PostMapping("task")
-    public ResponseEntity<Task> createTask(@RequestBody Task body, HttpServletRequest request) {
+    public ResponseEntity<Task> createTask(@RequestBody Task.CreationBody body, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
 
         try {
@@ -269,7 +269,7 @@ public class PrivateRequestController {
             }
 
             return ResponseEntity.ok(createdTask);
-        } catch (IllegalFields e) {
+        } catch (IllegalFields | EntryNotFound e) {
             throw new ResponseException(e.getMessage());
         }
     }

@@ -1,8 +1,7 @@
 HELP.md
 target/
 attachments/
-configurations/
-!.mvn/wrapper/maven-wrapper.jar
+configurations/!.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 

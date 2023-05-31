@@ -1,7 +1,9 @@
 package com.microel.trackerbackend.storage.entities.templating;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.StepItem;
 import com.vladmihalcea.hibernate.type.json.JsonType;
 import lombok.*;
@@ -14,8 +16,11 @@ import javax.persistence.CascadeType;
 import javax.persistence.Entity;
 import javax.persistence.Table;
 import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Entity
 @Getter
@@ -25,6 +30,7 @@ import java.util.Set;
 @Builder
 @TypeDef(name = "json", typeClass = JsonType.class)
 @Table(name = "wireframes")
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Wireframe {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -53,6 +59,18 @@ public class Wireframe {
     private Boolean deleted;
     private String listViewType;
     private String detailedViewType;
+
+    /**
+     * Создает список всех шаблонов полей из шаблона
+     * @return Список полей
+     */
+    public List<FieldItem> getAllFields(){
+        if(steps == null) return new ArrayList<>();
+        return steps.stream().map(StepItem::getFields).reduce(new ArrayList<>(), (a, b) -> {
+            a.addAll(b);
+            return a;
+        }).stream().sorted(Comparator.comparing(FieldItem::getOrderPosition)).collect(Collectors.toList());
+    }
 
     public static Wireframe toDropdownList(Wireframe source){
         Wireframe newWireframe = new Wireframe();
