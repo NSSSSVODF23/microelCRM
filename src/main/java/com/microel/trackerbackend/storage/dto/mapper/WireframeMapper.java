@@ -25,6 +25,7 @@ public class WireframeMapper {
                 .name(wireframe.getName())
                 .stages(wireframe.getStages() == null ? new HashSet<>() : wireframe.getStages().stream().map(TaskStageMapper::toDto).collect(Collectors.toSet()))
                 .steps(wireframe.getSteps())
+                .allFields(wireframe.getAllFields())
                 .build();
     }
 

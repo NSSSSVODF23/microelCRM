@@ -42,5 +42,5 @@ public class TaskDto {
     private TaskGroupDto group;
     private Long parent;
     private List<TaskDto> children;
-
+    private List<ModelItem> listItemFields;
 }

@@ -5,6 +5,7 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.templating.DefaultObserver;
 import com.microel.trackerbackend.storage.entities.templating.TaskStage;
 import com.microel.trackerbackend.storage.entities.templating.WireframeType;
+import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.StepItem;
 import lombok.*;
 import org.hibernate.annotations.OnDelete;
@@ -36,6 +37,7 @@ public class WireframeDto {
     private Boolean deleted;
     private String listViewType;
     private String detailedViewType;
+    private List<FieldItem> allFields;
 
     @JsonIgnore
     public TaskStageDto getStageByName(@Nullable String name) {

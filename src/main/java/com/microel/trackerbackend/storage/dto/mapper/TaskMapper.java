@@ -34,6 +34,7 @@ public class TaskMapper {
                 .tags(task.getTags() == null ? new HashSet<>() : task.getTags().stream().map(TaskTagMapper::toDto).collect(Collectors.toSet()))
                 .taskEvents(task.getTaskEvents() == null ? new ArrayList<>() : task.getTaskEvents().stream().map(TaskEventMapper::toDto).collect(Collectors.toList()))
                 .taskStatus(task.getTaskStatus())
+                .listItemFields(task.getListItemFields())
                 .build();
     }
 
@@ -55,6 +56,7 @@ public class TaskMapper {
                 .responsible(EmployeeMapper.toDto(task.getResponsible()))
                 .tags(task.getTags() == null ? new HashSet<>() : task.getTags().stream().map(TaskTagMapper::toDto).collect(Collectors.toSet()))
                 .taskStatus(task.getTaskStatus())
+                .listItemFields(task.getListItemFields())
                 .build();
     }
 
