@@ -5,10 +5,7 @@ import com.microel.trackerbackend.controllers.configuration.FailedToReadConfigur
 import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigurationException;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
-import com.microel.trackerbackend.controllers.telegram.reactor.TelegramCallbackReactor;
-import com.microel.trackerbackend.controllers.telegram.reactor.TelegramCommandReactor;
-import com.microel.trackerbackend.controllers.telegram.reactor.TelegramEditMessageReactor;
-import com.microel.trackerbackend.controllers.telegram.reactor.TelegramMessageReactor;
+import com.microel.trackerbackend.controllers.telegram.reactor.*;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.filemanager.FileData;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
@@ -70,6 +67,7 @@ public class TelegramController {
     private final StompController stompController;
     private final AttachmentDispatcher attachmentDispatcher;
     private final Map<String, List<Message>> groupedMessagesFromTelegram = new ConcurrentHashMap<>();
+    private final Map<Long, List<Message>> chatsInTaskCloseMode = new ConcurrentHashMap<>();
     @Nullable
     private TelegramBotsApi api;
     @Nullable
@@ -154,34 +152,11 @@ public class TelegramController {
             if (data.isData("active_task")) {
                 mainBot.send(DeleteMessage.builder().chatId(chatId).messageId(messageId).build());
                 WorkLogDto acceptedByTelegramId = workLogDispatcher.getAcceptedByTelegramId(chatId);
-                TelegramMessageFactory.create(chatId, mainBot).task(acceptedByTelegramId.getTask()).execute();
+                TelegramMessageFactory.create(chatId, mainBot).currentActiveTask(acceptedByTelegramId.getTask()).execute();
                 return true;
             } else if (data.isData("tasks_queue")) {
-                mainBot.send(DeleteMessage.builder().chatId(chatId).messageId(messageId).build());
-                List<WorkLogDto> notAcceptedWorkLogs = new ArrayList<>();
-                AtomicBoolean hasActive = new AtomicBoolean(false);
-                List<WorkLogDto> queueByTelegramId = workLogDispatcher.getQueueByTelegramId(chatId);
-                for (WorkLogDto workLog : queueByTelegramId) {
-                    boolean isAccepted = workLog.getAcceptedEmployees().stream().anyMatch(e -> Objects.equals(e.getTelegramUserId(), chatId.toString()));
-                    if (isAccepted) {
-                        TelegramMessageFactory.create(chatId, mainBot).workLogListItem(workLog, true, false, null).execute();
-                        hasActive.set(true);
-                    } else {
-                        notAcceptedWorkLogs.add(workLog);
-                    }
-                }
-                if (!notAcceptedWorkLogs.isEmpty()) {
-                    TelegramMessageFactory.create(chatId, mainBot).simpleMessage(Decorator.underline("Список задач назначенных вам:")).execute();
-                } else {
-                    if (!hasActive.get())
-                        TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Задачи пока вам не назначены").execute();
-                }
-                AtomicInteger i = new AtomicInteger(0);
-                List<TelegramMessageFactory.AbstractExecutor<Message>> messages = notAcceptedWorkLogs.stream().map((wl) -> TelegramMessageFactory.create(chatId, mainBot).workLogListItem(wl, false, !hasActive.get(), i.incrementAndGet())).collect(Collectors.toList());
-                for (TelegramMessageFactory.AbstractExecutor<Message> messageExecutor : messages) {
-                    messageExecutor.execute();
-                }
-                return true;
+                TelegramMessageFactory.create(chatId, mainBot).deleteMessage(messageId).execute();
+                return sendWorkLogQueue(chatId);
             }
             return false;
         }));
@@ -195,16 +170,82 @@ public class TelegramController {
             mainBot.send(clearMarkup);
             ChatDto chatFromWorkLog = workLogDispatcher.getChatByWorkLogId(data.getLong());
             Employee employee = employeeDispatcher.getByTelegramId(chatId).orElseThrow(() -> new EntryNotFound("Пользователь не найден по идентификатору Telegram Api"));
-            SuperMessage systemMessage = chatDispatcher.createSystemMessage(chatFromWorkLog.getChatId(), "\uD83D\uDC77\uD83C\uDFFB\u200D♂️"+employee.getFullName()+" принял задачу и подключился к чату", this);
+            SuperMessage systemMessage = chatDispatcher.createSystemMessage(chatFromWorkLog.getChatId(), "\uD83D\uDC77\uD83C\uDFFB\u200D♂️" + employee.getFullName() + " принял задачу и подключился к чату", this);
             WorkLogDto workLog = workLogDispatcher.acceptWorkLog(data.getLong(), chatId);
             // Отправляем обновления в интерфейс пользователя
             broadcastUpdatesToWeb(systemMessage);
-            TelegramMessageFactory.create(chatId, mainBot).task(workLog.getTask()).execute();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            messageFactory.currentActiveTask(workLog.getTask()).execute();
+            if(workLog.getTargetDescription() != null && !workLog.getTargetDescription().isBlank()) messageFactory.simpleMessage("Текущая цель:\n" + workLog.getTargetDescription()).execute();
             return true;
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("send_report", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            TelegramMessageFactory factory = TelegramMessageFactory.create(chatId, mainBot);
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            if (!chatsInTaskCloseMode.containsKey(chatId)) {
+                factory.deleteMessage(messageId).execute();
+                factory.simpleMessage("\uD83D\uDEAB Вы не можете отправить отчет, так как нет активной задачи.")
+                        .execute();
+                return true;
+            } else if (chatsInTaskCloseMode.get(chatId).isEmpty()) {
+                factory.simpleMessage("Перед закрытием нужно отправить сообщение (или несколько), с отчетом. Отчет о выполненных работах не может быть пуст.")
+                        .execute();
+                return false;
+            }
+            try {
+                List<Message> messageList = chatsInTaskCloseMode.get(chatId);
+                workLogDispatcher.createReport(chatId, messageList);
+                chatsInTaskCloseMode.remove(chatId);
+                factory.deleteMessage(messageId).execute();
+                factory.simpleMessage("Отчет успешно отправлен").execute();
+                return sendWorkLogQueue(chatId);
+            } catch (EntryNotFound | IllegalFields e) {
+                factory.deleteMessage(messageId).execute();
+                factory.simpleMessage(e.getMessage()).execute();
+                return false;
+            }
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("cancel_close", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            mainBot.send(DeleteMessage.builder().chatId(chatId).messageId(messageId).build());
+            if (chatsInTaskCloseMode.containsKey(chatId)) {
+                chatsInTaskCloseMode.remove(chatId);
+                WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramId(chatId);
+                TelegramMessageFactory.create(chatId, mainBot).currentActiveTask(workLog.getTask()).execute();
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Вы отменили завершение задачи, она вновь активна. Вы находитесь в режиме чата задачи.").execute();
+                return true;
+            }
+            TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Вы не можете отменить завершение задачи так как находитесь в режиме чата.").execute();
+            return false;
+        }));
+
+        mainBot.subscribe(new TelegramPromptReactor("\uD83D\uDC4C Завершить задачу", (update) -> {
+            // Получаем активную задачу по идентификатору чата
+            Long chatId = update.getMessage().getChatId();
+            try {
+                WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramId(chatId);
+                TelegramMessageFactory.create(chatId, mainBot).closeWorkLogMessage().execute();
+                TelegramMessageFactory.create(chatId, mainBot).clearKeyboardMenu().execute();
+                chatsInTaskCloseMode.put(chatId, new ArrayList<>());
+                return true;
+            } catch (EntryNotFound e) {
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage("В данный момент у вас нет активных задач").execute();
+                TelegramMessageFactory.create(chatId, mainBot).clearKeyboardMenu().execute();
+            }
+            return false;
         }));
 
         // Обработка простых текстовых сообщений полученных из чата
         mainBot.subscribe(new TelegramMessageReactor(update -> {
+            Long chatId = update.getMessage().getChatId();
+            if (chatsInTaskCloseMode.containsKey(chatId)) {
+                chatsInTaskCloseMode.get(chatId).add(update.getMessage());
+                return true;
+            }
             try {
                 sendMessageFromTlgChat(update.getMessage());
                 return true;
@@ -219,6 +260,33 @@ public class TelegramController {
             updateMessageFromTlgChat(editedMessage);
             return true;
         }));
+    }
+
+    private boolean sendWorkLogQueue(Long chatId) throws TelegramApiException {
+        List<WorkLogDto> notAcceptedWorkLogs = new ArrayList<>();
+        AtomicBoolean hasActive = new AtomicBoolean(false);
+        List<WorkLogDto> queueByTelegramId = workLogDispatcher.getQueueByTelegramId(chatId);
+        for (WorkLogDto workLog : queueByTelegramId) {
+            boolean isAccepted = workLog.getAcceptedEmployees().stream().anyMatch(e -> Objects.equals(e.getTelegramUserId(), chatId.toString()));
+            if (isAccepted) {
+                TelegramMessageFactory.create(chatId, mainBot).workLogListItem(workLog, true, false, null).execute();
+                hasActive.set(true);
+            } else {
+                notAcceptedWorkLogs.add(workLog);
+            }
+        }
+        if (!notAcceptedWorkLogs.isEmpty()) {
+            TelegramMessageFactory.create(chatId, mainBot).simpleMessage(Decorator.underline("Список задач назначенных вам:")).execute();
+        } else {
+            if (!hasActive.get())
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Задачи пока вам не назначены").execute();
+        }
+        AtomicInteger i = new AtomicInteger(0);
+        List<TelegramMessageFactory.AbstractExecutor<Message>> messages = notAcceptedWorkLogs.stream().map((wl) -> TelegramMessageFactory.create(chatId, mainBot).workLogListItem(wl, false, !hasActive.get(), i.incrementAndGet())).collect(Collectors.toList());
+        for (TelegramMessageFactory.AbstractExecutor<Message> messageExecutor : messages) {
+            messageExecutor.execute();
+        }
+        return true;
     }
 
     /**
@@ -378,6 +446,10 @@ public class TelegramController {
             EmptyFile, WriteError, TelegramApiException, IllegalFields, IllegalMediaType {
         // Находим целевой чат
         Chat chat = chatDispatcher.getChat(chatId);
+
+        if(chat.getClosed()!=null){
+            throw new IllegalFields("Не возможно отправить сообщение в закрытый чат");
+        }
 
         if (!chat.getMembers().contains(author)) {
             chat.getMembers().add(author);
@@ -586,6 +658,8 @@ public class TelegramController {
     public void updateMessageFromTlgChat(Message receivedMessage) throws EntryNotFound, TelegramApiException, IllegalFields {
         stompController.updateMessage(chatMessageDispatcher.updateMessageFromTlg(receivedMessage, this));
     }
+
+    // TODO Исправить ошибку броадкаста сообщений пользователю который уже закрыл журнал работ
 
     /**
      * Отправляет сообщения броадкастом во все телеграм чаты

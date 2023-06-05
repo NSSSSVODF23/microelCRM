@@ -10,6 +10,7 @@ import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.SuperMessage;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.task.Task;
+import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
@@ -48,6 +49,20 @@ public class StompController {
     public void deleteTask(Task task) {
         sendAll(task, "task", task.getTaskId().toString(), "delete");
         sendAll(task, "task", "delete");
+    }
+
+    public void createWorkLog(WorkLog workLog) {
+        sendAll(workLog, "worklog", "create");
+    }
+
+    public void updateWorkLog(WorkLog workLog) {
+        sendAll(workLog, "worklog", workLog.getWorkLogId().toString(), "update");
+        sendAll(workLog, "worklog", "update");
+    }
+
+    public void deleteWorkLog(WorkLog workLog) {
+        sendAll(workLog, "worklog", workLog.getWorkLogId().toString(), "delete");
+        sendAll(workLog, "worklog", "delete");
     }
 
     public void createTaskEvent(Long taskId, TaskEvent taskEvent) {
@@ -135,14 +150,17 @@ public class StompController {
 
     public void createMessage(SuperMessage message) {
         sendAll(message, "chat", message.getParentChatId().toString(), "message", "create");
+        sendAll(message, "chat", "message", "create");
     }
 
     public void updateMessage(SuperMessage message) {
         sendAll(message, "chat", message.getParentChatId().toString(), "message", "update");
+        sendAll(message, "chat", "message", "update");
     }
 
     public void deleteMessage(SuperMessage deletedMessage) {
         sendAll(deletedMessage, "chat", deletedMessage.getParentChatId().toString(), "message", "delete");
+        sendAll(deletedMessage, "chat", "message", "delete");
     }
 
     public void updateCountUnreadMessage(String login, Long chatId, Long count) {

@@ -3,6 +3,7 @@ package com.microel.trackerbackend.controllers.telegram;
 import org.springframework.lang.Nullable;
 
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class CallbackData {
@@ -21,9 +22,13 @@ public class CallbackData {
 
     public static CallbackData parse(String callbackData) throws IllegalArgumentException{
         Pattern pattern = Pattern.compile("#(?<prefix>[\\w_]+):(?<data>[\\s\\S]+)");
-        var matcher = pattern.matcher(callbackData);
+        Pattern patternWithoutData = Pattern.compile("#(?<prefix>[\\w_]+)");
+        Matcher matcher = pattern.matcher(callbackData);
+        Matcher matcherWithoutData = patternWithoutData.matcher(callbackData);
         if(matcher.find()){
             return new CallbackData(matcher.group("prefix"), matcher.group("data"));
+        } else if (matcherWithoutData.find()) {
+            return new CallbackData(matcherWithoutData.group("prefix"), null);
         }
         throw new IllegalArgumentException("Не верные данные для парсинга CallbackData");
     }

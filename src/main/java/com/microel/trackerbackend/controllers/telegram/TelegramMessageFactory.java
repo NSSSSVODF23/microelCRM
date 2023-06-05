@@ -25,7 +25,11 @@ import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageTe
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.media.InputMedia;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardRemove;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import javax.validation.constraints.NotNull;
@@ -69,7 +73,7 @@ public class TelegramMessageFactory {
                 .append("Тип: ").append(Decorator.bold(task.getModelWireframe().getName())).append("\n")
                 .append(Decorator.mention(employeeName, employee.getTelegramUserId()))
                 .append(" назначил: ")
-                .append(workLog.getEmployees().stream().map(e->Decorator.mention(e.getFullName(), e.getTelegramUserId())).collect(Collectors.joining(", ")))
+                .append(workLog.getEmployees().stream().map(e -> Decorator.mention(e.getFullName(), e.getTelegramUserId())).collect(Collectors.joining(", ")))
                 .append(" на выполнение задачи");
 
         InlineKeyboardButton acceptButton = InlineKeyboardButton.builder()
@@ -87,8 +91,10 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(message, context);
     }
 
-    public AbstractExecutor<Message> task(TaskDto task) {
+    public AbstractExecutor<Message> currentActiveTask(TaskDto task) {
         List<ModelItemDto> fields = task.getFields();
+        KeyboardRow keyboardRow = new KeyboardRow(List.of(new KeyboardButton("\uD83D\uDC4C Завершить задачу")));
+        ReplyKeyboardMarkup keyboardMarkup = ReplyKeyboardMarkup.builder().keyboardRow(keyboardRow).resizeKeyboard(true).oneTimeKeyboard(true).build();
         StringBuilder messageBuilder = new StringBuilder();
         messageBuilder.append("Задача #").append(task.getTaskId()).append("\n\n");
         for (ModelItemDto field : fields) {
@@ -98,6 +104,7 @@ public class TelegramMessageFactory {
                 .chatId(chatId)
                 .text(messageBuilder.toString())
                 .parseMode("HTML")
+                .replyMarkup(keyboardMarkup)
                 .build();
         return new MessageExecutor<>(message, context);
     }
@@ -206,13 +213,13 @@ public class TelegramMessageFactory {
 
     public AbstractExecutor<Message> broadcastTextMessage(ChatMessageDto chatMessage) {
         StringBuilder messageBuilder = new StringBuilder("✉️")
-                .append(Decorator.mention(chatMessage.getAuthor().getFullName(),chatMessage.getAuthor().getTelegramUserId()));
-        if(chatMessage.getText() != null && !chatMessage.getText().isBlank()){
+                .append(Decorator.mention(chatMessage.getAuthor().getFullName(), chatMessage.getAuthor().getTelegramUserId()));
+        if (chatMessage.getText() != null && !chatMessage.getText().isBlank()) {
             messageBuilder.append(":\n").append(chatMessage.getText());
         }
         SendMessage message = new SendMessage(chatId, messageBuilder.toString());
-        if(chatMessage.getReplyTo() !=null && chatMessage.getReplyTo().getTelegramBinds() != null){
-            chatMessage.getReplyTo().getTelegramBinds().stream().filter(b->b.getTelegramChatId().toString().equals(chatId)).findFirst().ifPresent(bind->
+        if (chatMessage.getReplyTo() != null && chatMessage.getReplyTo().getTelegramBinds() != null) {
+            chatMessage.getReplyTo().getTelegramBinds().stream().filter(b -> b.getTelegramChatId().toString().equals(chatId)).findFirst().ifPresent(bind ->
                     message.setReplyToMessageId(bind.getTelegramMessageId())
             );
         }
@@ -247,7 +254,7 @@ public class TelegramMessageFactory {
     public AbstractExecutor<Serializable> broadcastEditMediaMessage(Integer telegramMessageId, ChatMessage messageByBind) throws IllegalFields {
 
         InputMedia inputMedia = Attachment.getInputMedia(messageByBind.getAttachment());
-        if(inputMedia == null)
+        if (inputMedia == null)
             throw new IllegalFields("Нет прикрепленного файла для обновления");
 
         EditMessageMedia editMessageMedia = EditMessageMedia.builder()
@@ -260,10 +267,10 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<List<Message>> broadcastMediaGroupMessage(List<ChatMessageDto> chatMessages) {
-        List<InputMedia> mediaList = chatMessages.stream().map(m-> Attachment.getInputMedia(m.getAttachment())).filter(Objects::nonNull).collect(Collectors.toList());
+        List<InputMedia> mediaList = chatMessages.stream().map(m -> Attachment.getInputMedia(m.getAttachment())).filter(Objects::nonNull).collect(Collectors.toList());
         SendMediaGroup sendMediaGroup = new SendMediaGroup(chatId, mediaList);
-        if(chatMessages.get(0).getReplyTo() !=null && chatMessages.get(0).getReplyTo().getTelegramBinds() != null){
-            chatMessages.get(0).getReplyTo().getTelegramBinds().stream().filter(b->b.getTelegramChatId().toString().equals(chatId)).findFirst().ifPresent(bind->
+        if (chatMessages.get(0).getReplyTo() != null && chatMessages.get(0).getReplyTo().getTelegramBinds() != null) {
+            chatMessages.get(0).getReplyTo().getTelegramBinds().stream().filter(b -> b.getTelegramChatId().toString().equals(chatId)).findFirst().ifPresent(bind ->
                     sendMediaGroup.setReplyToMessageId(bind.getTelegramMessageId())
             );
         }
@@ -272,27 +279,28 @@ public class TelegramMessageFactory {
 
     /**
      * Создает мультимедиа-сообщение с вложением для рассылки
+     *
      * @param chatMessage Объект сообщения с вложением
      * @return {@link AbstractExecutor} c мультимедиа-сообщением
-     * @throws IllegalFields Если в сообщении нет вложения
+     * @throws IllegalFields    Если в сообщении нет вложения
      * @throws IllegalMediaType Если во вложении задан не верный тип данных
      */
     public AbstractExecutor<Message> broadcastMediaMessage(ChatMessageDto chatMessage) throws IllegalFields, IllegalMediaType {
         StringBuilder messageBuilder = new StringBuilder("✉️")
-                .append(Decorator.mention(chatMessage.getAuthor().getFullName(),chatMessage.getAuthor().getTelegramUserId()));
-        if(chatMessage.getText() != null && !chatMessage.getText().isBlank()){
+                .append(Decorator.mention(chatMessage.getAuthor().getFullName(), chatMessage.getAuthor().getTelegramUserId()));
+        if (chatMessage.getText() != null && !chatMessage.getText().isBlank()) {
             messageBuilder.append(":\n").append(chatMessage.getText());
         }
 
         Integer replyMessageId = null;
-        if(chatMessage.getReplyTo() !=null && chatMessage.getReplyTo().getTelegramBinds() != null){
+        if (chatMessage.getReplyTo() != null && chatMessage.getReplyTo().getTelegramBinds() != null) {
             replyMessageId = chatMessage.getReplyTo().getTelegramBinds().stream()
-                    .filter(b->b.getTelegramChatId().toString().equals(chatId))
+                    .filter(b -> b.getTelegramChatId().toString().equals(chatId))
                     .map(TelegramMessageBindDto::getTelegramMessageId)
                     .findFirst().orElse(null);
         }
 
-        if(chatMessage.getAttachment() == null){
+        if (chatMessage.getAttachment() == null) {
             throw new IllegalFields("Мультимедиа сообщение не создано так как нет вложения");
         }
 
@@ -339,11 +347,32 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(DeleteMessage.builder().chatId(chatId).messageId(telegramMessageId).build(), context);
     }
 
+    public AbstractExecutor<Message> clearKeyboardMenu() {
+        ReplyKeyboardRemove clearKeyboardMarkup = ReplyKeyboardRemove.builder().removeKeyboard(true).build();
+        return new MessageExecutor<>(SendMessage.builder().chatId(chatId).text("Меню отчищено").replyMarkup(clearKeyboardMarkup).build(), context);
+    }
+
+    public AbstractExecutor<Message> closeWorkLogMessage() {
+        List<InlineKeyboardButton> inlineKeyboardButtons = List.of(
+                InlineKeyboardButton.builder().text("\uD83D\uDCC4 Отправить отчет").callbackData("#send_report").build(),
+                InlineKeyboardButton.builder().text("\uD83D\uDE45\u200D♂️ Отменить закрытие").callbackData("#cancel_close").build()
+        );
+        InlineKeyboardMarkup inlineKeyboardMarkup = InlineKeyboardMarkup.builder().keyboardRow(inlineKeyboardButtons).build();
+        return new MessageExecutor<>(SendMessage.builder()
+                .chatId(chatId)
+                .text("Вы находитесь в режиме закрытия задачи, напишите отчет (одно или несколько сообщений) и нажмите кнопку \"Отправить отчет\"")
+                .replyMarkup(inlineKeyboardMarkup)
+                .build(),
+                context
+        );
+    }
+
     /**
      * Позволяет отправить запрос в Telegram API и получить результат согласно заданному контексту
+     *
      * @param <T> Возвращаемое значение от Telegram API
      */
-    public interface AbstractExecutor<T>{
+    public interface AbstractExecutor<T> {
         T execute() throws TelegramApiException;
     }
 

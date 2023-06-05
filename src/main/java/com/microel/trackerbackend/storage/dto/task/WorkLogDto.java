@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.dto.task;
 
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
+import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import lombok.*;
 
@@ -25,4 +26,11 @@ public class WorkLogDto {
     private Timestamp closed;
     private Boolean isForceClosed;
     private Set<WorkReportDto> workReports;
+    private String forceClosedReason;
+    private String targetDescription;
+    private WorkLog.Status status;
+    private Set<EmployeeDto> whoAccepted;
+    private Set<EmployeeDto> whoClosed;
+    private String report;
+    private Long leadTime;
 }

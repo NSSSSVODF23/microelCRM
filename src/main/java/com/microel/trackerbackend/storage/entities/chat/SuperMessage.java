@@ -42,6 +42,25 @@ public class SuperMessage {
         return null;
     }
 
+    @Nullable
+    public String getDescriptionOfAttachment(){
+        if(attachments == null || attachments.isEmpty()) return null;
+        Set<AttachmentType> attachmentTypeSet = attachments.stream().map(AttachmentDto::getType).collect(Collectors.toSet());
+
+        boolean isPhoto = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.PHOTO);
+        boolean isVideo = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.VIDEO);
+        boolean isVisual = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.PHOTO || t == AttachmentType.VIDEO);
+        boolean isAudio = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.AUDIO);
+        boolean isDocument = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.DOCUMENT || t == AttachmentType.FILE);
+
+        if(isPhoto) return attachments.size()+" фотографий";
+        if(isVideo) return attachments.size()+" видео";
+        if(isVisual) return attachments.size()+" медиафайлов";
+        if(isAudio) return attachments.size()+" аудио";
+        if(isDocument) return attachments.size()+" файлов";
+        return null;
+    }
+
     public boolean isMediaGroup(){
         return attachments != null && attachments.size() > 1;
     }

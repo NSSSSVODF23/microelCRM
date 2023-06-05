@@ -49,6 +49,7 @@ import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterMo
 import com.microel.trackerbackend.storage.exceptions.*;
 import com.microel.trackerbackend.storage.repositories.AttachmentRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.imgscalr.Scalr;
 import org.javatuples.Triplet;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -62,8 +63,11 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
+import javax.imageio.ImageIO;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -72,6 +76,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @Controller
@@ -913,10 +918,10 @@ public class PrivateRequestController {
 
     // Назначает монтажников на задачу
     @PostMapping("task/{taskId}/assign-installers")
-    public ResponseEntity<Void> assignInstallers(@PathVariable Long taskId, @RequestBody Set<Employee> installers, HttpServletRequest request) {
+    public ResponseEntity<Void> assignInstallers(@PathVariable Long taskId, @RequestBody WorkLog.AssignBody body, HttpServletRequest request) {
         try {
             Employee employeeFromRequest = getEmployeeFromRequest(request);
-            WorkLog workLog = taskDispatcher.assignInstallers(taskId, installers, employeeFromRequest);
+            WorkLog workLog = taskDispatcher.assignInstallers(taskId, body, employeeFromRequest);
             telegramController.assignInstallers(workLog, employeeFromRequest);
             stompController.updateTask(workLog.getTask());
             stompController.createChat(ChatMapper.toDto(workLog.getChat()));
@@ -933,9 +938,9 @@ public class PrivateRequestController {
 
     // Принудительно забирает задачу у монтажников
     @PostMapping("task/{taskId}/force-close-work-log")
-    public ResponseEntity<Void> forceCloseWorkLog(@PathVariable Long taskId, HttpServletRequest request) {
+    public ResponseEntity<Void> forceCloseWorkLog(@PathVariable Long taskId, @RequestBody String reasonOfClosing, HttpServletRequest request) {
         try {
-            WorkLog taskWorkPair = taskDispatcher.forceCloseWorkLog(taskId, getEmployeeFromRequest(request));
+            WorkLog taskWorkPair = taskDispatcher.forceCloseWorkLog(taskId, reasonOfClosing, getEmployeeFromRequest(request));
             stompController.updateTask(taskWorkPair.getTask());
             stompController.closeChat(taskWorkPair.getChat());
 
@@ -956,6 +961,12 @@ public class PrivateRequestController {
         } catch (EntryNotFound e) {
             throw new ResponseException(e.getMessage());
         }
+    }
+
+    // Получить журналы работ определенной задачи
+    @GetMapping("task/{taskId}/work-logs")
+    public ResponseEntity<List<WorkLog>> getWorkLogs(@PathVariable Long taskId){
+        return ResponseEntity.ok(workLogDispatcher.getAllByTaskId(taskId));
     }
 
     // Закрывает задачу
@@ -1224,21 +1235,31 @@ public class PrivateRequestController {
     }
 
     // Устанавливает аватар
-    @PostMapping("employee/{login}/avatar")
-    public ResponseEntity<Employee> setAvatar(@PathVariable String login, @RequestBody Map<String, String> body) {
-        Employee employee = null;
+    @PostMapping("employee/avatar")
+    public ResponseEntity<Employee> setAvatar(@RequestBody String body, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+
+        byte[] imageBytes = Base64.getDecoder().decode(body.replaceAll("data:[^\\/]+\\/[^;]+;base64,", "").getBytes(StandardCharsets.UTF_8));
+        String fileName = UUID.randomUUID() + ".png";
+        Path folderPath = Path.of("./attachments", "avatars");
+        BufferedImage image = null;
         try {
-            employee = employeeDispatcher.getEmployee(login);
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
+            image = ImageIO.read(new ByteArrayInputStream(imageBytes));
+        } catch (IOException e) {
+            throw new ResponseException("Не удалось прочитать файл");
         }
 
-        byte[] imageBytes = Base64.getDecoder().decode(body.get("avatar").replaceAll("data:[^\\/]+\\/[^;]+;base64,", "").getBytes(StandardCharsets.UTF_8));
-        String fileName = UUID.randomUUID() + ".png";
-        Path filePath = Path.of(".\\attachments", "avatars", fileName);
+        try {
+            Files.createDirectory(folderPath);
+        } catch (IOException ignore) {
+        }
 
         try {
-            Files.write(filePath, imageBytes);
+            BufferedImage containerImage = new BufferedImage( image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
+            containerImage.createGraphics().drawImage(image, 0, 0, Color.white, null);
+            BufferedImage resized = Scalr.resize(containerImage, 250);
+            Path filePath = folderPath.resolve(fileName);
+            ImageIO.write(resized, "png", filePath.toFile());
             employee.setAvatar(fileName);
             employeeDispatcher.unsafeSave(employee);
             stompController.updateEmployee(employee);

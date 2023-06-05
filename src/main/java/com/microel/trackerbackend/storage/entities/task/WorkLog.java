@@ -4,20 +4,19 @@ import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
-import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.vladmihalcea.hibernate.type.json.JsonType;
 import lombok.*;
 import org.hibernate.annotations.*;
 
-import javax.persistence.*;
 import javax.persistence.CascadeType;
 import javax.persistence.Entity;
 import javax.persistence.Table;
+import javax.persistence.*;
 import java.sql.Timestamp;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Entity
 @NoArgsConstructor
@@ -33,7 +32,7 @@ public class WorkLog {
     private Long workLogId;
     @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     private Chat chat;
-    @OneToMany(mappedBy = "workLog")
+    @OneToMany(mappedBy = "workLog", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @JsonManagedReference
     @BatchSize(size = 25)
     private Set<WorkReport> workReports;
@@ -41,13 +40,17 @@ public class WorkLog {
     private Timestamp closed;
     @Column(columnDefinition = "boolean default false")
     private Boolean isForceClosed = false;
+    @Column(columnDefinition = "text default ''")
+    private String forceClosedReason;
+    @Column(columnDefinition = "text default ''")
+    private String targetDescription;
     @ManyToMany()
     @BatchSize(size = 25)
     private Set<Employee> employees;
     @Type(type = "json")
     @Column(columnDefinition = "jsonb")
     private Set<AcceptingEntry> acceptedEmployees;
-    @ManyToOne()
+    @ManyToOne(cascade = {CascadeType.MERGE, CascadeType.REFRESH})
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JoinColumn(name = "f_task_id")
     private Task task;
@@ -65,12 +68,102 @@ public class WorkLog {
     }
 
     public Set<AcceptingEntry> getAcceptedEmployees() {
-        if(acceptedEmployees == null) return acceptedEmployees = new HashSet<>();
+        if (acceptedEmployees == null) return acceptedEmployees = new HashSet<>();
         return acceptedEmployees;
+    }
+
+    /**
+     * Статус текущего журнала задач
+     *
+     * @return Текст описывающий текущее состояние журнала задачи
+     */
+    public Status getStatus() {
+        if (isForceClosed) {
+            return Status.FORCE_CLOSE;
+        } else if (workReports.size() != employees.size()) {
+            return Status.ACTIVE;
+        } else {
+            return Status.CLOSE;
+        }
+    }
+
+    /**
+     * Список сотрудников которые приняли задачу
+     *
+     * @return Список сотрудников
+     */
+    public Set<Employee> getWhoAccepted() {
+        return employees.stream().filter(e -> acceptedEmployees.stream().anyMatch(a -> a.getLogin().equals(e.getLogin()))).collect(Collectors.toSet());
+    }
+
+    /**
+     * Список сотрудников которые завершили задачу
+     *
+     * @return Список сотрудников
+     */
+    public Set<Employee> getWhoClosed() {
+        if(workReports == null || workReports.isEmpty()) return new HashSet<>();
+        return workReports.stream().map(WorkReport::getAuthor).collect(Collectors.toSet());
+    }
+
+    /**
+     * Общий отчет о выполненных работах или о причине завершения задачи
+     *
+     * @return Общий отчет
+     */
+    public String getReport() {
+        if (getStatus() == Status.FORCE_CLOSE || workReports == null || workReports.isEmpty()) {
+            if (forceClosedReason != null) {
+                return forceClosedReason;
+            }
+            return "";
+        }
+        return workReports.stream()
+                .map(workReport -> workReport.getAuthor().getFullName() + ": " + workReport.getDescription())
+                .collect(Collectors.joining("\n"));
+    }
+
+    /**
+     * Затраченное время на выполнение задачи
+     *
+     * @return Затраченное время в миллисекундах
+     */
+    public Long getLeadTime() {
+        if (getStatus() == Status.ACTIVE) return 0L;
+        return closed.getTime() - created.getTime();
+    }
+
+    /**
+     * Добавляет отчет в список отчетов
+     *
+     * @return Текущий журнал
+     */
+    public WorkLog addWorkReport(WorkReport workReport) {
+        if (workReports == null) workReports = new HashSet<>();
+        workReport.setWorkLog(this);
+        workReports.add(workReport);
+        return this;
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(getWorkLogId());
+    }
+
+    public enum Status {
+        ACTIVE("ACTIVE"), CLOSE("CLOSE"), FORCE_CLOSE("FORCE_CLOSE");
+
+        private final String status;
+
+        Status(String status) {
+            this.status = status;
+        }
+    }
+
+    @Getter
+    @Setter
+    public static class AssignBody{
+        private Set<Employee> installers;
+        private String description;
     }
 }

@@ -2,9 +2,11 @@ package com.microel.trackerbackend.storage.repositories;
 
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -13,4 +15,7 @@ public interface WorkLogRepository extends JpaRepository<WorkLog, Long>, JpaSpec
 
     Optional<WorkLog> findAllByTask_TaskIdAndClosedIsNull(Long taskId);
 
+    List<WorkLog> findAllByTask_TaskId(Long taskId, Sort created);
+
+    Optional<WorkLog> findFirstByEmployees_TelegramUserIdAndClosedIsNull(String telegramUserId);
 }

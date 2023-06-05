@@ -227,19 +227,19 @@ public class TaskDispatcher {
         return tasks.stream().map(Task::getTaskId).collect(Collectors.toList());
     }
 
-    public WorkLog assignInstallers(Long taskId, Set<Employee> installers, Employee creator) throws EntryNotFound, IllegalFields {
+    public WorkLog assignInstallers(Long taskId, WorkLog.AssignBody body, Employee creator) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
         WorkLog existed = workLogDispatcher.getActiveWorkLogByTask(task).orElse(null);
         if (existed != null) throw new IllegalFields("Задаче уже назначены другие монтажники");
-        WorkLog workLog = workLogDispatcher.createWorkLog(task, installers, creator);
+        WorkLog workLog = workLogDispatcher.createWorkLog(task, body, creator);
         task.setTaskStatus(TaskStatus.PROCESSING);
         task.setUpdated(Timestamp.from(Instant.now()));
         taskRepository.save(task);
         return workLog;
     }
 
-    public WorkLog forceCloseWorkLog(Long taskId, Employee employeeFromRequest) throws EntryNotFound {
+    public WorkLog forceCloseWorkLog(Long taskId, String reasonOfClosing, Employee employeeFromRequest) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
         WorkLog workLog = workLogDispatcher.getActiveWorkLogByTask(task).orElse(null);
@@ -249,6 +249,7 @@ public class TaskDispatcher {
         Timestamp timestamp = Timestamp.from(Instant.now());
 
         workLog.setIsForceClosed(true);
+        workLog.setForceClosedReason(reasonOfClosing);
         workLog.setClosed(timestamp);
         workLog.getChat().setClosed(timestamp);
         workLog.getTask().setTaskStatus(TaskStatus.ACTIVE);

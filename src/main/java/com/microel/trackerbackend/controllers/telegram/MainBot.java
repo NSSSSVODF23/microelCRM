@@ -10,9 +10,12 @@ import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class MainBot extends TelegramLongPollingBot {
@@ -55,27 +58,29 @@ public class MainBot extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
-        for (TelegramUpdateSubscribe subscribe : reactors.values()) {
+        List<TelegramReactorType> sortExample = List.of(TelegramReactorType.COMMAND, TelegramReactorType.PROMPT, TelegramReactorType.CALLBACK, TelegramReactorType.MESSAGE, TelegramReactorType.EDIT_MESSAGE);
+        List<TelegramUpdateSubscribe> subscriptions = reactors.values().stream().sorted(Comparator.comparing(o -> sortExample.indexOf(o.getReactor().getType()))).toList();
+        for (TelegramUpdateSubscribe subscribe : subscriptions) {
             boolean isHandled = false;
             try {
                 TelegramUpdateReactor reactor = subscribe.getReactor();
                 switch (reactor.getType()) {
-                    case COMMAND:
+                    case COMMAND -> {
                         TelegramCommandReactor cmdReactor = (TelegramCommandReactor) reactor;
                         if (update.hasMessage() && update.getMessage().isCommand()) {
                             if (!cmdReactor.getTargetCommand().equals(update.getMessage().getText())) continue;
                             if ((isHandled = cmdReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
-                        break;
-                    case PROMPT:
+                    }
+                    case PROMPT -> {
                         TelegramPromptReactor promptReactor = (TelegramPromptReactor) reactor;
                         if (update.hasMessage() && !update.getMessage().isCommand() && promptReactor.getTargetPrompt().equals(update.getMessage().getText())) {
                             if ((isHandled = promptReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
-                        break;
-                    case CALLBACK:
+                    }
+                    case CALLBACK -> {
                         TelegramCallbackReactor callbackReactor = (TelegramCallbackReactor) reactor;
                         if (update.hasCallbackQuery()) {
                             if (callbackReactor.getPrefix() != null) {
@@ -93,21 +98,21 @@ public class MainBot extends TelegramLongPollingBot {
                                     subscribe.unsubscribe();
                             }
                         }
-                        break;
-                    case MESSAGE:
+                    }
+                    case MESSAGE -> {
                         TelegramMessageReactor messageReactor = (TelegramMessageReactor) reactor;
                         if (update.hasMessage() && !update.getMessage().isCommand()) {
                             if ((isHandled = messageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
-                        break;
-                    case EDIT_MESSAGE:
+                    }
+                    case EDIT_MESSAGE -> {
                         TelegramEditMessageReactor editMessageReactor = (TelegramEditMessageReactor) reactor;
                         if (update.hasEditedMessage()) {
                             if ((isHandled = editMessageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
-                        break;
+                    }
                 }
                 if (isHandled)
                     break;
