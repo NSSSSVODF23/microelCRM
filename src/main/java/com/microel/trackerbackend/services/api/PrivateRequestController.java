@@ -924,6 +924,7 @@ public class PrivateRequestController {
             WorkLog workLog = taskDispatcher.assignInstallers(taskId, body, employeeFromRequest);
             telegramController.assignInstallers(workLog, employeeFromRequest);
             stompController.updateTask(workLog.getTask());
+            stompController.createWorkLog(workLog);
             stompController.createChat(ChatMapper.toDto(workLog.getChat()));
             Set<Employee> observers = workLog.getTask().getAllEmployeesObservers(employeeFromRequest);
             notificationDispatcher.createNotification(observers, Notification.taskProcessed(workLog));
@@ -967,6 +968,27 @@ public class PrivateRequestController {
     @GetMapping("task/{taskId}/work-logs")
     public ResponseEntity<List<WorkLog>> getWorkLogs(@PathVariable Long taskId){
         return ResponseEntity.ok(workLogDispatcher.getAllByTaskId(taskId));
+    }
+
+    // Получить список активных журналов работ
+    @GetMapping("work-logs/active")
+    public ResponseEntity<List<WorkLog>> getActiveWorkLogs(){
+        return ResponseEntity.ok(workLogDispatcher.getActive());
+    }
+
+    // Получить количество активных журналов работ
+    @GetMapping("work-logs/active/count")
+    public ResponseEntity<Long> getActiveWorkLogsCount(){
+        return ResponseEntity.ok(workLogDispatcher.getActiveCount());
+    }
+
+    @GetMapping("task/{taskId}/work-log/active")
+    public ResponseEntity<WorkLog> getActiveWorkLog(@PathVariable Long taskId){
+        try {
+            return ResponseEntity.ok(workLogDispatcher.getActiveByTaskId(taskId));
+        } catch (EntryNotFound e) {
+            return ResponseEntity.ok(null);
+        }
     }
 
     // Закрывает задачу

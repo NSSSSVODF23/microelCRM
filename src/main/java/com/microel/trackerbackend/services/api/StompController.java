@@ -60,6 +60,10 @@ public class StompController {
         sendAll(workLog, "worklog", "update");
     }
 
+    public void closeWorkLog(WorkLog workLog) {
+        sendAll(workLog, "worklog", "close");
+    }
+
     public void deleteWorkLog(WorkLog workLog) {
         sendAll(workLog, "worklog", workLog.getWorkLogId().toString(), "delete");
         sendAll(workLog, "worklog", "delete");

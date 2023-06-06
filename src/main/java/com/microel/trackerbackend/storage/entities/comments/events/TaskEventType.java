@@ -20,7 +20,8 @@ public enum TaskEventType {
     CLEAR_ACTUAL_TO_TASK("CLEAR_ACTUAL_TO_TASK"),
     CLOSE_TASK("CLOSE_TASK"),
     REOPEN_TASK("REOPEN_TASK"),
-    EDIT_FIELDS("EDIT_FIELDS");
+    EDIT_FIELDS("EDIT_FIELDS"),
+    REPORT_CREATED("REPORT_CREATED");
 
     private final String type;
 

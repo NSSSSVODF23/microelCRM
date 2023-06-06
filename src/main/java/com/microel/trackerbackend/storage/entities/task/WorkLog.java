@@ -80,10 +80,10 @@ public class WorkLog {
     public Status getStatus() {
         if (isForceClosed) {
             return Status.FORCE_CLOSE;
-        } else if (workReports.size() != employees.size()) {
-            return Status.ACTIVE;
-        } else {
+        }else if(closed != null) {
             return Status.CLOSE;
+        } else {
+            return Status.ACTIVE;
         }
     }
 
@@ -104,6 +104,14 @@ public class WorkLog {
     public Set<Employee> getWhoClosed() {
         if(workReports == null || workReports.isEmpty()) return new HashSet<>();
         return workReports.stream().map(WorkReport::getAuthor).collect(Collectors.toSet());
+    }
+
+    /** Список сотрудников кто принял задачу и ещё не закрыл её (активные)
+     *
+     * @return Список сотрудников
+     */
+    public Set<Employee> getWhoActive() {
+        return getWhoAccepted().stream().filter(employee -> !getWhoClosed().contains(employee)).collect(Collectors.toSet());
     }
 
     /**

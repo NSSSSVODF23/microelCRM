@@ -176,7 +176,8 @@ public class TelegramController {
             broadcastUpdatesToWeb(systemMessage);
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
             messageFactory.currentActiveTask(workLog.getTask()).execute();
-            if(workLog.getTargetDescription() != null && !workLog.getTargetDescription().isBlank()) messageFactory.simpleMessage("Текущая цель:\n" + workLog.getTargetDescription()).execute();
+            if (workLog.getTargetDescription() != null && !workLog.getTargetDescription().isBlank())
+                messageFactory.simpleMessage("Текущая цель:\n" + workLog.getTargetDescription()).execute();
             return true;
         }));
 
@@ -196,10 +197,12 @@ public class TelegramController {
             }
             try {
                 List<Message> messageList = chatsInTaskCloseMode.get(chatId);
-                workLogDispatcher.createReport(chatId, messageList);
+                WorkLog workLog = workLogDispatcher.createReport(chatId, messageList);
                 chatsInTaskCloseMode.remove(chatId);
                 factory.deleteMessage(messageId).execute();
                 factory.simpleMessage("Отчет успешно отправлен").execute();
+                Employee employee = employeeDispatcher.getByTelegramId(chatId).orElseThrow(() -> new EntryNotFound("Сотрудник не найден"));
+                sendTextBroadcastMessage(workLog.getChat(), ChatMessage.of("Написал отчет и отключился от чата задачи.", employee));
                 return sendWorkLogQueue(chatId);
             } catch (EntryNotFound | IllegalFields e) {
                 factory.deleteMessage(messageId).execute();
@@ -256,6 +259,19 @@ public class TelegramController {
         }));
 
         mainBot.subscribe(new TelegramEditMessageReactor(update -> {
+            Long chatId = update.getEditedMessage().getChatId();
+            if (chatsInTaskCloseMode.containsKey(chatId)) {
+                    Message updateMessage = update.getEditedMessage();
+                    chatsInTaskCloseMode.put(chatId,
+                            chatsInTaskCloseMode.get(chatId).stream().map(message -> {
+                                if (Objects.equals(message.getMessageId(), updateMessage.getMessageId())) {
+                                    return updateMessage;
+                                }
+                                return message;
+                            }).collect(Collectors.toList())
+                    );
+                return true;
+            }
             Message editedMessage = update.getEditedMessage();
             updateMessageFromTlgChat(editedMessage);
             return true;
@@ -447,7 +463,7 @@ public class TelegramController {
         // Находим целевой чат
         Chat chat = chatDispatcher.getChat(chatId);
 
-        if(chat.getClosed()!=null){
+        if (chat.getClosed() != null) {
             throw new IllegalFields("Не возможно отправить сообщение в закрытый чат");
         }
 

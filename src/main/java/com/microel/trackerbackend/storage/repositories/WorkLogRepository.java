@@ -8,7 +8,6 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 public interface WorkLogRepository extends JpaRepository<WorkLog, Long>, JpaSpecificationExecutor<WorkLog> {
     Optional<WorkLog> findAllByTaskAndClosedIsNull(Task task);
@@ -18,4 +17,12 @@ public interface WorkLogRepository extends JpaRepository<WorkLog, Long>, JpaSpec
     List<WorkLog> findAllByTask_TaskId(Long taskId, Sort created);
 
     Optional<WorkLog> findFirstByEmployees_TelegramUserIdAndClosedIsNull(String telegramUserId);
+
+    List<WorkLog> findAllByClosedIsNull(Sort sort);
+
+    List<WorkLog> findAllByClosedIsNullAndAcceptedEmployeesIsNotNull(Sort sort);
+
+    Long countByClosedIsNull(Sort created);
+
+    Optional<WorkLog> findFirstByTask_TaskIdAndClosedIsNull(Long taskId);
 }

@@ -5,6 +5,7 @@ import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.mapper.WorkLogMapper;
 import com.microel.trackerbackend.storage.dto.task.WorkLogDto;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
+import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskStatus;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
@@ -32,11 +33,13 @@ import java.util.stream.Stream;
 public class WorkLogDispatcher {
     private final WorkLogRepository workLogRepository;
     private final EmployeeDispatcher employeeDispatcher;
+    private final TaskEventDispatcher taskEventDispatcher;
     private final StompController stompController;
 
-    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher, StompController stompController) {
+    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher, TaskEventDispatcher taskEventDispatcher, StompController stompController) {
         this.workLogRepository = workLogRepository;
         this.employeeDispatcher = employeeDispatcher;
+        this.taskEventDispatcher = taskEventDispatcher;
         this.stompController = stompController;
     }
 
@@ -75,6 +78,8 @@ public class WorkLogDispatcher {
                 .targetDescription(assignBody.getDescription())
                 .employees(assignBody.getInstallers())
                 .creator(creator)
+                .workReports(new HashSet<>())
+                .acceptedEmployees(new HashSet<>())
                 .build();
 
         return workLogRepository.save(workLog);
@@ -162,7 +167,7 @@ public class WorkLogDispatcher {
         return workLogRepository.findAllByTask_TaskId(taskId, Sort.by(Sort.Direction.DESC, "created"));
     }
 
-    public void createReport(Long chatId, List<Message> messageList) throws EntryNotFound, IllegalFields {
+    public WorkLog createReport(Long chatId, List<Message> messageList) throws EntryNotFound, IllegalFields {
         Employee employee = employeeDispatcher.getByTelegramId(chatId).orElseThrow(() -> new EntryNotFound("Сотрудник не найден"));
         WorkLog workLog = workLogRepository.findFirstByEmployees_TelegramUserIdAndClosedIsNull(chatId.toString()).orElseThrow(() -> new EntryNotFound("Не найдено активной задачи"));
         if (workLog.getAcceptedEmployees().stream().noneMatch(acceptingEntry -> acceptingEntry.getTelegramUserId().equals(chatId.toString())))
@@ -184,16 +189,34 @@ public class WorkLogDispatcher {
 
         WorkReport workReport = WorkReport.builder().description(text.toString()).created(timestamp).author(employee).build();
         workLog.addWorkReport(workReport);
-        workLog.getChat().getMembers().removeIf(member->member.getLogin().equals(employee.getLogin()));
+        workLog.getChat().getMembers().removeIf(member -> member.getLogin().equals(employee.getLogin()));
+        stompController.updateWorkLog(workLog);
+        stompController.updateChat(workLog.getChat());
+        stompController.createTaskEvent(workLog.getTask().getTaskId(),
+                taskEventDispatcher.appendEvent(TaskEvent.reportCreated(workLog.getTask(), text.toString(), employee)));
         if (workLog.getWorkReports().size() == workLog.getEmployees().size()) {
             workLog.setClosed(timestamp);
             workLog.getTask().setTaskStatus(TaskStatus.ACTIVE);
             workLog.getTask().setUpdated(timestamp);
             workLog.getChat().setClosed(timestamp);
+            stompController.updateTask(workLog.getTask());
+            stompController.closeChat(workLog.getChat());
+            stompController.closeWorkLog(workLog);
+            stompController.createTaskEvent(workLog.getTask().getTaskId(),
+                    taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
         }
-        workLogRepository.save(workLog);
-        stompController.updateWorkLog(workLog);
-        stompController.updateChat(workLog.getChat());
-        stompController.updateTask(workLog.getTask());
+        return workLogRepository.save(workLog);
+    }
+
+    public List<WorkLog> getActive() {
+        return workLogRepository.findAllByClosedIsNull(Sort.by(Sort.Direction.DESC, "created"));
+    }
+
+    public Long getActiveCount() {
+        return workLogRepository.countByClosedIsNull(Sort.by(Sort.Direction.DESC, "created"));
+    }
+
+    public WorkLog getActiveByTaskId(Long taskId) throws EntryNotFound {
+        return workLogRepository.findFirstByTask_TaskIdAndClosedIsNull(taskId).orElseThrow(() -> new EntryNotFound("Не найденно активного журнала работ"));
     }
 }

@@ -165,4 +165,9 @@ public class TaskEvent implements TaskJournalItem {
         TaskEvent event = new TaskEvent(task, TaskEventType.EDIT_FIELDS, employee, "");
         return event;
     }
+
+    public static TaskEvent reportCreated(Task task, String report, Employee employee) {
+        TaskEvent event = new TaskEvent(task, TaskEventType.REPORT_CREATED, employee, report);
+        return event;
+    }
 }
