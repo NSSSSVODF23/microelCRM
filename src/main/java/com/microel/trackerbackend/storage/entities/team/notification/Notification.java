@@ -3,6 +3,7 @@ package com.microel.trackerbackend.storage.entities.team.notification;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
+import com.microel.trackerbackend.storage.entities.task.WorkReport;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import lombok.*;
 import org.hibernate.annotations.OnDelete;
@@ -63,9 +64,10 @@ public class Notification {
 
     @AllArgsConstructor
     public static class Factory {
-        private NotificationType type;
-        private String message;
 
+        private NotificationType type;
+
+        private String message;
         public Notification getInstace(Employee recipient){
             return Notification.builder()
                     .type(type)
@@ -76,8 +78,8 @@ public class Notification {
                     .employee(recipient)
                     .build();
         }
-    }
 
+    }
     public static Factory taskCreated(Task task){
         StringBuilder message =  new StringBuilder();
 
@@ -87,6 +89,41 @@ public class Notification {
                 .append(task.getCreator().getLogin());
 
         return new Factory(NotificationType.TASK_CREATED,  message.toString());
+    }
+    public static Factory taskHasBecomeActual(Task task) {
+        StringBuilder message =  new StringBuilder();
+
+        message.append("Задача #")
+                .append(task.getTaskId())
+                .append(" стала актуальной.");
+
+        return new Factory(NotificationType.TASK_HAS_BECOME_ACTUAL, message.toString());
+    }
+
+    public static Factory taskExpired(Task task) {
+        StringBuilder message =  new StringBuilder();
+
+        message.append("Задача #")
+                .append(task.getTaskId())
+                .append(" срок истек.");
+
+        return new Factory(NotificationType.TASK_EXPIRED, message.toString());
+    }
+
+    public static Factory reportReceived(WorkLog log, WorkReport report) {
+        StringBuilder message =  new StringBuilder();
+
+        message.append("Получен отчет о выполненых работах пользователем @")
+                .append(report.getAuthor().getLogin())
+                .append(" по задаче #").append(log.getTask().getTaskId());
+        return new Factory(NotificationType.REPORT_RECEIVED, message.toString());
+    }
+
+    public static Factory worksCompleted(WorkLog log) {
+        StringBuilder message =  new StringBuilder();
+
+        message.append("Работы по задаче #").append(log.getTask().getTaskId()).append(" завершены.");
+        return new Factory(NotificationType.WORKS_COMPLETED, message.toString());
     }
 
     public static Factory taskEdited(Task task, Employee editor){
@@ -186,6 +223,13 @@ public class Notification {
                 .append(commentMessage);
 
         return new Factory(NotificationType.NEW_COMMENT, messageBuilder.toString());
+    }
+
+    public static Factory mentionedInTask(Task parent) {
+        StringBuilder message =  new StringBuilder();
+        message.append("Вас упомянули в задаче #");
+        message.append(parent.getTaskId());
+        return new Factory(NotificationType.MENTIONED_IN_TASK, message.toString());
     }
 
 }

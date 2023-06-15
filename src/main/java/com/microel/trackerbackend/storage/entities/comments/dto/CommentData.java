@@ -13,5 +13,5 @@ public class CommentData {
     private Long taskId;
     private String text;
     private List<FileData> files;
-    private Comment replyComment;
+    private Long replyComment;
 }

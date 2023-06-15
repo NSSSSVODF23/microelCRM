@@ -24,6 +24,7 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.exceptions.*;
 import lombok.extern.slf4j.Slf4j;
+import org.aspectj.weaver.ast.Not;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -416,7 +417,7 @@ public class TelegramController {
             log.warn("Попытка отправить уведомление при не инициализированном TelegramApi");
             return;
         }
-        if (employee.getTelegramUserId() == null || notification.getMessage() == null) return;
+        if (employee.getTelegramUserId() == null || employee.getTelegramUserId().isBlank() || notification.getMessage() == null) return;
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(employee.getTelegramUserId())
                 .parseMode("HTML")

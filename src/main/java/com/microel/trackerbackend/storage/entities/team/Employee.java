@@ -11,6 +11,7 @@ import org.hibernate.annotations.OnDeleteAction;
 
 import javax.persistence.*;
 import java.sql.Timestamp;
+import java.util.List;
 import java.util.Objects;
 
 @Entity
@@ -59,6 +60,7 @@ public class Employee implements Observer{
                 .deleted(false)
                 .build();
     }
+
 
     public String getFullName(){
         if(firstName != null && lastName != null)

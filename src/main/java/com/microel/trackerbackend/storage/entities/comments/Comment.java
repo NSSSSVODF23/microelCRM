@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.entities.comments;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import lombok.*;
@@ -10,7 +11,10 @@ import org.hibernate.annotations.OnDeleteAction;
 
 import javax.persistence.*;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Entity
 @Getter
@@ -39,8 +43,32 @@ public class Comment implements TaskJournalItem {
     private Comment replyComment;
     private Boolean edited;
     private Boolean deleted;
-    @ManyToOne
+    @ManyToOne(cascade = {CascadeType.MERGE})
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JsonBackReference
     private Task parent;
+
+    /**
+     * Отчищает сообщение от форматирования и оставляет просто текст
+     * @return Сообщение без форматирования
+     */
+    public String getSimpleText() {
+        return message.replaceAll("</p>", "\n").replaceAll("<.*?>", "");
+    }
+
+    /**
+     * Парсит текст сообщения и получает всех сотрудников упомянутых в нем
+     * @return Список сотрудников
+     */
+    @JsonIgnore
+    public List<String> getReferredLogins() {
+        // Получить из сообщения все вхождения @employee
+        List<String> logins = new ArrayList<>();
+        Pattern pattern = Pattern.compile("@([^ ]+)");
+        Matcher matcher = pattern.matcher(message);
+        while (matcher.find()) {
+            logins.add(matcher.group(1));
+        }
+        return logins;
+    }
 }

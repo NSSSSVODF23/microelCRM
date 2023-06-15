@@ -10,6 +10,7 @@ public class FieldItem {
     String name;
     WireframeFieldType type;
     String id;
+    String variation;
     Integer listViewIndex;
     Integer orderPosition;
 }

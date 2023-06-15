@@ -57,6 +57,7 @@ public class TaskMapper {
                 .tags(task.getTags() == null ? new HashSet<>() : task.getTags().stream().map(TaskTagMapper::toDto).collect(Collectors.toSet()))
                 .taskStatus(task.getTaskStatus())
                 .listItemFields(task.getListItemFields())
+                .lastComment(CommentMapper.toDto(task.getLastComment()))
                 .build();
     }
 

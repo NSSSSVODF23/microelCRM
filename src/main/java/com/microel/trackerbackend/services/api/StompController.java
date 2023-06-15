@@ -39,6 +39,9 @@ public class StompController {
 
     public void createTask(Task task) {
         sendAll(task, "task", "create");
+        for(Employee employee : task.getAllEmployeesObservers()) {
+            sendToUser(employee.getLogin(), task, "task", "create");
+        }
     }
 
     public void updateTask(Task task) {

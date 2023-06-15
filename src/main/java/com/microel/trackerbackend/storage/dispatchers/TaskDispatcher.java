@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.modules.transport.IDuration;
+import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.OffsetPageable;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
@@ -10,6 +11,7 @@ import com.microel.trackerbackend.storage.entities.task.TaskStatus;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
 import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.entities.team.util.Department;
 import com.microel.trackerbackend.storage.entities.templating.DefaultObserver;
 import com.microel.trackerbackend.storage.entities.templating.TaskStage;
@@ -20,16 +22,22 @@ import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.TaskRepository;
 import com.microel.trackerbackend.storage.repositories.TaskStageRepository;
+import lombok.Getter;
+import lombok.Setter;
 import org.javatuples.Triplet;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.util.Pair;
 import org.springframework.lang.Nullable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import javax.persistence.criteria.*;
+import java.lang.reflect.Field;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
@@ -38,6 +46,7 @@ import java.util.stream.Stream;
 
 
 @Component
+@Transactional
 public class TaskDispatcher {
     private final TaskRepository taskRepository;
     private final ModelItemDispatcher modelItemDispatcher;
@@ -48,8 +57,10 @@ public class TaskDispatcher {
     private final EmployeeDispatcher employeeDispatcher;
     private final WorkLogDispatcher workLogDispatcher;
     private final TaskTagDispatcher taskTagDispatcher;
+    private final NotificationDispatcher notificationDispatcher;
+    private final StompController stompController;
 
-    public TaskDispatcher(TaskRepository taskRepository, ModelItemDispatcher modelItemDispatcher, WireframeDispatcher wireframeDispatcher, CommentDispatcher commentDispatcher, TaskStageRepository taskStageRepository, DepartmentDispatcher departmentDispatcher, EmployeeDispatcher employeeDispatcher, WorkLogDispatcher workLogDispatcher, TaskTagDispatcher taskTagDispatcher, AddressDispatcher addressDispatcher) {
+    public TaskDispatcher(TaskRepository taskRepository, ModelItemDispatcher modelItemDispatcher, WireframeDispatcher wireframeDispatcher, CommentDispatcher commentDispatcher, TaskStageRepository taskStageRepository, DepartmentDispatcher departmentDispatcher, EmployeeDispatcher employeeDispatcher, WorkLogDispatcher workLogDispatcher, TaskTagDispatcher taskTagDispatcher, AddressDispatcher addressDispatcher, @Lazy NotificationDispatcher notificationDispatcher, StompController stompController) {
         this.taskRepository = taskRepository;
         this.modelItemDispatcher = modelItemDispatcher;
         this.wireframeDispatcher = wireframeDispatcher;
@@ -59,6 +70,37 @@ public class TaskDispatcher {
         this.employeeDispatcher = employeeDispatcher;
         this.workLogDispatcher = workLogDispatcher;
         this.taskTagDispatcher = taskTagDispatcher;
+        this.notificationDispatcher = notificationDispatcher;
+        this.stompController = stompController;
+    }
+
+    @Scheduled(cron = "0 * * ? * *")
+    public void processingScheduledTasks(){
+        long currentMillis = Instant.now().toEpochMilli();
+        long extraSeconds = currentMillis % 60000;
+        long delta = currentMillis - extraSeconds;
+        Timestamp endOfMinute = Timestamp.from(Instant.ofEpochMilli(delta + 60000L));
+
+        List<Task> tasks = taskRepository.findAll((root, query, cb)->{
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.or(cb.lessThan(root.get("actualFrom"), endOfMinute), cb.lessThan(root.get("actualTo"), endOfMinute)));
+            predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
+            predicates.add(cb.equal(root.get("deleted"), false));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }, Sort.by(Sort.Direction.DESC, "actualFrom", "actualTo"));
+
+        for(Task task : tasks){
+            Set<Employee> recipient = task.getAllEmployeesObservers();
+            if(task.getActualFrom() != null){
+                notificationDispatcher.createNotification(recipient, Notification.taskHasBecomeActual(task));
+                task.setActualFrom(null);
+                stompController.updateTask(taskRepository.save(task));
+            }else if(task.getActualTo() != null){
+                notificationDispatcher.createNotification(recipient, Notification.taskExpired(task));
+                task.setActualTo(null);
+                stompController.updateTask(taskRepository.save(task));
+            }
+        }
     }
 
     public Task createTask(Task.CreationBody body, Employee employee) throws IllegalFields, EntryNotFound {
@@ -138,7 +180,6 @@ public class TaskDispatcher {
                 predicates.add(root.join("modelWireframe").get("wireframeId").in(template));
             if (filters != null && !filters.isEmpty())
                 predicates.add(root.get("taskId").in(modelItemDispatcher.getTaskIdsByFilters(filters)));
-
             if (commonFilteringString != null && !commonFilteringString.isBlank()) {
                 CriteriaBuilder.In<Long> inCauseTaskId = cb.in(root.get("taskId"));
                 modelItemDispatcher.getTaskIdsByGlobalSearch(commonFilteringString).forEach(inCauseTaskId::value);
@@ -180,6 +221,10 @@ public class TaskDispatcher {
 
     public Task unsafeSave(TaskDto task) {
         return taskRepository.save(TaskMapper.fromDto(task));
+    }
+
+    public Task unsafeSave(Task task) {
+        return taskRepository.save(task);
     }
 
     public Task deleteTask(Long id) throws EntryNotFound {
@@ -520,6 +565,24 @@ public class TaskDispatcher {
         });
     }
 
+    public Long getIncomingTasksCount(Employee employee, Long wireframeId) {
+        return taskRepository.count((root, query, cb) -> {
+            ArrayList<Predicate> predicates = new ArrayList<>();
+
+            Join<Task, Department> joinDep = root.join("departmentsObservers", JoinType.LEFT);
+            Join<Task, Employee> joinEmp = root.join("employeesObservers", JoinType.LEFT);
+            Join<Task, Wireframe> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
+
+            predicates.add(cb.or(joinEmp.in(employee), joinDep.join("employees", JoinType.LEFT).in(employee)));
+            predicates.add(cb.equal(joinWfrm.get("wireframeId"), wireframeId));
+            predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
+            predicates.add(cb.equal(root.get("deleted"), false));
+            query.distinct(true);
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        });
+    }
+
     public List<Task> getScheduledTasks(Employee whose, Timestamp start, Timestamp end) {
         return taskRepository.findAll((root, query, cb) -> {
             ArrayList<Predicate> predicates = new ArrayList<>();
@@ -556,5 +619,50 @@ public class TaskDispatcher {
 
     public Long getCountByWireframe(Wireframe wireframe) {
         return taskRepository.countByModelWireframe(wireframe);
+    }
+
+    public Long getTasksCount(Long wireframeId) {
+        return taskRepository.countByModelWireframe_WireframeIdAndTaskStatusNot(wireframeId, TaskStatus.CLOSE);
+    }
+
+    @Getter
+    @Setter
+    public static class FiltrationConditions{
+        @Nullable
+        private List<TaskStatus> status;
+        @Nullable
+        private Set<Long> template;
+        @Nullable
+        private String templateFilter;
+        @Nullable
+        private String searchPhrase;
+        @Nullable
+        private String author;
+        @Nullable
+        private DateRange dateOfCreation;
+        @Nullable
+        private Set<Long> exclusionIds;
+        @Nullable
+        private Set<Long> tags;
+        @Nullable
+        private Boolean onlyMy;
+
+        public void clean() {
+            Field[] fields = this.getClass().getDeclaredFields();
+            for(Field f : fields){
+                try{
+                    Class t = f.getType();
+                    Object v = f.get(this);
+                    if (t == String.class && v != null){
+                        String target = (String) v;
+                        if(target.isBlank() || target.equals("[]") || target.equals("null") || target.equals("undefined")){
+                            f.set(this, null);
+                        }
+                    }
+                }catch (IllegalAccessException ignore){
+
+                }
+            }
+        }
     }
 }

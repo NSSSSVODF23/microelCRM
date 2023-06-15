@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.repositories;
 
 import com.microel.trackerbackend.storage.entities.task.Task;
+import com.microel.trackerbackend.storage.entities.task.TaskStatus;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -17,4 +18,6 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
     Set<Task> getTasksTest();
 
     Long countByModelWireframe(Wireframe wireframe);
+
+    Long countByModelWireframe_WireframeIdAndTaskStatusNot(Long wireframeId, TaskStatus close);
 }

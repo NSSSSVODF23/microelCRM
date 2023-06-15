@@ -24,6 +24,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Component
@@ -46,6 +47,11 @@ public class CommentDispatcher {
     public Comment create(CommentData data, Employee currentUser) throws EmptyFile, WriteError, EntryNotFound {
         Task targetTask = taskDispatcher.getTask(data.getTaskId());
 
+        Comment replyComment = null;
+        if(data.getReplyComment()!=null) {
+            replyComment = commentRepository.findById(data.getReplyComment()).orElse(null);
+        }
+
         List<Attachment> attachments = new ArrayList<>();
 
         if (data.getFiles().size() > 0) {
@@ -59,13 +65,15 @@ public class CommentDispatcher {
                         .created(Timestamp.from(Instant.now()))
                         .creator(currentUser)
                         .message(data.getText())
-                        .replyComment(data.getReplyComment())
+                        .replyComment(replyComment)
                         .attachments(attachments)
                         .parent(targetTask)
                         .build()
         );
 
         targetTask.setLastComment(comment);
+
+        taskDispatcher.unsafeSave(targetTask);
 
         return comment;
     }

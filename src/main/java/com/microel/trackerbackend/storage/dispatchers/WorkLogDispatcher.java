@@ -12,10 +12,12 @@ import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.WorkReport;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.exceptions.AlreadyClosed;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.WorkLogRepository;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,12 +37,14 @@ public class WorkLogDispatcher {
     private final EmployeeDispatcher employeeDispatcher;
     private final TaskEventDispatcher taskEventDispatcher;
     private final StompController stompController;
+    private final NotificationDispatcher notificationDispatcher;
 
-    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher, TaskEventDispatcher taskEventDispatcher, StompController stompController) {
+    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher, TaskEventDispatcher taskEventDispatcher, StompController stompController, @Lazy NotificationDispatcher notificationDispatcher) {
         this.workLogRepository = workLogRepository;
         this.employeeDispatcher = employeeDispatcher;
         this.taskEventDispatcher = taskEventDispatcher;
         this.stompController = stompController;
+        this.notificationDispatcher = notificationDispatcher;
     }
 
     public WorkLog createWorkLog(Task task, WorkLog.AssignBody assignBody, Employee creator) throws EntryNotFound, IllegalFields {
@@ -169,7 +173,7 @@ public class WorkLogDispatcher {
 
     public WorkLog createReport(Long chatId, List<Message> messageList) throws EntryNotFound, IllegalFields {
         Employee employee = employeeDispatcher.getByTelegramId(chatId).orElseThrow(() -> new EntryNotFound("Сотрудник не найден"));
-        WorkLog workLog = workLogRepository.findFirstByEmployees_TelegramUserIdAndClosedIsNull(chatId.toString()).orElseThrow(() -> new EntryNotFound("Не найдено активной задачи"));
+        WorkLog workLog = WorkLogMapper.fromDto(getAcceptedByTelegramId(chatId));
         if (workLog.getAcceptedEmployees().stream().noneMatch(acceptingEntry -> acceptingEntry.getTelegramUserId().equals(chatId.toString())))
             throw new IllegalFields("Невозможно закрыть не активную задачу");
         if (workLog.getWorkReports().stream().anyMatch(workReport -> workReport.getAuthor().equals(employee)))
@@ -194,6 +198,7 @@ public class WorkLogDispatcher {
         stompController.updateChat(workLog.getChat());
         stompController.createTaskEvent(workLog.getTask().getTaskId(),
                 taskEventDispatcher.appendEvent(TaskEvent.reportCreated(workLog.getTask(), text.toString(), employee)));
+        notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.reportReceived(workLog, workReport));
         if (workLog.getWorkReports().size() == workLog.getEmployees().size()) {
             workLog.setClosed(timestamp);
             workLog.getTask().setTaskStatus(TaskStatus.ACTIVE);
@@ -204,6 +209,7 @@ public class WorkLogDispatcher {
             stompController.closeWorkLog(workLog);
             stompController.createTaskEvent(workLog.getTask().getTaskId(),
                     taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
+            notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.worksCompleted(workLog));
         }
         return workLogRepository.save(workLog);
     }

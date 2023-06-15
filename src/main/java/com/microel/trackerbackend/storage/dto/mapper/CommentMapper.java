@@ -20,6 +20,7 @@ public class CommentMapper {
                 .replyComment(CommentMapper.toDto(comment.getReplyComment()))
                 .deleted(comment.getDeleted())
                 .edited(comment.getEdited())
+                .simpleText(comment.getSimpleText())
                 .build();
     }
 

@@ -320,40 +320,35 @@ public class PrivateRequestController {
     }
 
     // Получение страницу с задачами используя фильтрацию
-    @GetMapping("tasks")
-    public ResponseEntity<Page<TaskDto>> getTasks(@RequestParam Integer page, @RequestParam Integer limit,
-                                                  @RequestParam @Nullable List<TaskStatus> status, @RequestParam @Nullable Set<Long> template,
-                                                  @RequestParam @Nullable String templateFilter, @RequestParam @Nullable String globalContext,
-                                                  @RequestParam @Nullable String author, @RequestParam @Nullable String dateOfCreation,
-                                                  @RequestParam @Nullable Set<Long> exclusionIds, @RequestParam @Nullable Set<Long> tags,
-                                                  @RequestParam @Nullable Boolean onlyMy, HttpServletRequest request) {
+    @GetMapping("tasks/{page}")
+    public ResponseEntity<Page<TaskDto>> getTasks(@PathVariable Integer page,@Nullable TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
+        if(condition == null){
+            return ResponseEntity.ok(taskDispatcher.getTasks(page, 25, null, null, null,
+                            null, null, null, null, null, null).map(TaskMapper::toListObject));
+        }
+        condition.clean();
         List<FilterModelItem> filtersList = null;
         try {
-            filtersList = new ObjectMapper().readValue(templateFilter, new TypeReference<>() {
-            });
-            filtersList = filtersList.stream().filter(filter -> filter.getValue() != null).collect(Collectors.toList());
+            if(condition.getTemplateFilter() !=null){
+                ObjectMapper om = new ObjectMapper();
+                filtersList = om.readValue(condition.getTemplateFilter(), new TypeReference<>() {});
+                filtersList = filtersList.stream().filter(filter -> filter.getValue() != null).collect(Collectors.toList());
+            }
         } catch (JsonProcessingException e) {
             throw new ResponseException(e.getMessage());
         } catch (IllegalArgumentException ignore) {
         }
 
-        DateRange creationRange = null;
-        try {
-            creationRange = DateRange.from(dateOfCreation);
-        } catch (DateRangeReadException e) {
-            throw new ResponseException("Не удалось прочитать диапазон времени");
-        }
-
         Instant startDBRequest = Instant.now();
 
         Page<Task> tasks = null;
-        if (onlyMy != null && onlyMy) {
-            tasks = taskDispatcher.getTasks(page, limit, null, template, filtersList,
-                    globalContext, author, creationRange, tags, exclusionIds, employee);
+        if (condition.getOnlyMy() != null && condition.getOnlyMy()) {
+            tasks = taskDispatcher.getTasks(page, 25, null, condition.getTemplate(), filtersList,
+                    condition.getSearchPhrase(), condition.getAuthor(), condition.getDateOfCreation(), condition.getTags(), condition.getExclusionIds(), employee);
         } else {
-            tasks = taskDispatcher.getTasks(page, limit, status, template, filtersList,
-                    globalContext, author, creationRange, tags, exclusionIds, null);
+            tasks = taskDispatcher.getTasks(page, 25, condition.getStatus(), condition.getTemplate(), filtersList,
+                    condition.getSearchPhrase(), condition.getAuthor(), condition.getDateOfCreation(), condition.getTags(), condition.getExclusionIds(), null);
         }
 
         Instant endDBRequest = Instant.now();
@@ -372,11 +367,25 @@ public class PrivateRequestController {
         return ResponseEntity.ok(taskDispatcher.getIncomingTasks(page, limit, employee, template));
     }
 
-    // Получает страницу с задачами принадлежащими текущему наблюдателю
+    // Получает количество задач принадлежащих текущему наблюдателю
     @GetMapping("tasks/incoming/count")
-    public ResponseEntity<Long> getIncomingTasksCount(HttpServletRequest request) {
+    public ResponseEntity<Long> getCountIncomingTasks(HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         return ResponseEntity.ok(taskDispatcher.getIncomingTasksCount(employee));
+    }
+
+    // Получает количество задач принадлежащих текущему наблюдателю отфильтрованы по шаблонам
+    @GetMapping("tasks/incoming/wireframe/{wireframeId}/count")
+    public ResponseEntity<Long> getCountIncomingTasksWireframe(@PathVariable Long wireframeId, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(taskDispatcher.getIncomingTasksCount(employee, wireframeId));
+    }
+
+    // Получает количество всех не закрытых задач по шаблонам
+    @GetMapping("tasks/wireframe/{wireframeId}/count")
+    public ResponseEntity<Long> getCountTasksWireframe(@PathVariable Long wireframeId, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(taskDispatcher.getTasksCount(wireframeId));
     }
 
     // Получает список с задачами запланированных на определенный период
@@ -582,6 +591,8 @@ public class PrivateRequestController {
         try {
             Comment comment = commentDispatcher.create(body, currentUser);
             Set<Employee> taskObservers = comment.getParent().getAllEmployeesObservers(currentUser);
+            Set<Employee> referredEmployees = employeeDispatcher.getValidEmployees(comment.getReferredLogins());
+            notificationDispatcher.createNotification(referredEmployees, Notification.mentionedInTask(comment.getParent()));
             notificationDispatcher.createNotification(taskObservers, Notification.newComment(comment));
             stompController.createComment(Objects.requireNonNull(CommentMapper.toDto(comment), "Созданные комментарий равен null"), body.getTaskId().toString());
             return ResponseEntity.ok(comment);

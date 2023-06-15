@@ -61,7 +61,7 @@ public class WireframeDispatcher {
         return wireframeRepository.findByWireframeIdAndDeleted(id, isDeleted).orElse(null);
     }
 
-    public Object updateWireframe(Wireframe wireframe) {
+    public Wireframe updateWireframe(Wireframe wireframe) {
         Wireframe founded = wireframeRepository.findById(wireframe.getWireframeId()).orElse(null);
         if (founded == null) return null;
         founded.setName(wireframe.getName());

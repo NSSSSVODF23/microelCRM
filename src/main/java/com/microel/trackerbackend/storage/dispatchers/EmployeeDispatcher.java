@@ -194,8 +194,8 @@ public class EmployeeDispatcher {
         return employeeRepository.save(foundEmployee);
     }
 
-    public Set<Employee> getValidEmployees(List<String> collect) {
-        return employeeRepository.findAllByLoginInAndDeletedIsFalseAndOffsiteIsFalse(collect);
+    public Set<Employee> getValidEmployees(List<String> logins) {
+        return employeeRepository.findAllByLoginInAndDeletedIsFalseAndOffsiteIsFalse(logins);
     }
 
     public Employee changeStatus(String login, EmployeeStatus status) throws EntryNotFound {

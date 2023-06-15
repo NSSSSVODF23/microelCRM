@@ -23,4 +23,5 @@ public class CommentDto {
     private CommentDto replyComment;
     private Boolean edited;
     private Boolean deleted;
+    private String simpleText;
 }
