@@ -10,6 +10,7 @@ public class DefaultObserverMapper {
         if (defaultObserver == null) return null;
         return DefaultObserverDto.builder()
                 .targetId(defaultObserver.getTargetId())
+                .name(defaultObserver.getName())
                 .targetType(defaultObserver.getTargetType())
                 .build();
     }
@@ -19,6 +20,7 @@ public class DefaultObserverMapper {
         if (defaultObserver == null) return null;
         return DefaultObserver.builder()
                 .targetId(defaultObserver.getTargetId())
+                .name(defaultObserver.getName())
                 .targetType(defaultObserver.getTargetType())
                 .build();
     }

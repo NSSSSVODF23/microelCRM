@@ -42,6 +42,7 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.Observer;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.entities.team.util.*;
+import com.microel.trackerbackend.storage.entities.templating.DefaultObserver;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
@@ -143,6 +144,28 @@ public class PrivateRequestController {
         this.addressParser = addressParser;
         this.addressDispatcher = addressDispatcher;
     }
+
+    // Получает список доступных наблюдателей из базы данных
+    @GetMapping("available-observers")
+    public ResponseEntity<List<DefaultObserver>> getAvailableObservers() {
+        List<DefaultObserver> observers = new ArrayList<>();
+        List<Employee> employees = employeeDispatcher.getEmployeesList(null, false, false);
+        List<Department> departments = departmentsDispatcher.getAll();
+        observers.addAll(employees.stream().map(DefaultObserver::from).toList());
+        observers.addAll(departments.stream().map(DefaultObserver::from).toList());
+        return ResponseEntity.ok(observers);
+    }
+
+    @GetMapping("available-observers/{query}")
+    public ResponseEntity<List<DefaultObserver>> getAvailableObserversSuggestions(@PathVariable String query) {
+        List<DefaultObserver> observers = new ArrayList<>();
+        List<Employee> employees = employeeDispatcher.getEmployeesList(query, false, false);
+        List<Department> departments = departmentsDispatcher.getAll().stream().filter(department -> department.getName().toLowerCase().contains(query.toLowerCase())).toList();
+        observers.addAll(employees.stream().map(DefaultObserver::from).toList());
+        observers.addAll(departments.stream().map(DefaultObserver::from).toList());
+        return ResponseEntity.ok(observers);
+    }
+
 
     // Создание шаблона задачи
     @PostMapping("wireframe")

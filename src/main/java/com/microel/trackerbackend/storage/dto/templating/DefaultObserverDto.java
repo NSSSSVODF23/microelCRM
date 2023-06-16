@@ -11,5 +11,6 @@ import lombok.*;
 @ToString
 public class DefaultObserverDto {
     private String targetId;
+    private String name;
     private DefaultObserverTargetType targetType;
 }

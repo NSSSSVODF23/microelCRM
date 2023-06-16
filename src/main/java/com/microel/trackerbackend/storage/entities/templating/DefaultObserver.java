@@ -19,8 +19,25 @@ import java.util.stream.Collectors;
 public class DefaultObserver {
     @Id
     private String targetId;
+    private String name;
     @Enumerated(EnumType.STRING)
     private DefaultObserverTargetType targetType;
+
+    public static DefaultObserver from(Employee employee) {
+        return DefaultObserver.builder()
+                .targetId(employee.getLogin())
+                .name(employee.getFullName())
+                .targetType(DefaultObserverTargetType.EMPLOYEE)
+                .build();
+    }
+
+    public static DefaultObserver from(Department department) {
+        return DefaultObserver.builder()
+                .targetId(department.getDepartmentId().toString())
+                .name(department.getName())
+                .targetType(DefaultObserverTargetType.DEPARTMENT)
+                .build();
+    }
 
     public static List<Department> getSetOfDepartments(List<DefaultObserver> defaultObservers) {
         return defaultObservers.stream()

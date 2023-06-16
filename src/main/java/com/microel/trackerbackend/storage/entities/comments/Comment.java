@@ -53,6 +53,7 @@ public class Comment implements TaskJournalItem {
      * @return Сообщение без форматирования
      */
     public String getSimpleText() {
+        if(message == null) return "";
         return message.replaceAll("</p>", "\n").replaceAll("<.*?>", "");
     }
 
