@@ -45,7 +45,8 @@ public class PublicRequestController {
             return ResponseEntity.ok(tokenChain);
 
         } catch (EntryNotFound | IllegalFields e) {
-            throw new ResponseException(e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+//            throw new ResponseException(e.getMessage());
         }
     }
 
