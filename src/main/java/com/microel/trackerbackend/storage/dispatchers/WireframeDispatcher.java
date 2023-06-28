@@ -1,9 +1,6 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
-import com.microel.trackerbackend.storage.dto.mapper.WireframeMapper;
-import com.microel.trackerbackend.storage.dto.templating.WireframeDto;
 import com.microel.trackerbackend.storage.entities.team.Employee;
-import com.microel.trackerbackend.storage.entities.templating.TaskStage;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.repositories.TaskStageRepository;
@@ -12,7 +9,6 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -48,8 +44,8 @@ public class WireframeDispatcher {
     }
 
     public List<Wireframe> getAllWireframes(Boolean includingDeleted) {
-        if(includingDeleted) return wireframeRepository.findAllByDeletedIsFalse(Sort.by(Sort.Direction.ASC, "name"));
-        return wireframeRepository.findAll(Sort.by(Sort.Direction.DESC,"name"));
+        if(!includingDeleted) return wireframeRepository.findAllByDeletedIsFalse(Sort.by(Sort.Direction.ASC, "name"));
+        return wireframeRepository.findAll(Sort.by(Sort.Order.asc("deleted"), Sort.Order.asc("name")));
     }
 
     @Nullable
@@ -74,14 +70,14 @@ public class WireframeDispatcher {
         return wireframeRepository.save(founded);
     }
 
-    public void deleteWireframe(Long id) throws EntryNotFound {
+    public Wireframe deleteWireframe(Long id) throws EntryNotFound {
         Wireframe wireframe = wireframeRepository.findById(id).orElseThrow(() -> new EntryNotFound("Шаблон не найден"));
-        if(taskDispatcher.getCountByWireframe(wireframe) > 0L){
+        if(taskDispatcher.getCountByWireframe(wireframe) == 0L){
             wireframeRepository.delete(wireframe);
-            return;
+            return wireframe;
         }
         wireframe.setDeleted(true);
-        wireframeRepository.save(wireframe);
+        return wireframeRepository.save(wireframe);
     }
 
 

@@ -69,8 +69,8 @@ public class TaskTagDispatcher {
         return taskTagRepository.save(existingTag);
     }
     public List<TaskTag> getAll(@Nullable Boolean includingRemote) {
-        if(includingRemote != null && includingRemote) return taskTagRepository.findAll();
-        return taskTagRepository.findAllByDeletedIsFalse();
+        if(includingRemote != null && includingRemote) return taskTagRepository.findAll(Sort.by(Sort.Order.asc("deleted"), Sort.Order.asc("name")));
+        return taskTagRepository.findAllByDeletedIsFalse(Sort.by(Sort.Direction.ASC, "name"));
     }
 
     public boolean valid(Set<TaskTag> taskTags) {
@@ -79,5 +79,9 @@ public class TaskTagDispatcher {
             return root.get("taskTagId").in(tagIds);
         }, Sort.unsorted());
         return taskTags.size() == all.size();
+    }
+
+    public List<TaskTag> getByName(String query) {
+        return taskTagRepository.findAllByNameContainingIgnoreCaseAndDeletedIsFalseOrderByName(query);
     }
 }

@@ -16,6 +16,7 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.entities.team.util.Department;
 import com.microel.trackerbackend.storage.entities.team.util.Position;
+import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
@@ -186,5 +187,19 @@ public class StompController {
         for(EmployeeDto employee : chat.getMembers()) {
             sendToUser(employee.getLogin(), chat, "chat", "create");
         }
+    }
+
+    public void createWireframe(Wireframe wireframe){
+        sendAll(wireframe, "wireframe", "create");
+    }
+
+    public void updateWireframe(Wireframe wireframe){
+        sendAll(wireframe, "wireframe", wireframe.getWireframeId().toString(), "update");
+        sendAll(wireframe, "wireframe", "update");
+    }
+
+    public void deleteWireframe(Wireframe wireframe){
+        sendAll(wireframe, "wireframe", wireframe.getWireframeId().toString(), "delete");
+        sendAll(wireframe, "wireframe", "delete");
     }
 }

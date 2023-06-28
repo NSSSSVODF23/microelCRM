@@ -4,9 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
-import com.microel.trackerbackend.modules.exception.DateRangeReadException;
 import com.microel.trackerbackend.modules.transport.ChangeTaskObserversDTO;
-import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.modules.transport.IDuration;
 import com.microel.trackerbackend.parsers.addresses.AddressParser;
 import com.microel.trackerbackend.parsers.oldtracker.AddressCorrectingPool;
@@ -35,7 +33,6 @@ import com.microel.trackerbackend.storage.entities.comments.dto.CommentData;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskFieldsSnapshot;
-import com.microel.trackerbackend.storage.entities.task.TaskStatus;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
 import com.microel.trackerbackend.storage.entities.team.Employee;
@@ -76,8 +73,8 @@ import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
 import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Controller
@@ -170,14 +167,16 @@ public class PrivateRequestController {
     // Создание шаблона задачи
     @PostMapping("wireframe")
     public ResponseEntity<Wireframe> createWireframe(@RequestBody Wireframe body, HttpServletRequest request) {
-        return ResponseEntity.ok(
-                wireframeDispatcher.createWireframe(body, getEmployeeFromRequest(request))
-        );
+        Wireframe wireframe = wireframeDispatcher.createWireframe(body, getEmployeeFromRequest(request));
+        stompController.createWireframe(wireframe);
+        return ResponseEntity.ok(wireframe);
     }
 
     // Получение списка шаблонов
     @GetMapping("wireframes")
-    public ResponseEntity<List<Wireframe>> getWireframes() {
+    public ResponseEntity<List<Wireframe>> getWireframes(@Nullable @RequestParam Boolean includingRemoved) {
+        if (includingRemoved == null || !includingRemoved)
+            return ResponseEntity.ok(wireframeDispatcher.getAllWireframes(false));
         return ResponseEntity.ok(wireframeDispatcher.getAllWireframes(true));
     }
 
@@ -209,15 +208,18 @@ public class PrivateRequestController {
 
     // Редактирование шаблона задачи
     @PatchMapping("wireframe")
-    public ResponseEntity<Object> updateWireframe(@RequestBody Wireframe body) {
-        return ResponseEntity.ok(wireframeDispatcher.updateWireframe(body));
+    public ResponseEntity<Wireframe> updateWireframe(@RequestBody Wireframe body) {
+        Wireframe wireframe = wireframeDispatcher.updateWireframe(body);
+        stompController.updateWireframe(wireframe);
+        return ResponseEntity.ok(wireframe);
     }
 
     // Удаление шаблона задачи
     @DeleteMapping("wireframe/{id}")
     public ResponseEntity<Void> deleteWireframe(@PathVariable Long id) {
         try {
-            wireframeDispatcher.deleteWireframe(id);
+            Wireframe wireframe = wireframeDispatcher.deleteWireframe(id);
+            stompController.deleteWireframe(wireframe);
             return ResponseEntity.ok().build();
         } catch (EntryNotFound e) {
             throw new ResponseException(e.getMessage());
@@ -344,18 +346,19 @@ public class PrivateRequestController {
 
     // Получение страницу с задачами используя фильтрацию
     @GetMapping("tasks/{page}")
-    public ResponseEntity<Page<TaskDto>> getTasks(@PathVariable Integer page,@Nullable TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
+    public ResponseEntity<Page<TaskDto>> getTasks(@PathVariable Integer page, @Nullable TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
-        if(condition == null){
+        if (condition == null) {
             return ResponseEntity.ok(taskDispatcher.getTasks(page, 25, null, null, null,
-                            null, null, null, null, null, null).map(TaskMapper::toListObject));
+                    null, null, null, null, null, null).map(TaskMapper::toListObject));
         }
         condition.clean();
         List<FilterModelItem> filtersList = null;
         try {
-            if(condition.getTemplateFilter() !=null){
+            if (condition.getTemplateFilter() != null) {
                 ObjectMapper om = new ObjectMapper();
-                filtersList = om.readValue(condition.getTemplateFilter(), new TypeReference<>() {});
+                filtersList = om.readValue(condition.getTemplateFilter(), new TypeReference<>() {
+                });
                 filtersList = filtersList.stream().filter(filter -> filter.getValue() != null).collect(Collectors.toList());
             }
         } catch (JsonProcessingException e) {
@@ -604,6 +607,12 @@ public class PrivateRequestController {
     @GetMapping("task-tags")
     public ResponseEntity<List<TaskTag>> getAllTaskTags(@RequestParam @Nullable Boolean includingRemote, HttpServletRequest request) {
         return ResponseEntity.ok(taskTagDispatcher.getAll(includingRemote));
+    }
+
+    // Получает список доступных тегов по имени
+    @GetMapping("task-tags/{query}")
+    public ResponseEntity<List<TaskTag>> getTaskTagsByName(@PathVariable String query, HttpServletRequest request) {
+        return ResponseEntity.ok(taskTagDispatcher.getByName(query));
     }
 
     // Создает комментарий к задаче
@@ -1000,24 +1009,24 @@ public class PrivateRequestController {
 
     // Получить журналы работ определенной задачи
     @GetMapping("task/{taskId}/work-logs")
-    public ResponseEntity<List<WorkLog>> getWorkLogs(@PathVariable Long taskId){
+    public ResponseEntity<List<WorkLog>> getWorkLogs(@PathVariable Long taskId) {
         return ResponseEntity.ok(workLogDispatcher.getAllByTaskId(taskId));
     }
 
     // Получить список активных журналов работ
     @GetMapping("work-logs/active")
-    public ResponseEntity<List<WorkLog>> getActiveWorkLogs(){
+    public ResponseEntity<List<WorkLog>> getActiveWorkLogs() {
         return ResponseEntity.ok(workLogDispatcher.getActive());
     }
 
     // Получить количество активных журналов работ
     @GetMapping("work-logs/active/count")
-    public ResponseEntity<Long> getActiveWorkLogsCount(){
+    public ResponseEntity<Long> getActiveWorkLogsCount() {
         return ResponseEntity.ok(workLogDispatcher.getActiveCount());
     }
 
     @GetMapping("task/{taskId}/work-log/active")
-    public ResponseEntity<WorkLog> getActiveWorkLog(@PathVariable Long taskId){
+    public ResponseEntity<WorkLog> getActiveWorkLog(@PathVariable Long taskId) {
         try {
             return ResponseEntity.ok(workLogDispatcher.getActiveByTaskId(taskId));
         } catch (EntryNotFound e) {
@@ -1311,7 +1320,7 @@ public class PrivateRequestController {
         }
 
         try {
-            BufferedImage containerImage = new BufferedImage( image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
+            BufferedImage containerImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
             containerImage.createGraphics().drawImage(image, 0, 0, Color.white, null);
             BufferedImage resized = Scalr.resize(containerImage, 250);
             Path filePath = folderPath.resolve(fileName);
