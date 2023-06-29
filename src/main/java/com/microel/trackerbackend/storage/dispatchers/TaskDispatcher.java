@@ -34,7 +34,6 @@ import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.RequestParam;
 
 import javax.persistence.criteria.*;
 import java.lang.reflect.Field;
@@ -622,7 +621,7 @@ public class TaskDispatcher {
     }
 
     public Long getTasksCount(Long wireframeId) {
-        return taskRepository.countByModelWireframe_WireframeIdAndTaskStatusNot(wireframeId, TaskStatus.CLOSE);
+        return taskRepository.countByModelWireframe_WireframeIdAndDeletedFalseAndTaskStatusNot(wireframeId, TaskStatus.CLOSE);
     }
 
     @Getter

@@ -311,6 +311,7 @@ public class PrivateRequestController {
             Employee employeeFromRequest = getEmployeeFromRequest(request);
             Task task = taskDispatcher.deleteTask(id);
             Set<Employee> observers = task.getAllEmployeesObservers(employeeFromRequest);
+            stompController.updateTask(task);
             notificationDispatcher.createNotification(observers, Notification.taskDeleted(task, employeeFromRequest));
         } catch (EntryNotFound e) {
             throw new ResponseException("Задача с идентификатором " + id + " не найдена в базе данных");

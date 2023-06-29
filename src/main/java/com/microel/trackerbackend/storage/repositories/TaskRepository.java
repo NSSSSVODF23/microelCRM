@@ -19,5 +19,5 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
 
     Long countByModelWireframe(Wireframe wireframe);
 
-    Long countByModelWireframe_WireframeIdAndTaskStatusNot(Long wireframeId, TaskStatus close);
+    Long countByModelWireframe_WireframeIdAndDeletedFalseAndTaskStatusNot(Long wireframeId, TaskStatus close);
 }
