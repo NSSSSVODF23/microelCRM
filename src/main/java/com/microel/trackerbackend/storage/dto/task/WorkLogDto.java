@@ -2,11 +2,13 @@ package com.microel.trackerbackend.storage.dto.task;
 
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
+import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import lombok.*;
 
 import java.sql.Timestamp;
+import java.util.List;
 import java.util.Set;
 
 @Getter
@@ -33,4 +35,6 @@ public class WorkLogDto {
     private Set<EmployeeDto> whoClosed;
     private String report;
     private Long leadTime;
+    private Boolean calculated;
+    private List<WorkCalculation> workCalculations;
 }

@@ -6,6 +6,8 @@ import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigu
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
+import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.modules.StaticConfigurationModule;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.filemanager.FileData;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
@@ -24,7 +26,6 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.exceptions.*;
 import lombok.extern.slf4j.Slf4j;
-import org.aspectj.weaver.ast.Not;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,6 +70,7 @@ public class TelegramController {
     private final AttachmentDispatcher attachmentDispatcher;
     private final Map<String, List<Message>> groupedMessagesFromTelegram = new ConcurrentHashMap<>();
     private final Map<Long, List<Message>> chatsInTaskCloseMode = new ConcurrentHashMap<>();
+    private final StaticConfigurationModule staticConfigurationModule;
     @Nullable
     private TelegramBotsApi api;
     @Nullable
@@ -78,7 +80,7 @@ public class TelegramController {
 
     public TelegramController(ConfigurationStorage configurationStorage, TaskDispatcher taskDispatcher, WorkLogDispatcher workLogDispatcher,
                               ChatDispatcher chatDispatcher, ChatMessageDispatcher chatMessageDispatcher, EmployeeDispatcher employeeDispatcher,
-                              StompController stompController, AttachmentDispatcher attachmentDispatcher) {
+                              StompController stompController, AttachmentDispatcher attachmentDispatcher, StaticConfigurationModule staticConfigurationModule) {
         this.configurationStorage = configurationStorage;
         this.taskDispatcher = taskDispatcher;
         this.workLogDispatcher = workLogDispatcher;
@@ -87,6 +89,7 @@ public class TelegramController {
         this.employeeDispatcher = employeeDispatcher;
         this.stompController = stompController;
         this.attachmentDispatcher = attachmentDispatcher;
+        this.staticConfigurationModule = staticConfigurationModule;
         try {
             TelegramConf telegramConf = configurationStorage.load(TelegramConf.class);
             initializeMainBot(telegramConf);
@@ -143,6 +146,18 @@ public class TelegramController {
             } else {
                 TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Меню отсутствует").execute();
             }
+            return true;
+        }));
+
+        mainBot.subscribe(new TelegramCommandReactor("/dhcpnotificationgroup", update -> {
+            Long chatId = update.getMessage().getChatId();
+            Boolean isGroup = update.getMessage().getChat().isGroupChat();
+            if (!isGroup) {
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Чат не является группой").execute();
+                return false;
+            }
+            staticConfigurationModule.changeDhcpNotificationChatId(chatId.toString());
+            TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Установлена группа для получения уведомлений о DHCP").execute();
             return true;
         }));
 
@@ -783,5 +798,19 @@ public class TelegramController {
                 continue;
             TelegramMessageFactory.create(installer.getTelegramUserId(), mainBot).acceptWorkLog(workLog, employee).execute();
         }
+    }
+
+    public void sendDhcpIpRequestNotification(DhcpIpRequestNotificationBody body) throws TelegramApiException {
+        StaticConfigurationModule.Configuration configuration = staticConfigurationModule.getConfiguration();
+        if(configuration == null) {
+            log.warn("Статическая конфигурация отсутствует");
+            return;
+        }
+        String chatId = configuration.getDhcpNotificationChatId();
+        if(chatId == null || chatId.isBlank()) {
+            log.warn("Чат для отправки DhcpIpRequestNotification отсутствует");
+            return;
+        }
+        TelegramMessageFactory.create(configuration.getDhcpNotificationChatId(), mainBot).dhcpIpRequestNotification(body).execute();
     }
 }

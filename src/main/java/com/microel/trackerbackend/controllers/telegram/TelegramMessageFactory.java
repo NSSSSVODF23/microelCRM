@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.controllers.telegram;
 
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
+import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.storage.dto.chat.ChatMessageDto;
 import com.microel.trackerbackend.storage.dto.chat.TelegramMessageBindDto;
 import com.microel.trackerbackend.storage.dto.task.ModelItemDto;
@@ -365,6 +366,32 @@ public class TelegramMessageFactory {
                 .build(),
                 context
         );
+    }
+
+    public AbstractExecutor<Message> dhcpIpRequestNotification(DhcpIpRequestNotificationBody body) {
+        StringBuilder messageBuilder = new StringBuilder("\uD83D\uDCF6️")
+                .append(Decorator.bold("Обнаружено подключенное оборудование:")).append("\n")
+                .append("IP: ").append(body.getIp()).append("\n")
+                .append("MAC: ").append(body.getMac()).append("\n")
+                .append("VLAN: ").append(body.getVlan()).append("\n");
+
+//        if(body.getSwitches() != null){
+//            messageBuilder.append("\n").append(Decorator.bold( "Список коммутаторов:")).append("\n");
+//            for(DhcpIpRequestNotificationBody.SwitchInfo switchInfo : body.getSwitches()) {
+//                messageBuilder
+//                        .append("<pre>")
+//                        .append(switchInfo.getName()).append(" ")
+//                        .append(switchInfo.getIpaddress()).append(" ")
+//                        .append(switchInfo.getModel()).append(" ")
+//                        .append(switchInfo.getStreet()).append("-").append(switchInfo.getHouse())
+//                        .append("</pre>")
+//                        .append("\n");
+//            }
+//        }
+
+        SendMessage message = new SendMessage(chatId, messageBuilder.toString());
+        message.setParseMode(ParseMode.HTML);
+        return new MessageExecutor<>(message, context);
     }
 
     /**

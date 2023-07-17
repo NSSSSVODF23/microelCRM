@@ -1,5 +1,7 @@
 package com.microel.trackerbackend.services.api;
 
+import com.microel.trackerbackend.controllers.telegram.TelegramController;
+import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.modules.transport.Credentials;
 import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.security.exceptions.JwsTokenParseError;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
@@ -23,9 +26,11 @@ import java.util.List;
 public class PublicRequestController {
 
     private final AuthorizationProvider authorizationProvider;
+    private final TelegramController telegramController;
 
-    public PublicRequestController(AuthorizationProvider authorizationProvider) {
+    public PublicRequestController(AuthorizationProvider authorizationProvider, TelegramController telegramController) {
         this.authorizationProvider = authorizationProvider;
+        this.telegramController = telegramController;
     }
 
     @PostMapping("sign-in")
@@ -100,5 +105,15 @@ public class PublicRequestController {
             }
         }
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+    }
+
+    @PostMapping("out/dhcp/ip-request/notification")
+    public ResponseEntity<Void> outDhcpIpRequestNotification(@RequestBody DhcpIpRequestNotificationBody body, HttpServletRequest request, HttpServletResponse response) {
+        try {
+            telegramController.sendDhcpIpRequestNotification(body);
+            return ResponseEntity.ok().build();
+        } catch (TelegramApiException e) {
+            return ResponseEntity.ok().build();
+        }
     }
 }

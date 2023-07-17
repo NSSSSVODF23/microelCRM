@@ -1,7 +1,9 @@
 package com.microel.trackerbackend.storage.entities.task;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
+import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.vladmihalcea.hibernate.type.json.JsonType;
@@ -14,6 +16,7 @@ import javax.persistence.Table;
 import javax.persistence.*;
 import java.sql.Timestamp;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -58,6 +61,12 @@ public class WorkLog {
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JoinColumn(name = "f_creator_id")
     private Employee creator;
+    @Column(columnDefinition = "boolean default false")
+    private Boolean calculated;
+    @OneToMany
+    @JsonIgnore
+    @BatchSize(size = 25)
+    private List<WorkCalculation> workCalculations;
 
     @Override
     public boolean equals(Object o) {

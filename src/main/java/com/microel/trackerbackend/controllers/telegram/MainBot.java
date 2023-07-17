@@ -101,14 +101,14 @@ public class MainBot extends TelegramLongPollingBot {
                     }
                     case MESSAGE -> {
                         TelegramMessageReactor messageReactor = (TelegramMessageReactor) reactor;
-                        if (update.hasMessage() && !update.getMessage().isCommand()) {
+                        if (update.hasMessage() && !update.getMessage().isCommand() && update.getMessage().getChat().isUserChat()) {
                             if ((isHandled = messageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
                     }
                     case EDIT_MESSAGE -> {
                         TelegramEditMessageReactor editMessageReactor = (TelegramEditMessageReactor) reactor;
-                        if (update.hasEditedMessage()) {
+                        if (update.hasEditedMessage() && update.getMessage().getChat().isUserChat()) {
                             if ((isHandled = editMessageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }

@@ -39,7 +39,10 @@ import javax.persistence.criteria.*;
 import java.lang.reflect.Field;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -59,7 +62,12 @@ public class TaskDispatcher {
     private final NotificationDispatcher notificationDispatcher;
     private final StompController stompController;
 
-    public TaskDispatcher(TaskRepository taskRepository, ModelItemDispatcher modelItemDispatcher, WireframeDispatcher wireframeDispatcher, CommentDispatcher commentDispatcher, TaskStageRepository taskStageRepository, DepartmentDispatcher departmentDispatcher, EmployeeDispatcher employeeDispatcher, WorkLogDispatcher workLogDispatcher, TaskTagDispatcher taskTagDispatcher, AddressDispatcher addressDispatcher, @Lazy NotificationDispatcher notificationDispatcher, StompController stompController) {
+    public TaskDispatcher(TaskRepository taskRepository, ModelItemDispatcher modelItemDispatcher,
+                          WireframeDispatcher wireframeDispatcher, CommentDispatcher commentDispatcher,
+                          TaskStageRepository taskStageRepository, DepartmentDispatcher departmentDispatcher,
+                          EmployeeDispatcher employeeDispatcher, WorkLogDispatcher workLogDispatcher,
+                          TaskTagDispatcher taskTagDispatcher, AddressDispatcher addressDispatcher,
+                          @Lazy NotificationDispatcher notificationDispatcher, StompController stompController) {
         this.taskRepository = taskRepository;
         this.modelItemDispatcher = modelItemDispatcher;
         this.wireframeDispatcher = wireframeDispatcher;
@@ -74,13 +82,13 @@ public class TaskDispatcher {
     }
 
     @Scheduled(cron = "0 * * ? * *")
-    public void processingScheduledTasks(){
+    public void processingScheduledTasks() {
         long currentMillis = Instant.now().toEpochMilli();
         long extraSeconds = currentMillis % 60000;
         long delta = currentMillis - extraSeconds;
         Timestamp endOfMinute = Timestamp.from(Instant.ofEpochMilli(delta + 60000L));
 
-        List<Task> tasks = taskRepository.findAll((root, query, cb)->{
+        List<Task> tasks = taskRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.or(cb.lessThan(root.get("actualFrom"), endOfMinute), cb.lessThan(root.get("actualTo"), endOfMinute)));
             predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
@@ -88,13 +96,13 @@ public class TaskDispatcher {
             return cb.and(predicates.toArray(Predicate[]::new));
         }, Sort.by(Sort.Direction.DESC, "actualFrom", "actualTo"));
 
-        for(Task task : tasks){
+        for (Task task : tasks) {
             Set<Employee> recipient = task.getAllEmployeesObservers();
-            if(task.getActualFrom() != null){
+            if (task.getActualFrom() != null) {
                 notificationDispatcher.createNotification(recipient, Notification.taskHasBecomeActual(task));
                 task.setActualFrom(null);
                 stompController.updateTask(taskRepository.save(task));
-            }else if(task.getActualTo() != null){
+            } else if (task.getActualTo() != null) {
                 notificationDispatcher.createNotification(recipient, Notification.taskExpired(task));
                 task.setActualTo(null);
                 stompController.updateTask(taskRepository.save(task));
@@ -131,7 +139,6 @@ public class TaskDispatcher {
         createdTask.setDepartmentsObservers(departmentsObservers);
 
 
-
         createdTask.setCurrentStage(wireframe.getFirstStage());
 
         // Устанавливаем статус задачи как активная
@@ -148,7 +155,7 @@ public class TaskDispatcher {
         // Получаем все дочерние задачи из бд по идентификатору и устанавливаем их в createdTask
         if (body.getChildId() != null) {
 
-            Task childrenFromDB = taskRepository.findById(body.getChildId()).orElseThrow(()->new EntryNotFound("Дочерняя задача не найдена в базе данных"));
+            Task childrenFromDB = taskRepository.findById(body.getChildId()).orElseThrow(() -> new EntryNotFound("Дочерняя задача не найдена в базе данных"));
             createdTask.setChildren(Stream.of(childrenFromDB).collect(Collectors.toList()));
             return taskRepository.save(createdTask);
         }
@@ -156,7 +163,7 @@ public class TaskDispatcher {
         // Получаем родительскую задачу из бд по идентификатору и устанавливаем её в createdTask
         if (body.getParentId() != null) {
 
-            Task parentFromDB = taskRepository.findById(body.getParentId()).orElseThrow(()->new EntryNotFound("Родительская задача не найдена в базе данных"));
+            Task parentFromDB = taskRepository.findById(body.getParentId()).orElseThrow(() -> new EntryNotFound("Родительская задача не найдена в базе данных"));
 
             createdTask.setParent(parentFromDB.getTaskId());
             parentFromDB.getChildren().add(createdTask);
@@ -198,7 +205,7 @@ public class TaskDispatcher {
             if (creationRange != null && creationRange.getEnd() != null)
                 predicates.add(cb.lessThanOrEqualTo(root.get("created"), creationRange.getEnd()));
 
-            if(employeeTask != null) {
+            if (employeeTask != null) {
                 predicates.add(cb.or(
                         root.join("employeesObservers", JoinType.LEFT).get("login").in(employeeTask.getLogin()),
                         root.join("departmentsObservers", JoinType.LEFT).join("employees", JoinType.LEFT).get("login").in(employeeTask.getLogin())));
@@ -610,8 +617,8 @@ public class TaskDispatcher {
     public Task moveTaskScheduled(Long taskId, IDuration delta) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
-        if(task.getActualFrom() != null) task.setActualFrom(delta.shift(task.getActualFrom()));
-        if(task.getActualTo() != null) task.setActualTo(delta.shift(task.getActualTo()));
+        if (task.getActualFrom() != null) task.setActualFrom(delta.shift(task.getActualFrom()));
+        if (task.getActualTo() != null) task.setActualTo(delta.shift(task.getActualTo()));
         task.setUpdated(Timestamp.from(Instant.now()));
         return taskRepository.save(task);
     }
@@ -626,7 +633,7 @@ public class TaskDispatcher {
 
     @Getter
     @Setter
-    public static class FiltrationConditions{
+    public static class FiltrationConditions {
         @Nullable
         private List<TaskStatus> status;
         @Nullable
@@ -648,17 +655,17 @@ public class TaskDispatcher {
 
         public void clean() {
             Field[] fields = this.getClass().getDeclaredFields();
-            for(Field f : fields){
-                try{
+            for (Field f : fields) {
+                try {
                     Class t = f.getType();
                     Object v = f.get(this);
-                    if (t == String.class && v != null){
+                    if (t == String.class && v != null) {
                         String target = (String) v;
-                        if(target.isBlank() || target.equals("[]") || target.equals("null") || target.equals("undefined")){
+                        if (target.isBlank() || target.equals("[]") || target.equals("null") || target.equals("undefined")) {
                             f.set(this, null);
                         }
                     }
-                }catch (IllegalAccessException ignore){
+                } catch (IllegalAccessException ignore) {
 
                 }
             }

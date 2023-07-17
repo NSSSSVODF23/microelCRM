@@ -29,6 +29,8 @@ public class WorkLogMapper {
                 .status(workLog.getStatus())
                 .whoAccepted(workLog.getWhoAccepted() != null ? workLog.getWhoAccepted().stream().map(EmployeeMapper::toDto).collect(Collectors.toSet()) : new HashSet<>())
                 .whoClosed(workLog.getWhoClosed() != null ? workLog.getWhoClosed().stream().map(EmployeeMapper::toDto).collect(Collectors.toSet()) : new HashSet<>())
+                .calculated(workLog.getCalculated())
+                .workCalculations(workLog.getWorkCalculations())
                 .build();
     }
 
@@ -48,6 +50,8 @@ public class WorkLogMapper {
                 .task(TaskMapper.fromDto(workLog.getTask()))
                 .workLogId(workLog.getWorkLogId())
                 .workReports(workLog.getWorkReports().stream().map(WorkReportMapper::fromDto).collect(Collectors.toSet()))
+                .calculated(workLog.getCalculated())
+                .workCalculations(workLog.getWorkCalculations())
                 .build();
     }
 }

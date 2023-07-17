@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
+import com.microel.trackerbackend.misc.*;
 import com.microel.trackerbackend.modules.transport.ChangeTaskObserversDTO;
 import com.microel.trackerbackend.modules.transport.IDuration;
 import com.microel.trackerbackend.parsers.addresses.AddressParser;
@@ -31,6 +32,9 @@ import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.TaskJournalItem;
 import com.microel.trackerbackend.storage.entities.comments.dto.CommentData;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
+import com.microel.trackerbackend.storage.entities.salary.PaidAction;
+import com.microel.trackerbackend.storage.entities.salary.PaidWork;
+import com.microel.trackerbackend.storage.entities.salary.PaidWorkGroup;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskFieldsSnapshot;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
@@ -45,7 +49,6 @@ import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
 import com.microel.trackerbackend.storage.exceptions.*;
-import com.microel.trackerbackend.storage.repositories.AttachmentRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.imgscalr.Scalr;
 import org.javatuples.Triplet;
@@ -92,8 +95,6 @@ public class PrivateRequestController {
     private final AttachmentDispatcher attachmentDispatcher;
     private final DepartmentDispatcher departmentsDispatcher;
     private final PositionDispatcher positionDispatcher;
-    private final AuthorizationProvider authorizationProvider;
-    private final AttachmentRepository attachmentRepository;
     private final TaskEventDispatcher taskEventDispatcher;
     private final StompController stompController;
     private final TaskTagDispatcher taskTagDispatcher;
@@ -105,18 +106,22 @@ public class PrivateRequestController {
     private final OldTracker oldTracker;
     private final AddressParser addressParser;
     private final AddressDispatcher addressDispatcher;
+    private final PaidActionDispatcher paidActionDispatcher;
+    private final PaidWorkGroupDispatcher paidWorkGroupDispatcher;
+    private final PaidWorkDispatcher paidWorkDispatcher;
+    private final WorkCalculationDispatcher workCalculationDispatcher;
+    private final WorkingDayDispatcher workingDayDispatcher;
 
     public PrivateRequestController(WireframeDispatcher wireframeDispatcher, TaskDispatcher taskDispatcher,
                                     StreetDispatcher streetDispatcher, CityDispatcher cityDispatcher,
                                     CommentDispatcher commentDispatcher, ModelItemDispatcher modelItemDispatcher,
                                     EmployeeDispatcher employeeDispatcher, AttachmentDispatcher attachmentDispatcher,
                                     DepartmentDispatcher departmentsDispatcher, PositionDispatcher positionDispatcher,
-                                    AuthorizationProvider authorizationProvider, AttachmentRepository attachmentRepository,
                                     TaskEventDispatcher taskEventDispatcher, StompController stompController,
                                     TaskTagDispatcher taskTagDispatcher, TaskFieldsSnapshotDispatcher taskFieldsSnapshotDispatcher,
                                     NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher,
                                     ChatDispatcher chatDispatcher, TelegramController telegramController,
-                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher) {
+                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.streetDispatcher = streetDispatcher;
@@ -127,8 +132,6 @@ public class PrivateRequestController {
         this.attachmentDispatcher = attachmentDispatcher;
         this.departmentsDispatcher = departmentsDispatcher;
         this.positionDispatcher = positionDispatcher;
-        this.authorizationProvider = authorizationProvider;
-        this.attachmentRepository = attachmentRepository;
         this.taskEventDispatcher = taskEventDispatcher;
         this.stompController = stompController;
         this.taskTagDispatcher = taskTagDispatcher;
@@ -140,6 +143,11 @@ public class PrivateRequestController {
         this.oldTracker = oldTracker;
         this.addressParser = addressParser;
         this.addressDispatcher = addressDispatcher;
+        this.paidActionDispatcher = paidActionDispatcher;
+        this.paidWorkGroupDispatcher = paidWorkGroupDispatcher;
+        this.paidWorkDispatcher = paidWorkDispatcher;
+        this.workCalculationDispatcher = workCalculationDispatcher;
+        this.workingDayDispatcher = workingDayDispatcher;
     }
 
     // Получает список доступных наблюдателей из базы данных
@@ -199,10 +207,8 @@ public class PrivateRequestController {
     public ResponseEntity<List<FieldItem>> getWireframeFields(@PathVariable Long id) {
         Wireframe wireframe = wireframeDispatcher.getWireframeById(id);
         if (wireframe == null) throw new ResponseException("Шаблон не найден");
-        List<FieldItem> fields = new ArrayList<FieldItem>();
-        wireframe.getSteps().forEach(step -> {
-            fields.addAll(step.getFields());
-        });
+        List<FieldItem> fields = new ArrayList<>();
+        wireframe.getSteps().forEach(step -> fields.addAll(step.getFields()));
         return ResponseEntity.ok(fields);
     }
 
@@ -225,17 +231,6 @@ public class PrivateRequestController {
             throw new ResponseException(e.getMessage());
         }
     }
-
-    // Создание новых улиц
-//    @PostMapping("streets/{cityId}")
-//    public ResponseEntity<Void> appendAllStreets(@RequestBody List<String> body, @PathVariable Long cityId) {
-//        try {
-//            streetDispatcher.saveAll(body, cityId);
-//            return ResponseEntity.ok().build();
-//        } catch (EntryNotFound e) {
-//            throw new ResponseException(e.getMessage());
-//        }
-//    }
 
     // Получение всех городов
     @GetMapping("cities")
@@ -369,7 +364,7 @@ public class PrivateRequestController {
 
         Instant startDBRequest = Instant.now();
 
-        Page<Task> tasks = null;
+        Page<Task> tasks;
         if (condition.getOnlyMy() != null && condition.getOnlyMy()) {
             tasks = taskDispatcher.getTasks(page, 25, null, condition.getTemplate(), filtersList,
                     condition.getSearchPhrase(), condition.getAuthor(), condition.getDateOfCreation(), condition.getTags(), condition.getExclusionIds(), employee);
@@ -410,8 +405,7 @@ public class PrivateRequestController {
 
     // Получает количество всех не закрытых задач по шаблонам
     @GetMapping("tasks/wireframe/{wireframeId}/count")
-    public ResponseEntity<Long> getCountTasksWireframe(@PathVariable Long wireframeId, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
+    public ResponseEntity<Long> getCountTasksWireframe(@PathVariable Long wireframeId) {
         return ResponseEntity.ok(taskDispatcher.getTasksCount(wireframeId));
     }
 
@@ -430,7 +424,7 @@ public class PrivateRequestController {
         try {
             Task task = taskDispatcher.moveTaskScheduled(taskId, delta);
             stompController.updateTask(task);
-            TaskEvent taskEvent = null;
+            TaskEvent taskEvent;
             // Создаем события в журнале задачи если даты изменились
             if (task.getActualFrom() != null) {
                 taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeActualFrom(task, task.getActualFrom().toInstant(), employee));
@@ -583,7 +577,7 @@ public class PrivateRequestController {
 
     // Изменяет тег задачи
     @PatchMapping("task-tag")
-    public ResponseEntity<TaskTag> updateTaskTag(@RequestBody TaskTag body, HttpServletRequest request) {
+    public ResponseEntity<TaskTag> updateTaskTag(@RequestBody TaskTag body) {
         try {
             TaskTag modifyTag = taskTagDispatcher.modify(body);
             stompController.updateTaskTag(modifyTag);
@@ -595,7 +589,7 @@ public class PrivateRequestController {
 
     // Удаляет тег задачи
     @DeleteMapping("task-tag/{id}")
-    public ResponseEntity<Void> deleteTaskTag(@PathVariable Long id, HttpServletRequest request) {
+    public ResponseEntity<Void> deleteTaskTag(@PathVariable Long id) {
         try {
             stompController.deleteTaskTag(taskTagDispatcher.delete(id));
             return ResponseEntity.ok().build();
@@ -606,13 +600,13 @@ public class PrivateRequestController {
 
     // Получает список доступных тегов задачи
     @GetMapping("task-tags")
-    public ResponseEntity<List<TaskTag>> getAllTaskTags(@RequestParam @Nullable Boolean includingRemote, HttpServletRequest request) {
+    public ResponseEntity<List<TaskTag>> getAllTaskTags(@RequestParam @Nullable Boolean includingRemote) {
         return ResponseEntity.ok(taskTagDispatcher.getAll(includingRemote));
     }
 
     // Получает список доступных тегов по имени
     @GetMapping("task-tags/{query}")
-    public ResponseEntity<List<TaskTag>> getTaskTagsByName(@PathVariable String query, HttpServletRequest request) {
+    public ResponseEntity<List<TaskTag>> getTaskTagsByName(@PathVariable String query) {
         return ResponseEntity.ok(taskTagDispatcher.getByName(query));
     }
 
@@ -672,7 +666,7 @@ public class PrivateRequestController {
         if (comments.getTotalElements() == 0L) {
             List<TaskEvent> taskEvents = taskEventDispatcher.getTaskEvents(id);
             // Concat events and comments
-            List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).collect(Collectors.toList());
+            List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).toList();
             commentItems.addAll(taskEventsItems);
             commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
         } else if (comments.isLast()) {
@@ -684,7 +678,7 @@ public class PrivateRequestController {
                 taskEvents = taskEventDispatcher.getTaskEventsFrom(id, firstComment.getCreated());
             }
             // Concat events and comments and sort by creation date
-            List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).collect(Collectors.toList());
+            List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).toList();
             commentItems.addAll(taskEventsItems);
             commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
         } else {
@@ -697,7 +691,7 @@ public class PrivateRequestController {
                 taskEvents = taskEventDispatcher.getTaskEvents(id, firstComment.getCreated(), lastComment.getCreated());
             }
             // Concat events and comments and sort by creation date
-            List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).collect(Collectors.toList());
+            List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).toList();
             commentItems.addAll(taskEventsItems);
             commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
         }
@@ -849,7 +843,7 @@ public class PrivateRequestController {
                                   @RequestHeader(value = "Range", required = false) String rangeHeader,
                                   HttpServletResponse response) {
         // Пытаемся найти вложение в базе данных по его id
-        Attachment attachments = null;
+        Attachment attachments;
         try {
             attachments = attachmentDispatcher.getAttachments(id);
         } catch (EntryNotFound e) {
@@ -882,7 +876,7 @@ public class PrivateRequestController {
 
                 String[] ranges = rangeHeader.split("-");
                 long rangeStart = Long.parseLong(ranges[0].substring(6));
-                long rangeEnd = 1;
+                long rangeEnd;
                 if (ranges.length > 1) {
                     rangeEnd = Long.parseLong(ranges[1]);
                 } else {
@@ -921,7 +915,7 @@ public class PrivateRequestController {
     @GetMapping("thumbnail/{id}")
     public void getAttachmentThumbnail(@PathVariable String id, HttpServletResponse response) {
         // Пытаемся найти вложение в базе данных по его id
-        Attachment attachments = null;
+        Attachment attachments;
         try {
             attachments = attachmentDispatcher.getAttachments(id);
         } catch (EntryNotFound e) {
@@ -969,7 +963,7 @@ public class PrivateRequestController {
             telegramController.assignInstallers(workLog, employeeFromRequest);
             stompController.updateTask(workLog.getTask());
             stompController.createWorkLog(workLog);
-            stompController.createChat(ChatMapper.toDto(workLog.getChat()));
+            stompController.createChat(Objects.requireNonNull(ChatMapper.toDto(workLog.getChat())));
             Set<Employee> observers = workLog.getTask().getAllEmployeesObservers(employeeFromRequest);
             notificationDispatcher.createNotification(observers, Notification.taskProcessed(workLog));
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.createdWorkLog(workLog.getTask(), workLog, employeeFromRequest));
@@ -988,6 +982,7 @@ public class PrivateRequestController {
             WorkLog taskWorkPair = taskDispatcher.forceCloseWorkLog(taskId, reasonOfClosing, getEmployeeFromRequest(request));
             stompController.updateTask(taskWorkPair.getTask());
             stompController.closeChat(taskWorkPair.getChat());
+            stompController.closeWorkLog(taskWorkPair);
 
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.forceCloseWorkLog(taskWorkPair.getTask(), taskWorkPair, getEmployeeFromRequest(request)));
             stompController.createTaskEvent(taskId, taskEvent);
@@ -1201,7 +1196,7 @@ public class PrivateRequestController {
     // Получает сотрудника по логину
     @GetMapping("employee/{login}")
     public ResponseEntity<Employee> getEmployee(@PathVariable String login) {
-        Employee employeeByLogin = null;
+        Employee employeeByLogin;
         try {
             employeeByLogin = employeeDispatcher.getEmployee(login);
         } catch (EntryNotFound e) {
@@ -1305,10 +1300,10 @@ public class PrivateRequestController {
     public ResponseEntity<Employee> setAvatar(@RequestBody String body, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
 
-        byte[] imageBytes = Base64.getDecoder().decode(body.replaceAll("data:[^\\/]+\\/[^;]+;base64,", "").getBytes(StandardCharsets.UTF_8));
+        byte[] imageBytes = Base64.getDecoder().decode(body.replaceAll("data:[^/]+/[^;]+;base64,", "").getBytes(StandardCharsets.UTF_8));
         String fileName = UUID.randomUUID() + ".png";
         Path folderPath = Path.of("./attachments", "avatars");
-        BufferedImage image = null;
+        BufferedImage image;
         try {
             image = ImageIO.read(new ByteArrayInputStream(imageBytes));
         } catch (IOException e) {
@@ -1397,7 +1392,7 @@ public class PrivateRequestController {
     public ResponseEntity<Void> deleteMessage(@PathVariable Long messageId, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         try {
-            SuperMessage chatMessages = telegramController.deleteMessageFromWeb(messageId, employee);
+            telegramController.deleteMessageFromWeb(messageId, employee);
             return ResponseEntity.ok().build();
         } catch (EntryNotFound | NotOwner | AlreadyDeleted | TelegramApiException e) {
             throw new ResponseException(e.getMessage());
@@ -1425,8 +1420,7 @@ public class PrivateRequestController {
 
     // Получает страницу с сообщениями из чата
     @GetMapping("chat/{chatId}/messages")
-    public ResponseEntity<Page<SuperMessage>> getChatMessages(@PathVariable Long chatId, @RequestParam Long first, @RequestParam Integer limit, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
+    public ResponseEntity<Page<SuperMessage>> getChatMessages(@PathVariable Long chatId, @RequestParam Long first, @RequestParam Integer limit) {
         try {
             return ResponseEntity.ok(chatDispatcher.getChatMessages(chatId, first, limit));
         } catch (EntryNotFound e) {
@@ -1436,8 +1430,7 @@ public class PrivateRequestController {
 
     // Получает чат по chatId
     @GetMapping("chat/{chatId}")
-    public ResponseEntity<Chat> getChat(@PathVariable Long chatId, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
+    public ResponseEntity<Chat> getChat(@PathVariable Long chatId) {
         try {
             return ResponseEntity.ok(chatDispatcher.getChat(chatId));
         } catch (EntryNotFound e) {
@@ -1454,8 +1447,7 @@ public class PrivateRequestController {
 
     // Получает активный чат задачи по taskId
     @GetMapping("task/{taskId}/active-chat")
-    public ResponseEntity<Chat> getActiveChat(@PathVariable Long taskId, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
+    public ResponseEntity<Chat> getActiveChat(@PathVariable Long taskId) {
         try {
             WorkLog activeWorkLog = workLogDispatcher.getActiveWorkLogByTaskId(taskId);
             return ResponseEntity.ok(activeWorkLog.getChat());
@@ -1521,13 +1513,148 @@ public class PrivateRequestController {
         return ResponseEntity.ok().build();
     }
 
+    // Получение страницы платных действий
+    @GetMapping("salary/paid-actions/{page}")
+    public ResponseEntity<Page<PaidAction>> getSalaryPaidActions(@PathVariable Integer page, @Nullable PaidAction.Filter filter) {
+        return ResponseEntity.ok(paidActionDispatcher.getPage(page, filter));
+    }
+
+    // Получение доступных платных действий
+    @GetMapping("salary/paid-actions/available")
+    public ResponseEntity<List<PaidAction>> getAvailableSalaryPaidActions() {
+        return ResponseEntity.ok(paidActionDispatcher.getAvailableList());
+    }
+
+    // Создание платных действий
+    @PostMapping("salary/paid-action")
+    public ResponseEntity<Void> createSalaryPaidAction(@RequestBody PaidAction.Form paidActionForm, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        paidActionDispatcher.create(paidActionForm, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    // Редактирование платных действий
+    @PatchMapping("salary/paid-action/{id}")
+    public ResponseEntity<Void> editSalaryPaidAction(@PathVariable Long id, @RequestBody PaidAction.Form paidActionForm, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        paidActionDispatcher.edit(id, paidActionForm, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    // Удаление платных действий
+    @DeleteMapping("salary/paid-action/{id}")
+    public ResponseEntity<Void> deleteSalaryPaidAction(@PathVariable Long id, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        paidActionDispatcher.delete(id, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("salary/paid-works-tree/drag-drop")
+    public ResponseEntity<Void> dragDropSalaryWorks(@RequestBody TreeDragDropEvent event, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        if(!event.hasSource()) throw new ResponseException("Нет источника");
+        String sourceType = event.getSource().getType();
+        if(sourceType.equals("group")){
+            paidWorkGroupDispatcher.dragDrop(event);
+        }else if(sourceType.equals("work")){
+            paidWorkDispatcher.dragDrop(event);
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("salary/paid-works-tree/reposition")
+    public ResponseEntity<Void> repositionSalaryWorks(@RequestBody List<TreeElementPosition> event, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        for (TreeElementPosition position : event) {
+            switch (position.getType()) {
+                case "group" -> position.setPath(paidWorkGroupDispatcher.reposition(position, employee));
+                case "work" -> position.setPath(paidWorkDispatcher.reposition(position, employee));
+            }
+        }
+        stompController.worksTreeReposition(event);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("salary/paid-works-tree/root")
+    public ResponseEntity<List<TreeNode>> getSalaryPaidWorksTreeRoot(@RequestParam @Nullable Boolean groupsUndraggable){
+        return ResponseEntity.ok(paidWorkGroupDispatcher.getRootTree(groupsUndraggable));
+    }
+
+    @GetMapping("salary/paid-works-tree/{groupId}")
+    public ResponseEntity<List<TreeNode>> getSalaryPaidWorksTree(@PathVariable Long groupId, @RequestParam @Nullable Boolean groupsUndraggable){
+        return ResponseEntity.ok(paidWorkGroupDispatcher.getTree(groupId, groupsUndraggable));
+    }
+
+    @PostMapping("salary/paid-work-group")
+    public ResponseEntity<Void> createSalaryPaidWorkGroup(@RequestBody PaidWorkGroup.Form form, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        paidWorkGroupDispatcher.create(form, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("salary/paid-work-group/{id}")
+    public ResponseEntity<Void> editSalaryPaidWorkGroup(@PathVariable Long id, @RequestBody PaidWorkGroup.Form form, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        paidWorkGroupDispatcher.edit(id, form, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("salary/paid-work-group/{id}")
+    public ResponseEntity<Void> deleteSalaryPaidWorkGroup(@PathVariable Long id, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        paidWorkGroupDispatcher.delete(id, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("salary/paid-work")
+    public ResponseEntity<Void> createSalaryPaidWork(@RequestBody PaidWork.Form form, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        paidWorkDispatcher.create(form, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("salary/paid-work/{id}")
+    public ResponseEntity<Void> editSalaryPaidWork(@PathVariable Long id, @RequestBody PaidWork.Form form, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        paidWorkDispatcher.edit(id, form, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("salary/paid-work/{id}")
+    public ResponseEntity<Void> deleteSalaryPaidWork(@PathVariable Long id, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        paidWorkDispatcher.delete(id, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("salary/paid-work/{id}")
+    public ResponseEntity<PaidWork> getSalaryPaidWork(@PathVariable Long id){
+        return ResponseEntity.ok(paidWorkDispatcher.get(id));
+    }
+
+    @GetMapping("work-logs/uncalculated")
+    public ResponseEntity<List<WorkLog>> getUncalculatedWorkLogs(){
+        return ResponseEntity.ok(workLogDispatcher.getUncalculated());
+    }
+
+    @PostMapping("salary/work-сalculation")
+    public ResponseEntity<Void> createSalaryWorkCalculation(@RequestBody WorkCalculationForm form, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        workCalculationDispatcher.calculateAndSave(form,employee);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("salary/table")
+    public ResponseEntity<List<SalaryRow>> getSalaryTable(@RequestParam @Nullable Date date, @RequestParam @Nullable Long position){
+        return ResponseEntity.ok(workingDayDispatcher.getTableByDate(date, position));
+    }
 
     private Employee getEmployeeFromRequest(HttpServletRequest request) {
         if (request.getCookies() == null) throw new ResponseException("Не авторизован");
         String login = AuthorizationProvider.getLoginFromCookie(List.of(request.getCookies()));
         if (login == null) throw new ResponseException("Не удалось получить данные о текущем пользователе");
 
-        Employee currentUser = null;
+        Employee currentUser;
         try {
             currentUser = employeeDispatcher.getEmployee(login);
         } catch (EntryNotFound e) {

@@ -215,4 +215,13 @@ public class EmployeeDispatcher {
     public Optional<Employee> getByTelegramId(Long chatId) {
         return employeeRepository.findByTelegramUserId(chatId.toString());
     }
+
+    public List<Employee> getByPosition(Long position) {
+        return employeeRepository.findAll((root,query,cb)->{
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.join("position", JoinType.LEFT).get("positionId"), position));
+            predicates.add(cb.isFalse(root.get("deleted")));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        });
+    }
 }

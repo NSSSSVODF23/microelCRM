@@ -2,6 +2,8 @@ package com.microel.trackerbackend.services.api;
 
 import com.microel.trackerbackend.configurations.StompConfig;
 import com.microel.trackerbackend.misc.SimpleMessage;
+import com.microel.trackerbackend.misc.TreeElementPosition;
+import com.microel.trackerbackend.misc.TreeNode;
 import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
@@ -9,6 +11,10 @@ import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.SuperMessage;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
+import com.microel.trackerbackend.storage.entities.salary.PaidAction;
+import com.microel.trackerbackend.storage.entities.salary.PaidWork;
+import com.microel.trackerbackend.storage.entities.salary.PaidWorkGroup;
+import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
@@ -19,6 +25,8 @@ import com.microel.trackerbackend.storage.entities.team.util.Position;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+
+import java.util.List;
 
 @Controller
 public class StompController {
@@ -50,11 +58,6 @@ public class StompController {
         sendAll(task, "task", "update");
     }
 
-    public void deleteTask(Task task) {
-        sendAll(task, "task", task.getTaskId().toString(), "delete");
-        sendAll(task, "task", "delete");
-    }
-
     public void createWorkLog(WorkLog workLog) {
         sendAll(workLog, "worklog", "create");
     }
@@ -66,11 +69,6 @@ public class StompController {
 
     public void closeWorkLog(WorkLog workLog) {
         sendAll(workLog, "worklog", "close");
-    }
-
-    public void deleteWorkLog(WorkLog workLog) {
-        sendAll(workLog, "worklog", workLog.getWorkLogId().toString(), "delete");
-        sendAll(workLog, "worklog", "delete");
     }
 
     public void createTaskEvent(Long taskId, TaskEvent taskEvent) {
@@ -144,10 +142,6 @@ public class StompController {
         sendToUser( notification.getEmployee().getLogin(), notification, "notification", "create");
     }
 
-    public void updateNotification(Notification notification) {
-        sendToUser( notification.getEmployee().getLogin(), notification, "notification", "update");
-    }
-
     public void updateChat(Chat chat) {
         sendAll(chat, "chat", "update");
     }
@@ -201,5 +195,65 @@ public class StompController {
     public void deleteWireframe(Wireframe wireframe){
         sendAll(wireframe, "wireframe", wireframe.getWireframeId().toString(), "delete");
         sendAll(wireframe, "wireframe", "delete");
+    }
+
+    public void createPaidAction(PaidAction paidAction){
+        sendAll(paidAction, "paid-action", "create");
+    }
+
+    public void updatePaidAction(PaidAction paidAction){
+        sendAll(paidAction, "paid-action", paidAction.getPaidActionId().toString(), "update");
+        sendAll(paidAction, "paid-action", "update");
+    }
+
+    public void deletePaidAction(PaidAction paidAction){
+        sendAll(paidAction, "paid-action", paidAction.getPaidActionId().toString(), "delete");
+        sendAll(paidAction, "paid-action", "delete");
+    }
+
+    public void createPaidWorkGroup(PaidWorkGroup paidWorkGroup){
+        sendAll(paidWorkGroup, "paid-work-group", "create");
+    }
+
+    public void updatePaidWorkGroup(PaidWorkGroup paidWorkGroup){
+        sendAll(paidWorkGroup, "paid-work-group", "update");
+    }
+
+    public void deletePaidWorkGroup(PaidWorkGroup paidWorkGroup){
+        sendAll(paidWorkGroup, "paid-work-group", "delete");
+    }
+
+    public void movePaidWorksTreeItem(TreeNode.MoveEvent moveEvent) {
+        sendAll(moveEvent, "paid-works", "tree", "move");
+    }
+
+    public void updatePaidWorksTreeItem(TreeNode.UpdateEvent updateEvent) {
+        sendAll(updateEvent, "paid-works", "tree", "update");
+    }
+
+    public void createPaidWorksTreeItem(TreeNode.UpdateEvent updateEvent) {
+        sendAll(updateEvent, "paid-works", "tree", "create");
+    }
+
+    public void deletePaidWorksTreeItem(TreeNode.UpdateEvent updateEvent) {
+        sendAll(updateEvent, "paid-works", "tree", "delete");
+    }
+
+    public void worksTreeReposition(List<TreeElementPosition> event) {
+        sendAll(event, "paid-works", "tree", "reposition");
+    }
+
+    public void updatePaidWork(PaidWork paidWork){
+        sendAll(paidWork, "paid-work", paidWork.getPaidWorkId().toString(), "update");
+        sendAll(paidWork, "paid-work", "update");
+    }
+
+    public void createWorkingDay(WorkingDay workingDay) {
+        sendAll(workingDay, "working-day", "create");
+    }
+
+    public void updateWorkingDay(WorkingDay workingDay) {
+        sendAll(workingDay, "working-day", workingDay.getWorkingDayId().toString(), "update");
+        sendAll(workingDay, "working-day", "update");
     }
 }

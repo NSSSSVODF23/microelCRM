@@ -84,6 +84,7 @@ public class WorkLogDispatcher {
                 .creator(creator)
                 .workReports(new HashSet<>())
                 .acceptedEmployees(new HashSet<>())
+                .calculated(false)
                 .build();
 
         return workLogRepository.save(workLog);
@@ -224,5 +225,14 @@ public class WorkLogDispatcher {
 
     public WorkLog getActiveByTaskId(Long taskId) throws EntryNotFound {
         return workLogRepository.findFirstByTask_TaskIdAndClosedIsNull(taskId).orElseThrow(() -> new EntryNotFound("Не найденно активного журнала работ"));
+    }
+
+    public List<WorkLog> getUncalculated() {
+        return workLogRepository.findAll((root,query,cb)->{
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isNotNull(root.get("closed")));
+            predicates.add(cb.isFalse(root.get("calculated")));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }, Sort.by(Sort.Direction.DESC, "created"));
     }
 }
