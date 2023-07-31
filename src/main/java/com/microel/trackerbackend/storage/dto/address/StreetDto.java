@@ -14,4 +14,5 @@ public class StreetDto {
     private String name;
     private String prefix;
     private Boolean deleted;
+    private String billingAlias;
 }

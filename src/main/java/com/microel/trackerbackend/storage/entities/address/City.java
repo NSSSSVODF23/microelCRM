@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.entities.address;
 
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.microel.trackerbackend.misc.AbstractForm;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
 
@@ -38,5 +39,15 @@ public class City implements Comparable<City> {
     @JsonIgnore
     public int compareTo(@NonNull City o) {
         return Comparator.comparing(City::getName).compare(this, o);
+    }
+
+    @Getter
+    @Setter
+    public static class Form implements AbstractForm {
+        private String name;
+
+        public boolean isValid() {
+            return name != null && !name.isBlank();
+        }
     }
 }

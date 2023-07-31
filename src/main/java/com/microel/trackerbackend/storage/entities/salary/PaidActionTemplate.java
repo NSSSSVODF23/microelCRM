@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.entities.salary;
 
+import com.microel.trackerbackend.misc.AbstractForm;
 import lombok.*;
 
 import javax.persistence.*;
@@ -22,7 +23,7 @@ public class PaidActionTemplate {
 
     @Getter
     @Setter
-    public static class Form {
+    public static class Form implements AbstractForm {
         private Long actionId;
         private Float count;
 

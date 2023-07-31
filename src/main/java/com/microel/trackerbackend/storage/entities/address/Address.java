@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.*;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
+import org.springframework.http.ResponseEntity;
 
 import javax.persistence.*;
 import java.util.Comparator;
@@ -45,6 +46,63 @@ public class Address implements Comparable<Address> {
     private Short apartmentNum;
     @Column(length = 32)
     private String apartmentMod;
+
+    public Integer countOfFilled() {
+        Integer count = 0;
+        if (street != null) {
+            count++;
+        }
+        if (city != null) {
+            count++;
+        }
+        if (district != null) {
+            count++;
+        }
+        if (street != null) {
+            count++;
+        }
+        if(houseNum != null) {
+            count++;
+        }
+        if(fraction != null) {
+            count++;
+        }
+        if(letter != null) {
+            count++;
+        }
+        if(build != null) {
+            count++;
+        }
+        if(apartmentNum != null) {
+            count++;
+        }
+        if(entrance != null) {
+            count++;
+        }
+        if(floor != null) {
+            count++;
+        }
+        if(apartmentMod != null) {
+            count++;
+        }
+        return count;
+    }
+
+    public String getBillingAddress(Boolean withFraction){
+        String billingStreetName = getStreet().getBillingAlias();
+        if(billingStreetName == null) billingStreetName = getStreet().getName();
+        StringBuilder billingAddress = new StringBuilder(billingStreetName);
+        if(getHouseNum() != null) billingAddress.append(" ").append(getHouseNum());
+        if(getFraction() != null && withFraction) billingAddress.append("/").append(getFraction());
+        if(getLetter() != null) billingAddress.append(getLetter());
+        if(getBuild() != null) billingAddress.append("_").append(getBuild());
+        if(getApartmentNum() != null) billingAddress.append("-").append(getApartmentNum());
+        return billingAddress.toString();
+    }
+
+    public String getBillingAddress(){
+        return getBillingAddress(true);
+    }
 
     public void setCityByName(String cityName) {
         this.city = City.builder().name(cityName).deleted(false).build();

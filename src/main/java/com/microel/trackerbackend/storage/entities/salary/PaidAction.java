@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.entities.salary;
 
+import com.microel.trackerbackend.misc.AbstractForm;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
@@ -60,14 +61,14 @@ public class PaidAction {
 
     @Getter
     @Setter
-    public static class Form{
+    public static class Form implements AbstractForm {
         private String name;
         private String description;
         private Unit unit;
         private Float cost;
 
         // Проверка на заполненность
-        public boolean fullFilled(){
+        public boolean isValid(){
             return (name != null && !name.isBlank()) && unit != null && (cost != null && cost > 0);
         }
 

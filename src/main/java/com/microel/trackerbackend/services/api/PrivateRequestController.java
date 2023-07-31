@@ -3,6 +3,7 @@ package com.microel.trackerbackend.services.api;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.microel.trackerbackend.controllers.billing.BillingRequestController;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.misc.*;
 import com.microel.trackerbackend.modules.transport.ChangeTaskObserversDTO;
@@ -21,7 +22,9 @@ import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
 import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
+import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.City;
+import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.MessageData;
@@ -88,6 +91,7 @@ public class PrivateRequestController {
     private final WireframeDispatcher wireframeDispatcher;
     private final TaskDispatcher taskDispatcher;
     private final StreetDispatcher streetDispatcher;
+    private final HouseDispatcher houseDispatcher;
     private final CityDispatcher cityDispatcher;
     private final CommentDispatcher commentDispatcher;
     private final ModelItemDispatcher modelItemDispatcher;
@@ -111,9 +115,10 @@ public class PrivateRequestController {
     private final PaidWorkDispatcher paidWorkDispatcher;
     private final WorkCalculationDispatcher workCalculationDispatcher;
     private final WorkingDayDispatcher workingDayDispatcher;
+    private final BillingRequestController billingRequestController;
 
     public PrivateRequestController(WireframeDispatcher wireframeDispatcher, TaskDispatcher taskDispatcher,
-                                    StreetDispatcher streetDispatcher, CityDispatcher cityDispatcher,
+                                    StreetDispatcher streetDispatcher, HouseDispatcher houseDispatcher, CityDispatcher cityDispatcher,
                                     CommentDispatcher commentDispatcher, ModelItemDispatcher modelItemDispatcher,
                                     EmployeeDispatcher employeeDispatcher, AttachmentDispatcher attachmentDispatcher,
                                     DepartmentDispatcher departmentsDispatcher, PositionDispatcher positionDispatcher,
@@ -121,10 +126,11 @@ public class PrivateRequestController {
                                     TaskTagDispatcher taskTagDispatcher, TaskFieldsSnapshotDispatcher taskFieldsSnapshotDispatcher,
                                     NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher,
                                     ChatDispatcher chatDispatcher, TelegramController telegramController,
-                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher) {
+                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, BillingRequestController billingRequestController) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.streetDispatcher = streetDispatcher;
+        this.houseDispatcher = houseDispatcher;
         this.cityDispatcher = cityDispatcher;
         this.commentDispatcher = commentDispatcher;
         this.modelItemDispatcher = modelItemDispatcher;
@@ -148,6 +154,7 @@ public class PrivateRequestController {
         this.paidWorkDispatcher = paidWorkDispatcher;
         this.workCalculationDispatcher = workCalculationDispatcher;
         this.workingDayDispatcher = workingDayDispatcher;
+        this.billingRequestController = billingRequestController;
     }
 
     // Получает список доступных наблюдателей из базы данных
@@ -238,10 +245,80 @@ public class PrivateRequestController {
         return ResponseEntity.ok(cityDispatcher.getCities());
     }
 
+    // Создание города
+    @PostMapping("city")
+    public ResponseEntity<City> createCity(@RequestBody City.Form form) {
+        City city = cityDispatcher.create(form);
+        return ResponseEntity.ok(city);
+    }
+
+    // Редактирование города
+    @PatchMapping("city/{id}")
+    public ResponseEntity<City> updateCity(@PathVariable Long id, @RequestBody City.Form form) {
+        City city = cityDispatcher.edit(id, form);
+        return ResponseEntity.ok(city);
+    }
+
+    // Удаление города
+    @DeleteMapping("city/{id}")
+    public ResponseEntity<Void> deleteCity(@PathVariable Long id) {
+        cityDispatcher.delete(id);
+        return ResponseEntity.ok().build();
+    }
+
+    // Создание улицы
+    @PostMapping("city/{id}/street")
+    public ResponseEntity<Street> createStreet(@PathVariable Long id, @RequestBody Street.Form form) {
+        Street street = streetDispatcher.create(id, form);
+        return ResponseEntity.ok(street);
+    }
+
+    // Редактирование улицы
+    @PatchMapping("street/{id}")
+    public ResponseEntity<Street> updateStreet(@PathVariable Long id, @RequestBody Street.Form form) {
+        Street street = streetDispatcher.edit(id, form);
+        return ResponseEntity.ok(street);
+    }
+
+    // Удаление улицы
+    @DeleteMapping("street/{id}")
+    public ResponseEntity<Void> deleteStreet(@PathVariable Long id) {
+        streetDispatcher.delete(id);
+        return ResponseEntity.ok().build();
+    }
+
     // Получение всех улиц в населенном пункте
     @GetMapping("streets/{cityId}")
-    public ResponseEntity<List<Street>> getAllStreets(@PathVariable Long cityId) {
+    public ResponseEntity<List<Street>> getAllStreets(@PathVariable Long cityId, @Nullable @RequestParam String filter) {
+        if(filter !=null) return ResponseEntity.ok(streetDispatcher.lookupByFilter(filter, cityId));
         return ResponseEntity.ok(streetDispatcher.getStreetsInCity(cityId));
+    }
+
+    // Получаем список домов
+    @GetMapping("houses/{streetId}")
+    public ResponseEntity<List<House>> getAllHouses(@PathVariable Long streetId) {
+        return ResponseEntity.ok(houseDispatcher.getByStreetId(streetId));
+    }
+
+    // Создание дома
+    @PostMapping("street/{id}/house")
+    public ResponseEntity<House> createHouse(@PathVariable Long id, @RequestBody House.Form form) {
+        House house = houseDispatcher.create(id, form);
+        return ResponseEntity.ok(house);
+    }
+
+    // Редактирование дома
+    @PatchMapping("house/{id}")
+    public ResponseEntity<House> updateHouse(@PathVariable Long id, @RequestBody House.Form form) {
+        House house = houseDispatcher.edit(id, form);
+        return ResponseEntity.ok(house);
+    }
+
+    // Удаление дома
+    @DeleteMapping("house/{id}")
+    public ResponseEntity<Void> deleteHouse(@PathVariable Long id) {
+        houseDispatcher.delete(id);
+        return ResponseEntity.ok().build();
     }
 
     // Создание новой задачи
@@ -1637,16 +1714,55 @@ public class PrivateRequestController {
         return ResponseEntity.ok(workLogDispatcher.getUncalculated());
     }
 
-    @PostMapping("salary/work-сalculation")
+    @PostMapping("salary/work-calculation")
     public ResponseEntity<Void> createSalaryWorkCalculation(@RequestBody WorkCalculationForm form, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         workCalculationDispatcher.calculateAndSave(form,employee);
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("salary/work-calculation/bypass")
+    public ResponseEntity<Void> createBypassSalaryWorkCalculation(@RequestBody BypassWorkCalculationForm form, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        workCalculationDispatcher.calculateAndSaveBypass(form,employee);
+        return ResponseEntity.ok().build();
+    }
+
     @GetMapping("salary/table")
     public ResponseEntity<List<SalaryRow>> getSalaryTable(@RequestParam @Nullable Date date, @RequestParam @Nullable Long position){
         return ResponseEntity.ok(workingDayDispatcher.getTableByDate(date, position));
+    }
+
+    @GetMapping("billing/users/by-login")
+    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByLogin(@RequestParam String login){
+        return ResponseEntity.ok(billingRequestController.getUsersByLogin(login));
+    }
+
+    @GetMapping("billing/users/by-fio")
+    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByFio(@RequestParam String query){
+        return ResponseEntity.ok(billingRequestController.getUsersByFio(query));
+    }
+
+    @GetMapping("billing/users/by-address")
+    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByAddress(@RequestParam String address){
+        ObjectMapper objectMapper = new ObjectMapper();
+        try {
+            Address addressObject = objectMapper.readValue(address, Address.class);
+            return ResponseEntity.ok(billingRequestController.getUsersByAddress(addressObject));
+        } catch (JsonProcessingException e) {
+            throw new IllegalFields(e.getMessage());
+        }
+    }
+
+    @GetMapping("billing/user/{login}")
+    public ResponseEntity<BillingRequestController.TotalUserInfo> getBillingUserInfo(@PathVariable String login){
+        return ResponseEntity.ok(billingRequestController.getUserInfo(login));
+    }
+
+    @GetMapping("convert/billing-address-string")
+    public ResponseEntity<AddressDto> convertBillingAddressString(@RequestParam @Nullable String addressString){
+        if(addressString == null) return ResponseEntity.ok(null);
+        return ResponseEntity.ok(addressDispatcher.convert(addressString));
     }
 
     private Employee getEmployeeFromRequest(HttpServletRequest request) {

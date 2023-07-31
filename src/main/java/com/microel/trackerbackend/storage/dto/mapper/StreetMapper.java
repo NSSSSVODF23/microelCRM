@@ -13,6 +13,7 @@ public class StreetMapper {
                 .prefix(street.getPrefix())
                 .deleted(street.getDeleted())
                 .name(street.getName())
+                .billingAlias(street.getBillingAlias())
                 .build();
     }
 
@@ -24,6 +25,7 @@ public class StreetMapper {
                 .prefix(street.getPrefix())
                 .deleted(street.getDeleted())
                 .name(street.getName())
+                .billingAlias(street.getBillingAlias())
                 .build();
     }
 }

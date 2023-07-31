@@ -48,7 +48,7 @@ public class PaidActionDispatcher {
     }
 
     public void create(PaidAction.Form paidActionForm, Employee employee) throws AlreadyExists {
-        if(!paidActionForm.fullFilled()){
+        if(!paidActionForm.isValid()){
             throw new IllegalFields("Не все поля заполнены");
         }
 
@@ -72,7 +72,7 @@ public class PaidActionDispatcher {
     }
 
     public void edit(Long id, PaidAction.Form paidActionForm, Employee employee) throws IllegalFields, EditingNotPossible {
-        if(!paidActionForm.fullFilled()){
+        if(!paidActionForm.isValid()){
             throw new IllegalFields("Не все поля заполнены");
         }
 

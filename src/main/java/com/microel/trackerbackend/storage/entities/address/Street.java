@@ -1,13 +1,14 @@
 package com.microel.trackerbackend.storage.entities.address;
 
-import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.microel.trackerbackend.misc.AbstractForm;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
+import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 
 @Entity
@@ -17,15 +18,17 @@ import java.util.Set;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Street implements Comparable<Street>{
+public class Street implements Comparable<Street> {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long streetId;
     @Column(length = 48)
     private String name;
     @Column(length = 512)
-    @JsonIgnore
     private String altNames;
+    @Column(length = 128)
+    @Nullable
+    private String billingAlias;
     @Column(length = 24)
     private String prefix;
     @ManyToOne
@@ -38,9 +41,22 @@ public class Street implements Comparable<Street>{
     @BatchSize(size = 25)
     private Set<House> houses;
 
+    @JsonIgnore
+    public List<Address> getAddress() {
+        return houses.stream().filter(house -> !house.isSomeDeleted()).map(House::getAddress).toList();
+    }
+
     public void setHouses(Set<House> houses) {
         this.houses = houses;
         houses.forEach(house -> house.setStreet(this));
+    }
+
+    public String getNameWithPrefix() {
+        return prefix + "." + name;
+    }
+
+    public String getStreetName() {
+        return city.getName() + " " + prefix + "." + name;
     }
 
     @Override
@@ -52,5 +68,20 @@ public class Street implements Comparable<Street>{
     @JsonIgnore
     public int compareTo(@NonNull Street o) {
         return Comparator.comparing(Street::getName).compare(this, o);
+    }
+
+    @Getter
+    @Setter
+    public static class Form implements AbstractForm {
+        private String prefix;
+        private String name;
+        @Nullable
+        private List<String> altNames;
+        @Nullable
+        private String billingAlias;
+
+        public boolean isValid() {
+            return name != null && !name.isBlank() && prefix != null && !prefix.isBlank();
+        }
     }
 }

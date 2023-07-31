@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
+import com.microel.trackerbackend.misc.BypassWorkCalculationForm;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.mapper.WorkLogMapper;
@@ -86,6 +87,55 @@ public class WorkLogDispatcher {
                 .acceptedEmployees(new HashSet<>())
                 .calculated(false)
                 .build();
+
+        return workLogRepository.save(workLog);
+    }
+
+    public WorkLog createWorkLog(Task task, BypassWorkCalculationForm.InstallersReportForm installersReportForm, Timestamp creatingDate, Employee creator) throws EntryNotFound, IllegalFields {
+        if (task == null) throw new EntryNotFound("Не найдена задача");
+        if (task.getTaskStatus() != TaskStatus.ACTIVE)
+            throw new IllegalFields("Нельзя назначать сотрудников на не активную задачу");
+        for (Employee installer : installersReportForm.getInstallers()) {
+            if (installer == null || installer.getLogin() == null || installer.getLogin().isBlank())
+                throw new IllegalFields("Не задан логин сотрудника");
+            Employee employeeByLogin = employeeDispatcher.getEmployee(installer.getLogin());
+            if (employeeByLogin == null)
+                throw new EntryNotFound("Не найден сотрудник с логином " + installer.getLogin());
+            if (employeeByLogin.getDeleted())
+                throw new EntryNotFound("Сотрудник с логином " + installer.getLogin() + " удален");
+            if (!employeeByLogin.getOffsite())
+                throw new IllegalFields("Сотрудник с логином " + installer.getLogin() + " не монтажник");
+        }
+
+        Chat chat = Chat.builder()
+                .creator(creator)
+                .title("Чат из задачи #" + task.getTaskId())
+                .created(creatingDate)
+                .members(Stream.of(creator).collect(Collectors.toSet()))
+                .deleted(false)
+                .updated(creatingDate)
+                .build();
+
+        WorkLog workLog = WorkLog.builder()
+                .chat(chat)
+                .created(creatingDate)
+                .task(task)
+                .isForceClosed(false)
+                .employees(installersReportForm.getInstallers())
+                .creator(creator)
+                .closed(creatingDate)
+                .acceptedEmployees(installersReportForm.getInstallers().stream().map((e) -> AcceptingEntry.of(e, creatingDate)).collect(Collectors.toSet()))
+                .calculated(false)
+                .build();
+
+        workLog.setWorkReports(installersReportForm.getInstallers().stream().map((e) ->
+                WorkReport.builder()
+                        .author(e)
+                        .created(creatingDate)
+                        .description(installersReportForm.getReport())
+                        .workLog(workLog)
+                        .build()
+        ).collect(Collectors.toSet()));
 
         return workLogRepository.save(workLog);
     }
@@ -228,7 +278,7 @@ public class WorkLogDispatcher {
     }
 
     public List<WorkLog> getUncalculated() {
-        return workLogRepository.findAll((root,query,cb)->{
+        return workLogRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isNotNull(root.get("closed")));
             predicates.add(cb.isFalse(root.get("calculated")));

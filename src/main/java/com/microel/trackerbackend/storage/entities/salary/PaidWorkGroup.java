@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.entities.salary;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.microel.trackerbackend.misc.AbstractForm;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
 import org.springframework.lang.Nullable;
@@ -55,7 +56,7 @@ public class PaidWorkGroup {
 
     @Getter
     @Setter
-    public static class Form {
+    public static class Form implements AbstractForm {
         private String name;
         @Nullable
         private String description;

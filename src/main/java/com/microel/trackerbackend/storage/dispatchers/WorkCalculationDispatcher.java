@@ -1,11 +1,13 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
+import com.microel.trackerbackend.misc.BypassWorkCalculationForm;
 import com.microel.trackerbackend.misc.WorkCalculationForm;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.entities.salary.ActionTaken;
 import com.microel.trackerbackend.storage.entities.salary.PaidAction;
 import com.microel.trackerbackend.storage.entities.salary.PaidWork;
 import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
+import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
@@ -28,8 +30,9 @@ public class WorkCalculationDispatcher {
     private final PaidWorkDispatcher paidWorkDispatcher;
     private final StompController stompController;
     private final WorkingDayDispatcher workingDayDispatcher;
+    private final TaskDispatcher taskDispatcher;
 
-    public WorkCalculationDispatcher(WorkCalculationRepository workCalculationRepository, ActionTakenDispatcher actionTakenDispatcher, EmployeeDispatcher employeeDispatcher, WorkLogDispatcher workLogDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkDispatcher paidWorkDispatcher, StompController stompController, WorkingDayDispatcher workingDayDispatcher) {
+    public WorkCalculationDispatcher(WorkCalculationRepository workCalculationRepository, ActionTakenDispatcher actionTakenDispatcher, EmployeeDispatcher employeeDispatcher, WorkLogDispatcher workLogDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkDispatcher paidWorkDispatcher, StompController stompController, WorkingDayDispatcher workingDayDispatcher, TaskDispatcher taskDispatcher) {
         this.workCalculationRepository = workCalculationRepository;
         this.actionTakenDispatcher = actionTakenDispatcher;
         this.employeeDispatcher = employeeDispatcher;
@@ -38,6 +41,7 @@ public class WorkCalculationDispatcher {
         this.paidWorkDispatcher = paidWorkDispatcher;
         this.stompController = stompController;
         this.workingDayDispatcher = workingDayDispatcher;
+        this.taskDispatcher = taskDispatcher;
     }
 
     public void calculateAndSave(WorkCalculationForm form, Employee creator) {
@@ -59,15 +63,20 @@ public class WorkCalculationDispatcher {
         WorkLog workLog = workLogDispatcher.get(form.getWorkLogId());
         if (workLog.getCalculated()) throw new IllegalFields("Этот журнал работ уже был рассчитан");
 
+        calculating(workLog, form.getActions(), form.getSpreading(), form.getEmptyDescription(), creator);
+    }
+
+    private void calculating(WorkLog workLog, List<WorkCalculationForm.ActionCalculationItem> formActions, List<WorkCalculationForm.SpreadingItem> formSpreading, String emptyCalcDescription, Employee creator) {
+
         List<ActionTaken> actions = new ArrayList<>();
         Boolean empty = false;
-        if (form.getActions() == null || form.getActions().isEmpty()) {
-            if (form.getEmptyDescription() == null || form.getEmptyDescription().isBlank()) {
+        if (formActions == null || formActions.isEmpty()) {
+            if (emptyCalcDescription == null || emptyCalcDescription.isBlank()) {
                 throw new IllegalFields("Нужно указать причину пустого подсчета");
             }
             empty = true;
         } else {
-            for (WorkCalculationForm.ActionCalculationItem item : form.getActions()) {
+            for (WorkCalculationForm.ActionCalculationItem item : formActions) {
 
                 if (item.getCount() == null || item.getCount() <= 0) {
                     throw new IllegalFields("Количество платных действий может быть положительным числом");
@@ -97,7 +106,7 @@ public class WorkCalculationDispatcher {
 
         List<WorkCalculation> savedCalculation = new ArrayList<>();
         for (Employee employee : workLog.getEmployees()) {
-            WorkCalculationForm.SpreadingItem currentEmployeeSpreading = form.getSpreading().stream()
+            WorkCalculationForm.SpreadingItem currentEmployeeSpreading = formSpreading.stream()
                     .filter(spreadingItem -> spreadingItem.getLogin().equals(employee.getLogin()))
                     .findFirst().orElseThrow(() -> new IllegalFields("Сотрудник из журнала данной работы не найден в списке подсчета"));
             Float currentRatio = currentEmployeeSpreading.getRatio();
@@ -110,7 +119,7 @@ public class WorkCalculationDispatcher {
                     .created(Timestamp.from(Instant.now()))
                     .creator(creator)
                     .empty(empty)
-                    .emptyDescription(form.getEmptyDescription())
+                    .emptyDescription(emptyCalcDescription)
                     .build();
             WorkCalculation saved = workCalculationRepository.save(workCalculation);
             savedCalculation.add(saved);
@@ -125,4 +134,16 @@ public class WorkCalculationDispatcher {
     }
 
 
+    public void calculateAndSaveBypass(BypassWorkCalculationForm form, Employee employee) {
+        Task task = taskDispatcher.createTask(form.getTaskInfo(), form.getReportInfo().getDate(), employee);
+        stompController.createTask(task);
+        stompController.updateTask(taskDispatcher.modifyTags(task.getTaskId(), form.getReportInfo().getTags()));
+        WorkLog workLog = workLogDispatcher.createWorkLog(task, form.getReportInfo(), form.getReportInfo().getDate(), employee);
+        stompController.createWorkLog(workLog);
+        workLog.getChat().setClosed(form.getReportInfo().getDate());
+        calculating(workLog, form.getActions(), form.getSpreading(), "", employee);
+        stompController.closeWorkLog(workLog);
+        stompController.closeChat(workLog.getChat());
+        stompController.updateTask(taskDispatcher.close(task.getTaskId()));
+    }
 }

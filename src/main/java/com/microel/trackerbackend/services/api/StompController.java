@@ -8,6 +8,9 @@ import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
+import com.microel.trackerbackend.storage.entities.address.City;
+import com.microel.trackerbackend.storage.entities.address.House;
+import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.SuperMessage;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
@@ -255,5 +258,47 @@ public class StompController {
     public void updateWorkingDay(WorkingDay workingDay) {
         sendAll(workingDay, "working-day", workingDay.getWorkingDayId().toString(), "update");
         sendAll(workingDay, "working-day", "update");
+    }
+
+    public void createCity(City city) {
+        sendAll(city, "city", "create");
+    }
+
+    public void updateCity(City city) {
+        sendAll(city, "city", city.getCityId().toString(), "update");
+        sendAll(city, "city", "update");
+    }
+
+    public void deleteCity(City city) {
+        sendAll(city, "city", city.getCityId().toString(), "delete");
+        sendAll(city, "city", "delete");
+    }
+
+    public void createStreet(Street street) {
+        sendAll(street, "street", "create");
+    }
+
+    public void updateStreet(Street street) {
+        sendAll(street, "street", street.getStreetId().toString(), "update");
+        sendAll(street, "street", "update");
+    }
+
+    public void deleteStreet(Street street) {
+        sendAll(street, "street", street.getStreetId().toString(), "delete");
+        sendAll(street, "street", "delete");
+    }
+
+    public void createHouse(House house) {
+        sendAll(house, "house", "create");
+    }
+
+    public void updateHouse(House house) {
+        sendAll(house, "house", house.getHouseId().toString(), "update");
+        sendAll(house, "house", "update");
+    }
+
+    public void deleteHouse(House house) {
+        sendAll(house, "house", house.getHouseId().toString(), "delete");
+        sendAll(house, "house", "delete");
     }
 }

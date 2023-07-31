@@ -13,6 +13,7 @@ import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import lombok.*;
 import org.hibernate.annotations.*;
+import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import javax.persistence.CascadeType;
@@ -197,7 +198,9 @@ public class Task {
     public static class CreationBody{
         private Long wireframeId;
         private List<ModelItem> fields;
+        @Nullable
         private Long childId;
+        @Nullable
         private Long parentId;
     }
 }

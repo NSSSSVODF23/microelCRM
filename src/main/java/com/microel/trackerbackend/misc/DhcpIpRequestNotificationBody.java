@@ -11,6 +11,8 @@ public class DhcpIpRequestNotificationBody {
     private String ip;
     private String mac;
     private Integer vlan;
+    private String device;
+    private String owner;
     private List<SwitchInfo> switches;
 
     @Getter

@@ -59,7 +59,7 @@ public class WorkCalculation {
                     }
                     return 0f;
                 }).reduce(0f, Float::sum);
-                originalSum += Math.round(factorActionsSum-((factorActionsSum * ratio) * factorAction.getFactor()));
+                originalSum += Math.round(((factorActionsSum * ratio) * factorAction.getFactor())-(factorActionsSum * ratio));
             }
         }
         return originalSum;

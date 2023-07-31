@@ -9,17 +9,20 @@ import com.microel.trackerbackend.storage.dto.address.AddressDto;
 import com.microel.trackerbackend.storage.dto.mapper.AddressMapper;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.City;
+import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
 import com.microel.trackerbackend.storage.repositories.AddressRepository;
 import lombok.*;
+import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
-import java.util.*;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -127,94 +130,77 @@ public class AddressDispatcher {
     }
 
     public List<AddressDto> getSuggestions(String query) {
+        List<Address> suggestions = new ArrayList<>();
+        query = CharacterTranslation.translate(query);
+        LevenshteinDistance levenshteinDistance = new LevenshteinDistance();
 
         int matchSetting = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
-        List<String> cityParts = List.of("^(?<city>[а-я]+)\\.? ", "^");
 
+        String specialRegex = "^(?<hn>\\d{1,3})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(( с\\.?| стр\\.?| строение|_)(?<hb>\\d{1,3}))?-(?<an>\\d{1,3})";
+
+        List<String> cityParts = List.of("^(?<city>[а-я]{4})\\. ([а-я\\-]{2,10}\\.)?", "");
         List<String> streetParts = List.of(
-                "([а-я\\-]{2,10}\\.)?(?<street>\\d{1,2}\\-?[а-я]? [а-я]+)",
-                "([а-я\\-]{2,10}\\.)?(?<street>\\d{1,2}\\-?[а-я]? [а-я]+ [а-я]+)",
-                "([а-я\\-]{2,10}\\.)?(?<street>[а-я]+ [а-я]+)",
-                "([а-я\\-]{2,10}\\.)?(?<street>[а-я\\.]+)"
+                "(?<street>\\d{1,2} [а-я]{1,5})",
+                "(?<street>[а-я].[а-я]. [а-я]+)",
+                "(?<street>[а-я]+ \\d-?[а-я]{1,3})",
+                "(?<street>[а-я]+ [а-я]+ [а-я]+)",
+                "(?<street>\\d{1,2} [а-я]{1,5} [а-я]+)",
+                "(?<street>\\d{1,2}-?[а-я]{1,2} [а-я]+)",
+                "(?<street>[а-я]+. ?[а-я]+)",
+                "(?<street>[а-я]+ [а-я]+)",
+                "(?<street>[а-я]+)"
         );
-
         List<String> houseParts = List.of(
-                "(?<hn>\\d+)[/\\\\](?<hf>\\d+)(?<hl>[а-я]) (с|стр|строение)\\.?(?<hb>\\d+)",
-                "(?<hn>\\d+)[/\\\\](?<hf>\\d+)(?<hl>[а-я])",
-                "(?<hn>\\d+)[/\\\\](?<hf>\\d+) (с|стр|строение)\\.?(?<hb>\\d+)",
-                "(?<hn>\\d+)[/\\\\](?<hf>\\d+)",
-                "(?<hn>\\d+)(?<hl>[а-я]) (с|стр|строение)\\.?(?<hb>\\d+)",
-                "(?<hn>\\d+)(?<hl>[а-я])",
-                "(?<hn>\\d+) (с|стр|строение)\\.?(?<hb>\\d+)",
-                "(?<hn>\\d+)"
+                " (?<hn>\\d{1,4})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(( с\\.?| стр\\.?| строение|_)(?<hb>\\d{1,3}))?",
+                ""
+        );
+        List<String> apartParts = List.of(
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))?( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))?( \\((?<am>[а-я]+)\\))?",
+                ""
         );
 
-
-        query = CharacterTranslation.translate(query);
-
-        List<Address> filteredSuggestions = new ArrayList<>();
-        List<Address> filteredSuggestionsWithoutHouse = new ArrayList<>();
-
-        List<Address> addresses = null;
+        Pattern specialPattern = Pattern.compile(specialRegex, matchSetting);
+        Matcher specialMatcher = specialPattern.matcher(query);
+        AddressLookupRequest specialRequest = AddressLookupRequest.of(specialMatcher);
+        if (specialRequest != null){
+            List<House> foundHouses = houseDispatcher.lookupHouses(specialRequest);
+            List<Address> collect = foundHouses.stream().filter(house -> !house.isSomeDeleted())
+                    .map(house -> house.getAddress(specialRequest.entrance, specialRequest.floor, specialRequest.apartment, specialRequest.apartmentMod)).toList();
+            suggestions.addAll(collect);
+        }
 
         for (String cityPart : cityParts) {
+            if(!suggestions.isEmpty()) break;
             for (String streetPart : streetParts) {
                 for (String housePart : houseParts) {
-                    Pattern pattern = Pattern.compile(cityPart + streetPart + " " + housePart, matchSetting);
-                    Matcher matcher = pattern.matcher(query);
-                    addresses = filterSuggestions(matcher);
-                    if (addresses != null) {
-                        String apartmentQuery = query.substring(matcher.end(matcher.groupCount())).trim();
-                        if (!apartmentQuery.isBlank()) {
-                            Short apartmentNum = getApartNumOfPattern(apartmentQuery);
-                            addresses.forEach(address -> address.setApartmentNum(apartmentNum));
-                            if (apartmentNum != null) {
-                                String apartmentMod = getApartModOfPattern(apartmentQuery);
-                                if (apartmentMod != null && !apartmentMod.isBlank()) {
-                                    addresses.forEach(address -> address.setApartmentMod(apartmentMod));
-                                }
-                            }
-                            Short entrance = getEntranceOfPattern(apartmentQuery);
-                            addresses.forEach(address -> address.setEntrance(entrance));
-                            if (entrance != null) {
-                                Short floor = getFloorOfPattern(apartmentQuery);
-                                addresses.forEach(address -> address.setFloor(floor));
+                    for (String apartPart : apartParts) {
+                        String rexp = cityPart + streetPart + housePart + apartPart;
+                        Pattern pattern = Pattern.compile(rexp, matchSetting);
+                        Matcher matcher = pattern.matcher(query);
+                        AddressLookupRequest request = AddressLookupRequest.of(matcher);
+                        if (request == null) continue;
+                        if (request.houseNum != null) {
+                            List<House> foundHouses = houseDispatcher.lookup(request);
+                            List<Address> collect = foundHouses.stream().filter(house -> !house.isSomeDeleted())
+                                    .map(house -> house.getAddress(request.entrance, request.floor, request.apartment, request.apartmentMod)).toList();
+                            suggestions.addAll(collect);
+                        } else {
+                            List<Street> foundStreets = streetDispatcher.containsInName(request.streetName);
+                            for (Street street : foundStreets) {
+                                suggestions.addAll(street.getAddress());
                             }
                         }
-                        filteredSuggestions.addAll(addresses);
-                        break;
+                        if(!suggestions.isEmpty()) break;
                     }
+                    if(!suggestions.isEmpty()) break;
                 }
-                if (addresses == null || addresses.isEmpty()) {
-                    Pattern pattern = Pattern.compile(cityPart + streetPart, matchSetting);
-                    Matcher matcher = pattern.matcher(query);
-                    addresses = filterSuggestions(matcher);
-                    if(addresses != null) {
-                        filteredSuggestionsWithoutHouse.addAll(addresses);
-                    }
-                }
+                if(!suggestions.isEmpty()) break;
             }
+            if(!suggestions.isEmpty()) break;
         }
 
-        if (filteredSuggestions.isEmpty()) {
-            filteredSuggestions = filteredSuggestionsWithoutHouse;
-        }
-
-        return filteredSuggestions.stream().sorted(Address::compareTo).map(AddressMapper::toDto).collect(Collectors.toList());
-    }
-
-    @Getter
-    @Setter
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Builder
-    public static class AddressLookupRequest{
-        private String cityName;
-        private String streetName;
-        private Short houseNum;
-        private Short fraction;
-        private Character letter;
-        private Short build;
+        String finalQuery = query;
+        return suggestions.stream().sorted(Comparator.comparingInt(o->levenshteinDistance.apply(finalQuery, o.getAddressName()))).limit(30).map(AddressMapper::toDto).toList();
     }
 
     @Nullable
@@ -313,5 +299,131 @@ public class AddressDispatcher {
             return houseDispatcher.getExistingAddresses(request);
         }
         return null;
+    }
+
+    @Nullable
+    public AddressDto convert(String addressString) {
+        int matchSetting = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
+        String regex = "^(?<street>[а-я\\.\\-\\d]+) (?<hn>\\d{1,4})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(_(?<hb>\\d{1,3}))?-(?<an>\\d{1,3})";
+        Pattern pattern = Pattern.compile(regex, matchSetting);
+        Matcher matcher = pattern.matcher(addressString);
+        AddressLookupRequest lookupRequest = AddressLookupRequest.of(matcher);
+        if (lookupRequest != null) {
+            House foundHouse = houseDispatcher.lookupBillingHouse(lookupRequest);
+            if (foundHouse != null) {
+                return AddressMapper.toDto(foundHouse.getAddress(lookupRequest.entrance, lookupRequest.floor, lookupRequest.apartment, lookupRequest.apartmentMod));
+            }
+        }
+        return null;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @ToString
+    public static class AddressLookupRequest {
+        private String cityName;
+        private String streetName;
+        private Short houseNum;
+        @Nullable
+        private Short fraction;
+        @Nullable
+        private Character letter;
+        @Nullable
+        private Short build;
+        @Nullable
+        private Short entrance;
+        @Nullable
+        private Short floor;
+        @Nullable
+        private Short apartment;
+        @Nullable
+        private String apartmentMod;
+
+        public String raw() {
+            StringBuilder builder = new StringBuilder();
+            if (cityName != null) {
+                builder.append(cityName);
+            }
+            if (streetName != null) {
+                builder.append(streetName);
+            }
+            if (houseNum != null) {
+                builder.append(houseNum);
+            }
+            if (fraction != null) {
+                builder.append(fraction);
+            }
+            if (letter != null) {
+                builder.append(letter);
+            }
+            if (build != null) {
+                builder.append(build);
+            }
+            if (entrance != null) {
+                builder.append(entrance);
+            }
+            if (floor != null) {
+                builder.append(floor);
+            }
+            if (apartment != null) {
+                builder.append(apartment);
+            }
+            if (apartmentMod != null) {
+                builder.append(apartmentMod);
+            }
+            return builder.toString();
+        }
+
+        @Nullable
+        public static AddressLookupRequest of(Matcher matcher) {
+            if (matcher.find()) {
+                AddressLookupRequest request = new AddressLookupRequest();
+                try {
+                    request.setCityName(matcher.group("city"));
+                } catch (IllegalArgumentException ignored) {
+                }
+                try {
+                    request.setStreetName(matcher.group("street"));
+                } catch (IllegalArgumentException ignored) {
+                }
+                try {
+                    request.setHouseNum(Short.parseShort(matcher.group("hn")));
+                } catch (IllegalArgumentException ignored) {
+                }
+                try {
+                    request.setFraction(Short.parseShort(matcher.group("hf")));
+                } catch (IllegalArgumentException ignored) {
+                }
+                try {
+                    request.setLetter(matcher.group("hl").charAt(0));
+                } catch (IllegalArgumentException | NullPointerException ignored) {
+                }
+                try {
+                    request.setBuild(Short.parseShort(matcher.group("hb")));
+                } catch (IllegalArgumentException ignored) {
+                }
+                try {
+                    request.setEntrance(Short.parseShort(matcher.group("ent")));
+                } catch (IllegalArgumentException ignored) {
+                }
+                try {
+                    request.setFloor(Short.parseShort(matcher.group("fl")));
+                } catch (IllegalArgumentException ignored) {
+                }
+                try {
+                    request.setApartment(Short.parseShort(matcher.group("an")));
+                } catch (IllegalArgumentException ignored) {
+                }
+                try {
+                    request.setApartmentMod(matcher.group("am"));
+                } catch (IllegalArgumentException ignored) {
+                }
+                return request;
+            }
+            return null;
+        }
     }
 }

@@ -111,12 +111,16 @@ public class TaskDispatcher {
     }
 
     public Task createTask(Task.CreationBody body, Employee employee) throws IllegalFields, EntryNotFound {
+        return createTask(body, Timestamp.from(Instant.now()), employee);
+    }
+
+    public Task createTask(Task.CreationBody body, Timestamp timestamp, Employee employee) throws IllegalFields, EntryNotFound {
         // Создаем временный объект задачи
         Task createdTask = new Task();
         // Устанавливаем время создания задачи
-        createdTask.setCreated(Timestamp.from(Instant.now()));
+        createdTask.setCreated(timestamp);
         // Устанавливаем время обновления задачи
-        createdTask.setUpdated(Timestamp.from(Instant.now()));
+        createdTask.setUpdated(timestamp);
         // Устанавливаем автора задачи
         createdTask.setCreator(employee);
 

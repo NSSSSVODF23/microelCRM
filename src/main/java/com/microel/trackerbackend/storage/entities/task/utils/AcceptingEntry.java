@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.entities.task.utils;
 
+import com.microel.trackerbackend.storage.entities.team.Employee;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -16,6 +17,10 @@ public class AcceptingEntry {
     private String login;
     private String telegramUserId;
     private Timestamp timestamp;
+
+    public static AcceptingEntry of(Employee employee, Timestamp timestamp){
+        return new AcceptingEntry(employee.getLogin(), employee.getTelegramUserId(), timestamp);
+    }
 
     @Override
     public boolean equals(Object o) {

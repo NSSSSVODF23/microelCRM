@@ -371,6 +371,8 @@ public class TelegramMessageFactory {
     public AbstractExecutor<Message> dhcpIpRequestNotification(DhcpIpRequestNotificationBody body) {
         StringBuilder messageBuilder = new StringBuilder("\uD83D\uDCF6️")
                 .append(Decorator.bold("Обнаружено подключенное оборудование:")).append("\n")
+                .append("Хозяин: ").append(body.getOwner()).append("\n")
+                .append("Device: ").append(body.getDevice()).append("\n")
                 .append("IP: ").append(body.getIp()).append("\n")
                 .append("MAC: ").append(body.getMac()).append("\n")
                 .append("VLAN: ").append(body.getVlan()).append("\n");
