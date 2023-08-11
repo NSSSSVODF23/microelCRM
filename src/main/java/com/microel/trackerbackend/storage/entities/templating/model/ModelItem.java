@@ -6,13 +6,16 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.task.Task;
+import com.microel.trackerbackend.storage.entities.templating.DataConnectionService;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 
 import javax.persistence.*;
 import java.sql.Timestamp;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -39,6 +42,7 @@ public class ModelItem {
     private String name;
     @Enumerated(EnumType.STRING)
     private WireframeFieldType wireframeFieldType;
+    private String variation;
     @ManyToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @JoinColumn(name = "f_address_id")
     private Address addressData;
@@ -53,6 +57,9 @@ public class ModelItem {
     @MapKeyColumn(name = "phone_id", length = 50)
     @Column(name = "phone", length = 20)
     private Map<String, String> phoneData;
+    @ManyToMany(cascade = {CascadeType.MERGE, CascadeType.REFRESH, CascadeType.PERSIST})
+    @BatchSize(size = 25)
+    private List<DataConnectionService> connectionServicesData;
 
     @Override
     public boolean equals(Object o) {
@@ -93,7 +100,11 @@ public class ModelItem {
             case LOGIN:
             case SMALL_TEXT:
             case CONNECTION_SERVICES:
+                return connectionServicesData.stream().map(DataConnectionService::getConnectionService).collect(Collectors.toList());
+            case CONNECTION_TYPE:
+                return stringData;
             case EQUIPMENTS:
+                return stringData;
             case IP:
             case REQUEST_INITIATOR:
             case AD_SOURCE:
@@ -107,33 +118,18 @@ public class ModelItem {
 
     public void setValue(Object value) {
         switch (wireframeFieldType) {
-            case ADDRESS:
-                addressData = (Address) value;
-                break;
-            case BOOLEAN:
-                booleanData = (Boolean) value;
-                break;
-            case FLOAT:
-                floatData = (Float) value;
-                break;
-            case INTEGER:
-                integerData = (Integer) value;
-                break;
-            case LARGE_TEXT:
-            case LOGIN:
-            case SMALL_TEXT:
-            case CONNECTION_SERVICES:
-            case EQUIPMENTS:
-            case IP:
-            case REQUEST_INITIATOR:
-            case AD_SOURCE:
-                stringData = (String) value;
-                break;
-            case PHONE_ARRAY:
-                phoneData = (Map<String, String>) value;
-                break;
-            default:
-                break;
+            case ADDRESS -> addressData = (Address) value;
+            case BOOLEAN -> booleanData = (Boolean) value;
+            case FLOAT -> floatData = (Float) value;
+            case INTEGER -> integerData = (Integer) value;
+            case LARGE_TEXT, LOGIN, SMALL_TEXT-> stringData = (String) value;
+            case CONNECTION_TYPE -> stringData = (String) value;
+            case EQUIPMENTS -> stringData = (String) value;
+            case IP, REQUEST_INITIATOR, AD_SOURCE -> stringData = (String) value;
+            case PHONE_ARRAY -> phoneData = (Map<String, String>) value;
+            case CONNECTION_SERVICES -> connectionServicesData = (List<DataConnectionService>) value;
+            default -> {
+            }
         }
     }
 
@@ -141,7 +137,7 @@ public class ModelItem {
         switch (wireframeFieldType) {
             case LARGE_TEXT:
             case SMALL_TEXT:
-            case CONNECTION_SERVICES:
+            case CONNECTION_TYPE:
             case EQUIPMENTS:
             case IP:
             case REQUEST_INITIATOR:
@@ -192,6 +188,8 @@ public class ModelItem {
                 return addressResult.toString();
             case PHONE_ARRAY:
                 return String.join(", ", phoneData.values());
+            case CONNECTION_SERVICES:
+                return connectionServicesData.stream().map(val->val.getConnectionService().getLabel()).collect(Collectors.joining(", "));
             default:
                 return null;
         }
@@ -202,7 +200,7 @@ public class ModelItem {
         switch (wireframeFieldType) {
             case LARGE_TEXT:
             case SMALL_TEXT:
-            case CONNECTION_SERVICES:
+            case CONNECTION_TYPE:
             case EQUIPMENTS:
             case IP:
             case REQUEST_INITIATOR:
@@ -253,6 +251,8 @@ public class ModelItem {
                 return addressResult.toString();
             case PHONE_ARRAY:
                 return phoneData.values().stream().map(phone-> "+7"+phone.substring(1).replaceAll(" ","")).map(Decorator::phone).collect(Collectors.joining("\n"));
+            case CONNECTION_SERVICES:
+                return connectionServicesData.stream().map(val->val.getConnectionService().getLabel()).collect(Collectors.joining(", "));
             default:
                 return null;
         }

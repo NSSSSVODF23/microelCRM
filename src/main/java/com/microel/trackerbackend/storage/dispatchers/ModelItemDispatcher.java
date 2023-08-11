@@ -136,6 +136,10 @@ public class ModelItemDispatcher {
                     if (item.getWireframeFieldType() == WireframeFieldType.ADDRESS) {
                         item.setAddressData(addressDispatcher.findIdentical(item.getAddressData()));
                     }
+                    if(item.getWireframeFieldType() == WireframeFieldType.CONNECTION_SERVICES){
+                        item.setConnectionServicesData(item.getConnectionServicesData().stream()
+                                .peek(cs-> cs.setDataConnectionServiceId(null)).collect(Collectors.toList()));
+                    }
                 }).collect(Collectors.toList());
     }
 

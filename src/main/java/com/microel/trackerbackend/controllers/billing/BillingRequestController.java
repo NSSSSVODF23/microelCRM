@@ -3,6 +3,7 @@ package com.microel.trackerbackend.controllers.billing;
 import com.marcospassos.phpserializer.Serializer;
 import com.marcospassos.phpserializer.SerializerBuilder;
 import com.microel.trackerbackend.storage.entities.address.Address;
+import com.microel.trackerbackend.storage.exceptions.EmptyResponse;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import lombok.Getter;
 import lombok.Setter;
@@ -13,6 +14,7 @@ import org.apache.xmlrpc.client.XmlRpcClientConfigImpl;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
+import java.io.EOFException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.text.ParseException;
@@ -65,6 +67,8 @@ public class BillingRequestController {
             log.warn("Не найдено");
         } catch (XmlRpcException e) {
             throw new EntryNotFound("Ошибка запроса в XMLRPC");
+        } catch (Exception e){
+            throw new EmptyResponse("Пустой ответ от биллинга");
         }
         return null;
     }

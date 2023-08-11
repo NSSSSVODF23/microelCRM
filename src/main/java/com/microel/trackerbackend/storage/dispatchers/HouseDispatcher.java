@@ -9,6 +9,7 @@ import com.microel.trackerbackend.storage.exceptions.AlreadyExists;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.HouseRepository;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import javax.persistence.criteria.Join;
@@ -154,8 +155,11 @@ public class HouseDispatcher {
         return houseRepository.findByStreet_StreetIdAndDeletedFalseOrderByHouseNum(streetId);
     }
 
-
     public boolean isHouseExistsByForm(Street street, House.Form form) {
+        return isHouseExistsByForm(street, form, null);
+    }
+
+    public boolean isHouseExistsByForm(Street street, House.Form form, @Nullable Long id) {
         return houseRepository.exists((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("houseNum"), form.getHouseNum()));
@@ -177,6 +181,7 @@ public class HouseDispatcher {
 
             predicates.add(cb.equal(root.get("street"), street));
             predicates.add(cb.equal(root.get("deleted"), false));
+            if(id != null) predicates.add(cb.notEqual(root.get("houseId"), id));
 
             return cb.and(predicates.toArray(Predicate[]::new));
         });
@@ -194,6 +199,8 @@ public class HouseDispatcher {
                 .letter(form.getLetter())
                 .build(form.getBuild())
                 .street(street)
+                .place(form.getPlace() == null ? null : form.getPlace().toPlace())
+                .isApartmentHouse(form.getIsApartmentHouse())
                 .deleted(false)
                 .build();
         House save = houseRepository.save(house);
@@ -205,13 +212,15 @@ public class HouseDispatcher {
         House house = houseRepository.findById(id).orElseThrow(() -> new EntryNotFound("Дом не найден"));
         if (!form.isValid()) throw new IllegalFields("Данные для обновления дома не валидны");
         Street street = house.getStreet();
-        boolean exists = isHouseExistsByForm(street, form);
+        boolean exists = isHouseExistsByForm(street, form, id);
         if (exists) throw new AlreadyExists("Дом с таким номером уже существует");
         if (form.isFullEqual(house)) throw new IllegalFields("Данные для обновления дома не валидны");
         house.setHouseNum(form.getHouseNum());
         house.setFraction(form.getFraction());
         house.setLetter(form.getLetter());
         house.setBuild(form.getBuild());
+        house.setPlace(form.getPlace() == null ? null : form.getPlace().toPlace());
+        house.setIsApartmentHouse(form.getIsApartmentHouse());
         House save = houseRepository.save(house);
         stompController.updateHouse(save);
         return save;

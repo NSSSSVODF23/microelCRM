@@ -1,9 +1,12 @@
 package com.microel.trackerbackend.configurations;
 
 import com.microel.trackerbackend.controllers.EmployeeSessionsController;
-import com.microel.trackerbackend.security.AuthorizationProvider;
+import com.microel.trackerbackend.services.MonitoringService;
+import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.EventListener;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
@@ -11,16 +14,23 @@ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 import org.springframework.web.socket.messaging.SessionConnectEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
+import org.springframework.web.socket.messaging.SessionSubscribeEvent;
+import org.springframework.web.socket.messaging.SessionUnsubscribeEvent;
+
+import java.util.Arrays;
+import java.util.UUID;
 
 @Configuration
 @EnableWebSocketMessageBroker
 public class StompConfig implements WebSocketMessageBrokerConfigurer {
 
-    private final EmployeeSessionsController employeeSessionController;
     public static final String SIMPLE_BROKER_PREFIX = "/api";
+    private final EmployeeSessionsController employeeSessionController;
+    private final MonitoringService monitoringService;
 
-    public StompConfig(EmployeeSessionsController employeeSessionController) {
+    public StompConfig(EmployeeSessionsController employeeSessionController, MonitoringService monitoringService) {
         this.employeeSessionController = employeeSessionController;
+        this.monitoringService = monitoringService;
     }
 
 
@@ -37,6 +47,38 @@ public class StompConfig implements WebSocketMessageBrokerConfigurer {
     @EventListener
     public void handleSessionDisconnect(SessionDisconnectEvent event) {
         employeeSessionController.removeSession(event.getSessionId());
+        monitoringService.releasePingMonitoring(UUID.fromString(event.getSessionId()));
+    }
+
+    @EventListener
+    public void onSubscribeEvent(SessionSubscribeEvent event) {
+        Message<byte[]> message = event.getMessage();
+        UUID sessionId = getSessionId(message);
+        String[] path = getDestination(message);
+        if ("monitoring".equals(path[0])) {
+            if ("ping".equals(path[1])) {
+                try{
+                    monitoringService.appendPingMonitoring(path[2], sessionId);
+                }catch (ArrayIndexOutOfBoundsException e){
+                    throw new IllegalFields("Не указан ip адрес цели мониторинга");
+                }
+            }
+        }
+    }
+
+    @EventListener
+    public void onUnsubscribeEvent(SessionUnsubscribeEvent event) {
+        UUID sessionId = getSessionId(event.getMessage());
+        monitoringService.releasePingMonitoring(sessionId);
+    }
+
+    private String[] getDestination(Message<byte[]> message) {
+        String destination = message.getHeaders().get(SimpMessageHeaderAccessor.DESTINATION_HEADER).toString();
+        return Arrays.stream(destination.split("/")).skip(2).toArray(String[]::new);
+    }
+
+    private UUID getSessionId(Message<byte[]> message) {
+        return UUID.fromString(message.getHeaders().get(SimpMessageHeaderAccessor.SESSION_ID_HEADER).toString());
     }
 
     @Override

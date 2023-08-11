@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.entities.address;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.microel.trackerbackend.misc.AbstractForm;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
@@ -18,6 +19,7 @@ import java.util.Set;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Street implements Comparable<Street> {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

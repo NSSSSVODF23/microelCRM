@@ -58,5 +58,7 @@ public class StaticConfigurationModule {
     public static class Configuration{
         @Nullable
         private String dhcpNotificationChatId;
+        @Nullable
+        private String acpFlexConnectorUrl;
     }
 }

@@ -3,6 +3,7 @@ package com.microel.trackerbackend.storage.entities.address;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.microel.trackerbackend.misc.AbstractForm;
+import com.microel.trackerbackend.storage.entities.Place;
 import lombok.*;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
@@ -27,6 +28,8 @@ public class House {
     private Character letter;
     @Nullable
     private Short fraction;
+    @Column(columnDefinition = "boolean default false")
+    private Boolean isApartmentHouse;
     @Nullable
     private Short build;
     @Nullable
@@ -36,6 +39,11 @@ public class House {
     @JsonIgnore
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     private Street street;
+
+    @Nullable
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    @JoinColumn(name = "place_id")
+    private Place place;
 
     @Getter
     @Setter
@@ -47,13 +55,21 @@ public class House {
         private Short fraction;
         @Nullable
         private Short build;
+        private Boolean isApartmentHouse;
+
+        @Nullable
+        private Place.Form place;
+
         @Override
         public boolean isValid() {
-            return houseNum != null && houseNum > 0 && (fraction == null || fraction > 0) && (build == null || build > 0);
+            return houseNum != null && houseNum > 0 && (fraction == null || fraction > 0) && (build == null || build > 0) && isApartmentHouse != null;
         }
 
         public boolean isFullEqual(House house){
-            return Objects.equals(house.houseNum, houseNum) && Objects.equals(house.letter, letter) && Objects.equals(house.fraction, fraction) && Objects.equals(house.build, build);
+            return Objects.equals(house.houseNum, houseNum) && Objects.equals(house.letter, letter)
+                    && Objects.equals(house.fraction, fraction) && Objects.equals(house.build, build)
+                    && Objects.equals(house.isApartmentHouse, isApartmentHouse)
+                    && Objects.equals(house.place, place == null? null : place.toPlace());
         }
     }
 

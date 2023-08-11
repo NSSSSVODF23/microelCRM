@@ -5,6 +5,7 @@ import com.microel.trackerbackend.misc.SimpleMessage;
 import com.microel.trackerbackend.misc.TreeElementPosition;
 import com.microel.trackerbackend.misc.TreeNode;
 import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
+import com.microel.trackerbackend.services.MonitoringService;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
@@ -300,5 +301,9 @@ public class StompController {
     public void deleteHouse(House house) {
         sendAll(house, "house", house.getHouseId().toString(), "delete");
         sendAll(house, "house", "delete");
+    }
+
+    public void pingMonitoring(MonitoringService.PingMonitoring pingMonitoring) {
+        sendAll(pingMonitoring, "monitoring", "ping", pingMonitoring.getIp());
     }
 }

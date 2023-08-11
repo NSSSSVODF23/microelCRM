@@ -1,6 +1,6 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
-import com.microel.trackerbackend.misc.SalaryRow;
+import com.microel.trackerbackend.misc.SalaryTable;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
@@ -26,14 +26,14 @@ public class WorkingDayDispatcher {
         this.stompController = stompController;
     }
 
-    public void addCalculation(String login, Date date, WorkCalculation calculation){
+    public void addCalculation(String login, Date date, WorkCalculation calculation) {
         List<WorkingDay> all = workingDayRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.join("employee").get("login"), login));
             predicates.add(cb.equal(root.get("date"), date));
             return cb.and(predicates.toArray(Predicate[]::new));
         });
-        if(all.size() == 0){
+        if (all.size() == 0) {
             Employee employee = employeeDispatcher.getEmployee(login);
             WorkingDay workingDay = WorkingDay.builder()
                     .employee(employee)
@@ -41,17 +41,17 @@ public class WorkingDayDispatcher {
                     .calculations(Stream.of(calculation).collect(Collectors.toList()))
                     .build();
             stompController.createWorkingDay(workingDayRepository.save(workingDay));
-        }else{
+        } else {
             all.get(0).getCalculations().add(calculation);
             stompController.updateWorkingDay(workingDayRepository.save(all.get(0)));
         }
     }
 
-    public List<SalaryRow> getTableByDate(@Nullable Date date, @Nullable Long position) {
+    public SalaryTable getTableByDate(@Nullable Date date, @Nullable Long position) {
         Calendar calendar = GregorianCalendar.getInstance();
         calendar.setTime(date == null ? new Date() : date);
 
-        calendar.set(Calendar.DAY_OF_MONTH, calendar.getActualMinimum(Calendar.DAY_OF_MONTH));
+        calendar.set(Calendar.DAY_OF_MONTH, 1);
         calendar.set(Calendar.HOUR_OF_DAY, 0);
         calendar.set(Calendar.MINUTE, 0);
         calendar.set(Calendar.SECOND, 0);
@@ -74,22 +74,47 @@ public class WorkingDayDispatcher {
 
         List<Employee> employeesByPosition = employeeDispatcher.getByPosition(position);
 
-        List<SalaryRow> salaryRows = new ArrayList<>();
+        SalaryTable salaryTable = new SalaryTable();
 
-        for(Employee employee : employeesByPosition) {
-            if(rows.containsKey(employee)){
-                salaryRows.add(SalaryRow.builder()
-                        .employee(employee)
-                        .salaryPoints(rows.get(employee).stream().map(WorkingDay::toSalaryPoint).collect(Collectors.toList()))
-                        .build());
-            }else{
-                salaryRows.add(SalaryRow.builder()
-                        .employee(employee)
-                        .salaryPoints(new ArrayList<>())
-                        .build());
+        salaryTable.setHeaders(start);
+        salaryTable.setEmployees(employeesByPosition);
+
+        for (Employee employee : employeesByPosition) {
+            Calendar wdCalendar = GregorianCalendar.getInstance();
+            List<SalaryTable.SalaryTableCell> row = new ArrayList<>();
+            wdCalendar.setTime(start);
+            if (rows.containsKey(employee)) {
+                List<WorkingDay> workingDays = rows.get(employee);
+                for (int i = 1; i <= end.getDate(); i++) {
+                    wdCalendar.set(Calendar.DAY_OF_MONTH, i);
+                    Integer targetDate = wdCalendar.getTime().getDate();
+                    SalaryTable.SalaryTableCell cell = workingDays.stream()
+                            .filter(wd -> targetDate.equals(wd.getDate().getDate()))
+                            .map(WorkingDay::toPoint)
+                            .findFirst().orElse(new SalaryTable.SalaryTableCell(wdCalendar.getTime(), employee));
+                    row.add(cell);
+                }
+            } else {
+                for (int i = 1; i <= end.getDate(); i++) {
+                    wdCalendar.set(Calendar.DAY_OF_MONTH, i);
+                    Date targetDate = wdCalendar.getTime();
+                    row.add(new SalaryTable.SalaryTableCell(targetDate, employee));
+                }
             }
+            salaryTable.addRow(row);
         }
 
-        return salaryRows;
+        return salaryTable;
+    }
+
+
+    @Nullable
+    public WorkingDay getWorkingDay(Date date, String login) {
+        return workingDayRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.join("employee").get("login"), login));
+            predicates.add(cb.equal(root.get("date"), date));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }).stream().findFirst().orElse(null);
     }
 }
