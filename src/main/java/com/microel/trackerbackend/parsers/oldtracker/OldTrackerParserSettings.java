@@ -15,4 +15,9 @@ public class OldTrackerParserSettings implements AbstractConfiguration {
     private String trackerPassword = "";
     private String trackerUrl = "http://tracker.vdonsk.ru";
     private BindingsCollection bindings;
+
+    @Override
+    public Boolean isFilled() {
+        return true;
+    }
 }

@@ -1,6 +1,6 @@
 package com.microel.trackerbackend;
 
-import com.microel.trackerbackend.controllers.billing.BillingRequestController;
+import com.microel.trackerbackend.services.api.external.acp.AcpClient;
 import io.metaloom.video4j.Video4j;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.xmlrpc.XmlRpcException;
@@ -16,16 +16,14 @@ import java.net.MalformedURLException;
 @EnableScheduling
 @Slf4j
 public class BackendApplication {
-    public BackendApplication() throws MalformedURLException, XmlRpcException {
-        try{
+    public BackendApplication(AcpClient acpClient) throws MalformedURLException, XmlRpcException {
+        try {
             Video4j.init();
             log.info("Библиотека video4j инициализирована");
-        }catch (RuntimeException e){
+        } catch (RuntimeException e) {
             log.warn("Библиотека video4j не инициализирована: {}", e.getMessage());
         }
-//        new BillingRequestController().getUsersByLogin();
-//        new BillingRequestController().getUserInfo();
-//        new BillingRequestController().getHelp();
+//        System.out.println(acpClient.getBindingsByLogin("16111630"));
     }
 
     public static void main(String[] args) {

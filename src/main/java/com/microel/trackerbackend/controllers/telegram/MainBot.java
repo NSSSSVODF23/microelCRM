@@ -3,7 +3,7 @@ package com.microel.trackerbackend.controllers.telegram;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.handle.TelegramUpdateSubscribe;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
-import com.microel.trackerbackend.storage.exceptions.CustomException;
+import com.microel.trackerbackend.CustomException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.Nullable;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 @Slf4j
 public class MainBot extends TelegramLongPollingBot {

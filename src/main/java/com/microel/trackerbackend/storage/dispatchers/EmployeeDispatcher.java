@@ -55,7 +55,7 @@ public class EmployeeDispatcher {
         return employeeRepository.findAll(Sort.by(Sort.Direction.ASC, "secondName", "firstName", "lastName", "login"));
     }
 
-    public List<Employee> getEmployeesList(String globalFilter, Boolean showDeleted, Boolean showOffsite) {
+    public List<Employee> getEmployeesList(@Nullable String globalFilter, @Nullable Boolean isDeleted, @Nullable Boolean isOffsite) {
         return employeeRepository.findAll((root, query, cb) -> {
             List<Predicate> globalSearchPredicates = new ArrayList<>();
             List<Predicate> flagsPredicates = new ArrayList<>();
@@ -67,8 +67,8 @@ public class EmployeeDispatcher {
                 globalSearchPredicates.add(cb.like(cb.lower(root.join("department", JoinType.LEFT).get("name")), "%" + globalFilter.toLowerCase() + "%"));
                 globalSearchPredicates.add(cb.like(cb.lower(root.join("position", JoinType.LEFT).get("name")), "%" + globalFilter.toLowerCase() + "%"));
             }
-            if (showDeleted != null) flagsPredicates.add(cb.equal(root.get("deleted"), showDeleted));
-            if (showOffsite != null) flagsPredicates.add(cb.equal(root.get("offsite"), showOffsite));
+            if (isDeleted != null) flagsPredicates.add(cb.equal(root.get("deleted"), isDeleted));
+            if (isOffsite != null) flagsPredicates.add(cb.equal(root.get("offsite"), isOffsite));
             if(!globalSearchPredicates.isEmpty()){
                 return cb.and(cb.or(globalSearchPredicates.toArray(Predicate[]::new)), cb.and(flagsPredicates.toArray(Predicate[]::new)));
             }else{

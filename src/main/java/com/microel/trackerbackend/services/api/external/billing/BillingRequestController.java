@@ -1,9 +1,15 @@
-package com.microel.trackerbackend.controllers.billing;
+package com.microel.trackerbackend.services.api.external.billing;
 
 import com.marcospassos.phpserializer.Serializer;
 import com.marcospassos.phpserializer.SerializerBuilder;
+import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
+import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigurationException;
+import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
+import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.entities.address.Address;
+import com.microel.trackerbackend.storage.exceptions.EmptyResponse;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
+import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -31,17 +37,31 @@ public class BillingRequestController {
     private final LinkedHashMap<Object, Object> rqMap = new LinkedHashMap<>();
     private final Map<String, Object> argsMap = new HashMap<>();
     private final Serializer serializer = new SerializerBuilder().build();
+    private final ConfigurationStorage configStorage;
+    private final StompController stompController;
+    private BillingConf billingConf;
 
-    public BillingRequestController() throws MalformedURLException {
-        config.setServerURL(new URL("http://10.50.0.7:91/rpc_server.php"));
+    public BillingRequestController(ConfigurationStorage configStorage, StompController stompController) throws MalformedURLException {
+        this.configStorage = configStorage;
+        billingConf = configStorage.loadOrDefault(BillingConf.class, new BillingConf());
+        this.stompController = stompController;
+        authenticate();
+    }
+
+    private void authenticate() throws MalformedURLException {
+        if(billingConf == null || !billingConf.isFilled()) {
+            log.warn("Конфигурация биллинга не задана. Авторизация не возможна.");
+            return;
+        }
+//        config.setServerURL(new URL("http://10.50.0.7:91/rpc_server.php"));
+        config.setServerURL(new URL("http://"+billingConf.getHost()+":"+billingConf.getPort()+"/rpc_server.php"));
         client.setConfig(config);
-
         Map<String, Map<String, String>> sysMap = Map.of("auth", Map.of("dname", "daemon_x"));
-
         argsMap.put("method", "WDaemon2");
         argsMap.put("rq", rqMap);
         argsMap.put("_Sys", sysMap);
-        argsMap.put("__hostname", "sandbox");
+        argsMap.put("__hostname", billingConf.getLogin());
+//        argsMap.put("__hostname", "sandbox");
     }
 
     @Nullable
@@ -50,10 +70,10 @@ public class BillingRequestController {
         rqMap.clear();
         rqMap.put(0, "WDaemon.php");
         rqMap.put("skey", login);
-//        rqMap.put("uname_live", 1);
         rqMap.put("__call", "UsersByLogin");
-        rqMap.put("__ip", "10.1.3.150");
-        rqMap.put("__person", "root:10.1.3.150");
+        rqMap.put("__ip", billingConf.getSelfIp());
+        rqMap.put("__person", "root:"+billingConf.getSelfIp());
+//        rqMap.put("uname_live", 1);
         calculateSign();
 
         try {
@@ -65,6 +85,8 @@ public class BillingRequestController {
             log.warn("Не найдено");
         } catch (XmlRpcException e) {
             throw new EntryNotFound("Ошибка запроса в XMLRPC");
+        } catch (Exception e){
+            throw new EmptyResponse("Пустой ответ от биллинга");
         }
         return null;
     }
@@ -75,10 +97,10 @@ public class BillingRequestController {
         rqMap.clear();
         rqMap.put(0, "WDaemon.php");
         rqMap.put("skey", query);
-//        rqMap.put("uname_live", 1);
         rqMap.put("__call", "UsersByFio");
-        rqMap.put("__ip", "10.1.3.150");
-        rqMap.put("__person", "root:10.1.3.150");
+        rqMap.put("__ip", billingConf.getSelfIp());
+        rqMap.put("__person", "root:"+billingConf.getSelfIp());
+//        rqMap.put("uname_live", 1);
         calculateSign();
 
         try {
@@ -100,10 +122,10 @@ public class BillingRequestController {
         rqMap.clear();
         rqMap.put(0, "WDaemon.php");
         rqMap.put("skey", address.getBillingAddress());
-//        rqMap.put("uname_live", 1);
         rqMap.put("__call", "UsersByAddr");
-        rqMap.put("__ip", "10.1.3.150");
-        rqMap.put("__person", "root:10.1.3.150");
+        rqMap.put("__ip", billingConf.getSelfIp());
+        rqMap.put("__person", "root:"+billingConf.getSelfIp());
+//        rqMap.put("uname_live", 1);
         calculateSign();
 
         try {
@@ -145,9 +167,8 @@ public class BillingRequestController {
         rqMap.put(0, "WDaemon.php");
         rqMap.put("uname", login);
         rqMap.put("__call", "getUserInfo");
-        rqMap.put("__ip", "10.1.3.150");
-        rqMap.put("__person", "root:10.1.3.150");
-
+        rqMap.put("__ip", billingConf.getSelfIp());
+        rqMap.put("__person", "root:"+billingConf.getSelfIp());
         calculateSign();
 
         try {
@@ -178,9 +199,25 @@ public class BillingRequestController {
     }
 
     private void calculateSign() {
+        if(billingConf == null || !billingConf.isFilled()) {
+            throw new BillingAuthenticationException("Нет заданной конфигурации подключения к биллингу");
+        }
         CRC32 sign = new CRC32();
-        sign.update((serializer.serialize(rqMap) + "130").getBytes());
+//        sign.update((serializer.serialize(rqMap) + "130").getBytes());
+        sign.update((serializer.serialize(rqMap) + billingConf.getPassword()).getBytes());
         argsMap.put("__sign", String.valueOf(sign.getValue()));
+    }
+
+    public BillingConf getConfiguration() {
+        return billingConf;
+    }
+
+    public void setConfiguration(BillingConf billingConf) throws MalformedURLException, FailedToWriteConfigurationException {
+        if(!billingConf.isFilled()) throw new IllegalFields("Конфигурация не заполнена");
+        this.billingConf = billingConf;
+        authenticate();
+        configStorage.save(billingConf);
+        stompController.changeBillingConfig(billingConf);
     }
 
     @Getter

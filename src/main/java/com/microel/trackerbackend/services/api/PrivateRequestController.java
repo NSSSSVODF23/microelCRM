@@ -3,9 +3,13 @@ package com.microel.trackerbackend.services.api;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.microel.trackerbackend.controllers.billing.BillingRequestController;
+import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
+import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
+import com.microel.trackerbackend.services.api.external.billing.BillingRequestController;
+import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.misc.*;
+import com.microel.trackerbackend.misc.network.NetworkRemoteControl;
 import com.microel.trackerbackend.modules.transport.ChangeTaskObserversDTO;
 import com.microel.trackerbackend.modules.transport.IDuration;
 import com.microel.trackerbackend.parsers.addresses.AddressParser;
@@ -13,6 +17,8 @@ import com.microel.trackerbackend.parsers.oldtracker.AddressCorrectingPool;
 import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.parsers.oldtracker.OldTrackerParserSettings;
 import com.microel.trackerbackend.security.AuthorizationProvider;
+import com.microel.trackerbackend.services.api.external.acp.AcpClient;
+import com.microel.trackerbackend.services.api.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dispatchers.*;
@@ -35,9 +41,11 @@ import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.TaskJournalItem;
 import com.microel.trackerbackend.storage.entities.comments.dto.CommentData;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
+import com.microel.trackerbackend.storage.entities.equipment.ClientEquipment;
 import com.microel.trackerbackend.storage.entities.salary.PaidAction;
 import com.microel.trackerbackend.storage.entities.salary.PaidWork;
 import com.microel.trackerbackend.storage.entities.salary.PaidWorkGroup;
+import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskFieldsSnapshot;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
@@ -46,8 +54,7 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.Observer;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.entities.team.util.*;
-import com.microel.trackerbackend.storage.entities.templating.DefaultObserver;
-import com.microel.trackerbackend.storage.entities.templating.Wireframe;
+import com.microel.trackerbackend.storage.entities.templating.*;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
@@ -66,6 +73,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+import reactor.core.publisher.Mono;
 
 import javax.imageio.ImageIO;
 import javax.servlet.http.HttpServletRequest;
@@ -73,6 +81,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
+import java.net.MalformedURLException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -116,6 +125,8 @@ public class PrivateRequestController {
     private final WorkCalculationDispatcher workCalculationDispatcher;
     private final WorkingDayDispatcher workingDayDispatcher;
     private final BillingRequestController billingRequestController;
+    private final AcpClient acpClient;
+    private final ClientEquipmentDispatcher clientEquipmentDispatcher;
 
     public PrivateRequestController(WireframeDispatcher wireframeDispatcher, TaskDispatcher taskDispatcher,
                                     StreetDispatcher streetDispatcher, HouseDispatcher houseDispatcher, CityDispatcher cityDispatcher,
@@ -126,7 +137,7 @@ public class PrivateRequestController {
                                     TaskTagDispatcher taskTagDispatcher, TaskFieldsSnapshotDispatcher taskFieldsSnapshotDispatcher,
                                     NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher,
                                     ChatDispatcher chatDispatcher, TelegramController telegramController,
-                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, BillingRequestController billingRequestController) {
+                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, BillingRequestController billingRequestController, AcpClient acpClient, ClientEquipmentDispatcher clientEquipmentDispatcher) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.streetDispatcher = streetDispatcher;
@@ -155,6 +166,8 @@ public class PrivateRequestController {
         this.workCalculationDispatcher = workCalculationDispatcher;
         this.workingDayDispatcher = workingDayDispatcher;
         this.billingRequestController = billingRequestController;
+        this.acpClient = acpClient;
+        this.clientEquipmentDispatcher = clientEquipmentDispatcher;
     }
 
     // Получает список доступных наблюдателей из базы данных
@@ -290,7 +303,7 @@ public class PrivateRequestController {
     // Получение всех улиц в населенном пункте
     @GetMapping("streets/{cityId}")
     public ResponseEntity<List<Street>> getAllStreets(@PathVariable Long cityId, @Nullable @RequestParam String filter) {
-        if(filter !=null) return ResponseEntity.ok(streetDispatcher.lookupByFilter(filter, cityId));
+        if (filter != null) return ResponseEntity.ok(streetDispatcher.lookupByFilter(filter, cityId));
         return ResponseEntity.ok(streetDispatcher.getStreetsInCity(cityId));
     }
 
@@ -1629,11 +1642,11 @@ public class PrivateRequestController {
     @PatchMapping("salary/paid-works-tree/drag-drop")
     public ResponseEntity<Void> dragDropSalaryWorks(@RequestBody TreeDragDropEvent event, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
-        if(!event.hasSource()) throw new ResponseException("Нет источника");
+        if (!event.hasSource()) throw new ResponseException("Нет источника");
         String sourceType = event.getSource().getType();
-        if(sourceType.equals("group")){
+        if (sourceType.equals("group")) {
             paidWorkGroupDispatcher.dragDrop(event);
-        }else if(sourceType.equals("work")){
+        } else if (sourceType.equals("work")) {
             paidWorkDispatcher.dragDrop(event);
         }
         return ResponseEntity.ok().build();
@@ -1653,12 +1666,12 @@ public class PrivateRequestController {
     }
 
     @GetMapping("salary/paid-works-tree/root")
-    public ResponseEntity<List<TreeNode>> getSalaryPaidWorksTreeRoot(@RequestParam @Nullable Boolean groupsUndraggable){
+    public ResponseEntity<List<TreeNode>> getSalaryPaidWorksTreeRoot(@RequestParam @Nullable Boolean groupsUndraggable) {
         return ResponseEntity.ok(paidWorkGroupDispatcher.getRootTree(groupsUndraggable));
     }
 
     @GetMapping("salary/paid-works-tree/{groupId}")
-    public ResponseEntity<List<TreeNode>> getSalaryPaidWorksTree(@PathVariable Long groupId, @RequestParam @Nullable Boolean groupsUndraggable){
+    public ResponseEntity<List<TreeNode>> getSalaryPaidWorksTree(@PathVariable Long groupId, @RequestParam @Nullable Boolean groupsUndraggable) {
         return ResponseEntity.ok(paidWorkGroupDispatcher.getTree(groupId, groupsUndraggable));
     }
 
@@ -1705,46 +1718,51 @@ public class PrivateRequestController {
     }
 
     @GetMapping("salary/paid-work/{id}")
-    public ResponseEntity<PaidWork> getSalaryPaidWork(@PathVariable Long id){
+    public ResponseEntity<PaidWork> getSalaryPaidWork(@PathVariable Long id) {
         return ResponseEntity.ok(paidWorkDispatcher.get(id));
     }
 
     @GetMapping("work-logs/uncalculated")
-    public ResponseEntity<List<WorkLog>> getUncalculatedWorkLogs(){
+    public ResponseEntity<List<WorkLog>> getUncalculatedWorkLogs() {
         return ResponseEntity.ok(workLogDispatcher.getUncalculated());
     }
 
     @PostMapping("salary/work-calculation")
     public ResponseEntity<Void> createSalaryWorkCalculation(@RequestBody WorkCalculationForm form, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
-        workCalculationDispatcher.calculateAndSave(form,employee);
+        workCalculationDispatcher.calculateAndSave(form, employee);
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("salary/work-calculation/bypass")
     public ResponseEntity<Void> createBypassSalaryWorkCalculation(@RequestBody BypassWorkCalculationForm form, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
-        workCalculationDispatcher.calculateAndSaveBypass(form,employee);
+        workCalculationDispatcher.calculateAndSaveBypass(form, employee);
         return ResponseEntity.ok().build();
     }
 
+    @GetMapping("salary/already-calculated-work/{id}/form")
+    public ResponseEntity<ResponseWorkEstimationForm> getAlreadyCalculatedWorkForm(@PathVariable Long id) {
+        return ResponseEntity.ok(workCalculationDispatcher.getFormInfoByWorkLog(id));
+    }
+
     @GetMapping("salary/table")
-    public ResponseEntity<List<SalaryRow>> getSalaryTable(@RequestParam @Nullable Date date, @RequestParam @Nullable Long position){
+    public ResponseEntity<SalaryTable> getSalaryTable(@RequestParam @Nullable Date date, @RequestParam @Nullable Long position) {
         return ResponseEntity.ok(workingDayDispatcher.getTableByDate(date, position));
     }
 
     @GetMapping("billing/users/by-login")
-    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByLogin(@RequestParam String login){
+    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByLogin(@RequestParam String login) {
         return ResponseEntity.ok(billingRequestController.getUsersByLogin(login));
     }
 
     @GetMapping("billing/users/by-fio")
-    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByFio(@RequestParam String query){
+    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByFio(@RequestParam String query) {
         return ResponseEntity.ok(billingRequestController.getUsersByFio(query));
     }
 
     @GetMapping("billing/users/by-address")
-    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByAddress(@RequestParam String address){
+    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByAddress(@RequestParam String address) {
         ObjectMapper objectMapper = new ObjectMapper();
         try {
             Address addressObject = objectMapper.readValue(address, Address.class);
@@ -1755,14 +1773,124 @@ public class PrivateRequestController {
     }
 
     @GetMapping("billing/user/{login}")
-    public ResponseEntity<BillingRequestController.TotalUserInfo> getBillingUserInfo(@PathVariable String login){
+    public ResponseEntity<BillingRequestController.TotalUserInfo> getBillingUserInfo(@PathVariable String login) {
         return ResponseEntity.ok(billingRequestController.getUserInfo(login));
     }
 
     @GetMapping("convert/billing-address-string")
-    public ResponseEntity<AddressDto> convertBillingAddressString(@RequestParam @Nullable String addressString){
-        if(addressString == null) return ResponseEntity.ok(null);
+    public ResponseEntity<AddressDto> convertBillingAddressString(@RequestParam @Nullable String addressString) {
+        if (addressString == null) return ResponseEntity.ok(null);
         return ResponseEntity.ok(addressDispatcher.convert(addressString));
+    }
+
+    @GetMapping("working-day")
+    public ResponseEntity<WorkingDay> getWorkingDay(@RequestParam Date date, @RequestParam String login) {
+        return ResponseEntity.ok(workingDayDispatcher.getWorkingDay(date, login));
+    }
+
+    @GetMapping("acp/dhcp/bindings")
+    public ResponseEntity<List<DhcpBinding>> getDhcpBindings(@RequestParam String login) {
+        return ResponseEntity.ok(acpClient.getBindingsByLogin(login));
+    }
+
+    @GetMapping("remote-control/{ip}/check-access")
+    public Mono<ResponseEntity<NetworkRemoteControl>> checkAccess(@PathVariable String ip) {
+        if (ip == null) throw new IllegalFields("Не указан IP адрес");
+        return NetworkRemoteControl.of(ip).map(ResponseEntity::ok);
+    }
+
+    @GetMapping("types/wireframe-field")
+    public ResponseEntity<List<Map<String, String>>> getWireframeFieldTypes() {
+        return ResponseEntity.ok(WireframeFieldType.getList());
+    }
+
+    @GetMapping("types/connection-service")
+    public ResponseEntity<List<Map<String, String>>> getConnectionServiceTypes() {
+        return ResponseEntity.ok(ConnectionService.getList());
+    }
+
+    @GetMapping("types/connection-type")
+    public ResponseEntity<List<Map<String, String>>> getConnectionTypeTypes() {
+        return ResponseEntity.ok(ConnectionType.getList());
+    }
+
+    @GetMapping("types/connection-service/suggestions")
+    public ResponseEntity<List<Map<String, String>>> getSuggestionForConnectionService(@Nullable @RequestParam String query) {
+        return ResponseEntity.ok(
+                ConnectionService.getList()
+                        .stream()
+                        .filter(service -> service.get("label").toLowerCase().contains(query != null ? query.toLowerCase() : ""))
+                        .collect(Collectors.toList())
+        );
+    }
+
+    @GetMapping("configuration/billing")
+    public ResponseEntity<BillingConf> getBillingConfiguration() {
+        return ResponseEntity.ok(billingRequestController.getConfiguration());
+    }
+
+    @PostMapping("configuration/billing")
+    public ResponseEntity<Void> updateBillingConfiguration(@RequestBody BillingConf conf) {
+        try {
+            billingRequestController.setConfiguration(conf);
+            return ResponseEntity.ok().build();
+        } catch (MalformedURLException e) {
+            throw new IllegalFields("Не верный Url адрес");
+        }
+    }
+
+    @GetMapping("configuration/telegram")
+    public ResponseEntity<TelegramConf> getTelegramConfiguration() {
+        return ResponseEntity.ok(telegramController.getConfiguration());
+    }
+
+    @PostMapping("configuration/telegram")
+    public ResponseEntity<Void> updateTelegramConfiguration(@RequestBody TelegramConf conf) {
+        try {
+            telegramController.changeTelegramConf(conf);
+            return ResponseEntity.ok().build();
+        } catch (TelegramApiException e) {
+            throw new ResponseException(e.getMessage());
+        } catch (IOException e) {
+            throw new TelegramBotNotInitialized(e.getMessage());
+        }
+    }
+
+    @GetMapping("configuration/acp")
+    public ResponseEntity<AcpConf> getAcpConfiguration() {
+        return ResponseEntity.ok(acpClient.getConfiguration());
+    }
+
+    @PostMapping("configuration/acp")
+    public ResponseEntity<Void> updateAcpConfiguration(@RequestBody AcpConf conf) {
+            acpClient.setConfiguration(conf);
+            return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("client-equipments")
+    public ResponseEntity<List<ClientEquipment>> getClientEquipment(@Nullable @RequestParam String query, @Nullable @RequestParam Boolean isDeleted) {
+        return ResponseEntity.ok(clientEquipmentDispatcher.get(query, isDeleted));
+    }
+
+    @PostMapping("client-equipment")
+    public ResponseEntity<Void> createClientEquipment(@RequestBody ClientEquipment.Form form, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        clientEquipmentDispatcher.create(form, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("client-equipment/{id}")
+    public ResponseEntity<Void> editClientEquipment(@PathVariable Long id, @RequestBody ClientEquipment.Form form, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        clientEquipmentDispatcher.edit(id, form, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("client-equipment/{id}")
+    public ResponseEntity<Void> deleteClientEquipment(@PathVariable Long id, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        clientEquipmentDispatcher.delete(id, employee);
+        return ResponseEntity.ok().build();
     }
 
     private Employee getEmployeeFromRequest(HttpServletRequest request) {

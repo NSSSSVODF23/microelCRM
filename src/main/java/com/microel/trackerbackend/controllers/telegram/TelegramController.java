@@ -7,7 +7,6 @@ import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
-import com.microel.trackerbackend.modules.StaticConfigurationModule;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.filemanager.FileData;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
@@ -70,7 +69,7 @@ public class TelegramController {
     private final AttachmentDispatcher attachmentDispatcher;
     private final Map<String, List<Message>> groupedMessagesFromTelegram = new ConcurrentHashMap<>();
     private final Map<Long, List<Message>> chatsInTaskCloseMode = new ConcurrentHashMap<>();
-    private final StaticConfigurationModule staticConfigurationModule;
+    private TelegramConf telegramConf;
     @Nullable
     private TelegramBotsApi api;
     @Nullable
@@ -80,7 +79,7 @@ public class TelegramController {
 
     public TelegramController(ConfigurationStorage configurationStorage, TaskDispatcher taskDispatcher, WorkLogDispatcher workLogDispatcher,
                               ChatDispatcher chatDispatcher, ChatMessageDispatcher chatMessageDispatcher, EmployeeDispatcher employeeDispatcher,
-                              StompController stompController, AttachmentDispatcher attachmentDispatcher, StaticConfigurationModule staticConfigurationModule) {
+                              StompController stompController, AttachmentDispatcher attachmentDispatcher) {
         this.configurationStorage = configurationStorage;
         this.taskDispatcher = taskDispatcher;
         this.workLogDispatcher = workLogDispatcher;
@@ -89,10 +88,9 @@ public class TelegramController {
         this.employeeDispatcher = employeeDispatcher;
         this.stompController = stompController;
         this.attachmentDispatcher = attachmentDispatcher;
-        this.staticConfigurationModule = staticConfigurationModule;
         try {
-            TelegramConf telegramConf = configurationStorage.load(TelegramConf.class);
-            initializeMainBot(telegramConf);
+            telegramConf = configurationStorage.load(TelegramConf.class);
+            initializeMainBot();
         } catch (FailedToReadConfigurationException e) {
             log.warn("Конфигурация для Telegram не найдена");
         } catch (TelegramApiException e) {
@@ -106,11 +104,11 @@ public class TelegramController {
         if (api == null) api = new TelegramBotsApi(DefaultBotSession.class);
     }
 
-    public void initializeMainBot(TelegramConf configuration) throws TelegramApiException, IOException {
+    public void initializeMainBot() throws TelegramApiException, IOException {
         initializeApi();
         if (api == null) throw new IOException("Telegram API не инициализировано");
-        if (mainBotSession != null) mainBotSession.stop();
-        mainBot = new MainBot(configuration);
+        if (mainBotSession != null && mainBotSession.isRunning()) mainBotSession.stop();
+        mainBot = new MainBot(telegramConf);
         initializeChatCommands();
 
         mainBotSession = api.registerBot(mainBot);
@@ -156,7 +154,10 @@ public class TelegramController {
                 TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Чат не является группой").execute();
                 return false;
             }
-            staticConfigurationModule.changeDhcpNotificationChatId(chatId.toString());
+            telegramConf = configurationStorage.loadOrDefault(TelegramConf.class, new TelegramConf());
+            telegramConf.setDhcpNotificationChatId(chatId.toString());
+            configurationStorage.save(telegramConf);
+            stompController.changeTelegramConfig(telegramConf);
             TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Установлена группа для получения уведомлений о DHCP").execute();
             return true;
         }));
@@ -424,7 +425,9 @@ public class TelegramController {
     public void changeTelegramConf(TelegramConf telegramConf) throws
             FailedToWriteConfigurationException, TelegramApiException, IOException {
         configurationStorage.save(telegramConf);
-        initializeMainBot(telegramConf);
+        this.telegramConf = telegramConf;
+        stompController.changeTelegramConfig(telegramConf);
+        initializeMainBot();
     }
 
     public void sendNotification(Employee employee, Notification notification) {
@@ -801,16 +804,22 @@ public class TelegramController {
     }
 
     public void sendDhcpIpRequestNotification(DhcpIpRequestNotificationBody body) throws TelegramApiException {
-        StaticConfigurationModule.Configuration configuration = staticConfigurationModule.getConfiguration();
-        if(configuration == null) {
-            log.warn("Статическая конфигурация отсутствует");
+        if(telegramConf == null || !telegramConf.isFilled()) {
+            log.warn("Отсутствует конфигурация телеграмма");
             return;
         }
-        String chatId = configuration.getDhcpNotificationChatId();
+        String chatId = telegramConf.getDhcpNotificationChatId();
         if(chatId == null || chatId.isBlank()) {
             log.warn("Чат для отправки DhcpIpRequestNotification отсутствует");
             return;
         }
-        TelegramMessageFactory.create(configuration.getDhcpNotificationChatId(), mainBot).dhcpIpRequestNotification(body).execute();
+        TelegramMessageFactory.create(chatId, mainBot).dhcpIpRequestNotification(body).execute();
+    }
+
+    public TelegramConf getConfiguration() {
+        if(telegramConf == null){
+            return new TelegramConf();
+        }
+        return telegramConf;
     }
 }

@@ -1,6 +1,9 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
+import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.misc.BypassWorkCalculationForm;
+import com.microel.trackerbackend.misc.FactorAction;
+import com.microel.trackerbackend.misc.ResponseWorkEstimationForm;
 import com.microel.trackerbackend.misc.WorkCalculationForm;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.entities.salary.ActionTaken;
@@ -12,13 +15,20 @@ import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.WorkCalculationRepository;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
+import javax.persistence.criteria.Join;
+import javax.persistence.criteria.JoinType;
+import javax.persistence.criteria.Predicate;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Component
 public class WorkCalculationDispatcher {
@@ -61,12 +71,22 @@ public class WorkCalculationDispatcher {
             }
         }
         WorkLog workLog = workLogDispatcher.get(form.getWorkLogId());
-        if (workLog.getCalculated()) throw new IllegalFields("Этот журнал работ уже был рассчитан");
 
-        calculating(workLog, form.getActions(), form.getSpreading(), form.getEmptyDescription(), creator);
+        calculating(workLog, form.getActions(), form.getSpreading(), form.getEmptyDescription(), creator, form.getEditingDescription());
     }
 
-    private void calculating(WorkLog workLog, List<WorkCalculationForm.ActionCalculationItem> formActions, List<WorkCalculationForm.SpreadingItem> formSpreading, String emptyCalcDescription, Employee creator) {
+    private void calculating(WorkLog workLog, List<WorkCalculationForm.ActionCalculationItem> formActions,
+                             List<WorkCalculationForm.SpreadingItem> formSpreading, String emptyCalcDescription,
+                             Employee creator, @Nullable String editingDescription) {
+        List<WorkCalculation> workCalculationList = null;
+        if (workLog.getCalculated()) {
+            workCalculationList = workCalculationRepository.findAll((root, query, cb) -> {
+                List<Predicate> predicates = new ArrayList<>();
+                Join<WorkLog, WorkCalculation> workLogJoin = root.join("workLog");
+                predicates.add(cb.equal(workLogJoin.get("workLogId"), workLog.getWorkLogId()));
+                return cb.and(predicates.toArray(Predicate[]::new));
+            });
+        }
 
         List<ActionTaken> actions = new ArrayList<>();
         Boolean empty = false;
@@ -94,7 +114,7 @@ public class WorkCalculationDispatcher {
                 PaidAction paidAction = paidActionDispatcher.get(item.getActionId());
 
                 actions.add(ActionTaken.builder()
-                        .workName(paidWork != null ? paidWork.getName() : null)
+                        .work(paidWork)
                         .paidAction(paidAction)
                         .count(item.getCount())
                         .uuid(item.getUuid())
@@ -102,7 +122,35 @@ public class WorkCalculationDispatcher {
             }
         }
 
+
         List<ActionTaken> savedActions = actionTakenDispatcher.saveAll(actions);
+
+        if (workCalculationList != null && !workCalculationList.isEmpty()) {
+            if (editingDescription == null || editingDescription.isBlank()) {
+                throw new IllegalFields("Нужно указать причину пересчета");
+            }
+            for (WorkCalculation workCalculation : workCalculationList) {
+
+                workCalculation.setActions(savedActions);
+
+                for (Employee employee : workLog.getEmployees()) {
+                    if (workCalculation.getEmployee().equals(employee)) {
+                        WorkCalculationForm.SpreadingItem currentEmployeeSpreading = formSpreading.stream()
+                                .filter(spreadingItem -> spreadingItem.getLogin().equals(employee.getLogin()))
+                                .findFirst().orElseThrow(() -> new IllegalFields("Сотрудник из журнала данной работы не найден в списке подсчета"));
+                        Float currentRatio = currentEmployeeSpreading.getRatio();
+                        List<FactorAction> currentFactorsActions = currentEmployeeSpreading.getFactorsActions();
+                        workCalculation.setRatio(currentRatio);
+                        workCalculation.setFactorsActions(currentFactorsActions);
+                        workCalculation.setEmpty(empty);
+                        workCalculation.setEmptyDescription(emptyCalcDescription);
+                        workCalculation.addEditedBy(creator, editingDescription);
+                        workCalculationRepository.save(workCalculation);
+                    }
+                }
+            }
+            return;
+        }
 
         List<WorkCalculation> savedCalculation = new ArrayList<>();
         for (Employee employee : workLog.getEmployees()) {
@@ -123,7 +171,7 @@ public class WorkCalculationDispatcher {
                     .build();
             WorkCalculation saved = workCalculationRepository.save(workCalculation);
             savedCalculation.add(saved);
-            workingDayDispatcher.addCalculation(employee.getLogin(), Date.from(workLog.getCreated().toInstant()), saved);
+            workingDayDispatcher.addCalculation(employee.getLogin(), Utils.trimDate(Date.from(workLog.getCreated().toInstant())), saved);
         }
 
         workLog.setCalculated(true);
@@ -131,6 +179,35 @@ public class WorkCalculationDispatcher {
 
         workLogDispatcher.save(workLog);
         stompController.updateWorkLog(workLog);
+        stompController.updateSalaryTable(workingDayDispatcher.getTableByEmployees(workLog.getCreated(), workLog.getEmployees()));
+    }
+
+    @Nullable
+    public ResponseWorkEstimationForm getFormInfoByWorkLog(Long workLogId) {
+        List<WorkCalculation> workCalculations = workCalculationRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            Join<WorkLog, WorkCalculation> workLogJoin = root.join("workLog", JoinType.LEFT);
+            predicates.add(cb.equal(workLogJoin.get("workLogId"), workLogId));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        });
+
+        if (workCalculations.isEmpty()) return null;
+
+        Map<String, ResponseWorkEstimationForm.EmployeeRatioValue> ratioValueMap = new HashMap<>();
+        for (WorkCalculation workCalculation : workCalculations) {
+            ratioValueMap.put(workCalculation.getEmployee().getLogin(), ResponseWorkEstimationForm.EmployeeRatioValue.builder()
+                    .ratio(workCalculation.getRatio())
+                    .sum(workCalculation.getSum(true))
+                    .build());
+        }
+
+        ResponseWorkEstimationForm form = ResponseWorkEstimationForm.builder()
+                .actions(workCalculations.get(0).getActions().stream().map(ActionTaken::toFormItem).collect(Collectors.toList()))
+                .factorsActions(workCalculations.stream().map(WorkCalculation::getFactorActionsFormItems).flatMap(List::stream).collect(Collectors.toList()))
+                .employeesRatio(ratioValueMap)
+                .build();
+
+        return form;
     }
 
 
@@ -141,7 +218,7 @@ public class WorkCalculationDispatcher {
         WorkLog workLog = workLogDispatcher.createWorkLog(task, form.getReportInfo(), form.getReportInfo().getDate(), employee);
         stompController.createWorkLog(workLog);
         workLog.getChat().setClosed(form.getReportInfo().getDate());
-        calculating(workLog, form.getActions(), form.getSpreading(), "", employee);
+        calculating(workLog, form.getActions(), form.getSpreading(), null, employee, null);
         stompController.closeWorkLog(workLog);
         stompController.closeChat(workLog.getChat());
         stompController.updateTask(taskDispatcher.close(task.getTaskId()));

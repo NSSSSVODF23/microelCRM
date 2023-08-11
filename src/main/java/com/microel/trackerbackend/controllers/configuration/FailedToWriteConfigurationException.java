@@ -1,6 +1,8 @@
 package com.microel.trackerbackend.controllers.configuration;
 
-public class FailedToWriteConfigurationException extends Exception{
+import com.microel.trackerbackend.CustomException;
+
+public class FailedToWriteConfigurationException extends CustomException {
     public FailedToWriteConfigurationException(String message) {
         super(message);
     }

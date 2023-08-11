@@ -1,6 +1,6 @@
 package com.microel.trackerbackend.storage.entities.salary;
 
-import com.microel.trackerbackend.misc.SalaryRow;
+import com.microel.trackerbackend.misc.SalaryTable;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
@@ -28,10 +28,14 @@ public class WorkingDay {
     @BatchSize(size = 25)
     private List<WorkCalculation> calculations;
 
-    public SalaryRow.SalaryPoint toSalaryPoint(){
-        return SalaryRow.SalaryPoint.builder()
+    public SalaryTable.SalaryTableCell toPoint(){
+        Integer sum = calculations.stream().map(WorkCalculation::getSum).reduce(0,Integer::sum);
+        Integer sumWithoutNDFL = calculations.stream().map(WorkCalculation::getSumWithoutNDFL).reduce(0,Integer::sum);
+        return SalaryTable.SalaryTableCell.builder()
                 .date(date)
-                .value(calculations.stream().map(WorkCalculation::getSum).reduce(0,Integer::sum))
+                .employee(employee)
+                .sumWithNDFL(sum)
+                .sumWithoutNDFL(sumWithoutNDFL)
                 .build();
     }
 }

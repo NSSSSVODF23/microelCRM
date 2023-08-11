@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.entities.team;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.microel.trackerbackend.storage.entities.team.util.Department;
 import com.microel.trackerbackend.storage.entities.team.util.EmployeeStatus;
 import com.microel.trackerbackend.storage.entities.team.util.Position;
@@ -20,6 +21,7 @@ import java.util.Objects;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 @Table(name = "employees")
 public class Employee implements Observer{
     @Id
@@ -60,7 +62,6 @@ public class Employee implements Observer{
                 .deleted(false)
                 .build();
     }
-
 
     public String getFullName(){
         if(firstName != null && lastName != null)

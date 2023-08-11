@@ -1,4 +1,4 @@
-package com.microel.trackerbackend.storage.exceptions;
+package com.microel.trackerbackend;
 
 import lombok.NoArgsConstructor;
 import org.springframework.http.HttpStatus;

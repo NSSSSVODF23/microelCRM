@@ -1,0 +1,74 @@
+package com.microel.trackerbackend.services.api.external.acp;
+
+import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
+import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
+import com.microel.trackerbackend.modules.exceptions.Unconfigured;
+import com.microel.trackerbackend.services.api.ResponseException;
+import com.microel.trackerbackend.services.api.StompController;
+import com.microel.trackerbackend.services.api.external.acp.types.DhcpBinding;
+import com.microel.trackerbackend.storage.exceptions.IllegalFields;
+import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
+
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+@Service
+public class AcpClient {
+    private final RestTemplate restTemplate = new RestTemplateBuilder().build();
+    private final ConfigurationStorage configurationStorage;
+    private final StompController stompController;
+    private AcpConf configuration;
+
+    public AcpClient(ConfigurationStorage configurationStorage, StompController stompController) {
+        this.configurationStorage = configurationStorage;
+        configuration = configurationStorage.loadOrDefault(AcpConf.class, new AcpConf());
+        this.stompController = stompController;
+    }
+
+    public List<DhcpBinding> getBindingsByLogin(String login) {
+        return Arrays.stream(
+                get(DhcpBinding[].class, Map.of("login", login), "dhcp", "bindings")
+        ).sorted(Comparator.comparing(DhcpBinding::getSessionTime).reversed()).collect(Collectors.toList());
+    }
+
+    private <T> T get(Class<T> clazz, Map<String, String> query, String... params) {
+        try {
+            T object = this.restTemplate.getForObject(url(query, params), clazz);
+            if (object == null) throw new ResponseException("Пустой ответ от ACP");
+            return object;
+        } catch (RestClientException e) {
+            throw new ResponseException("Ошибка при обращении к ACP");
+        }
+    }
+
+    private String url(Map<String, String> query, String... params) {
+        checkConfiguration();
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(configuration.getAcpFlexConnectorEndpoint() + String.join("/", params));
+        query.forEach(uriBuilder::queryParam);
+        return uriBuilder.build().toUriString();
+    }
+
+    private void checkConfiguration() {
+        if (!configuration.isFilled()) {
+            throw new Unconfigured("Отсутствует конфигурация интеграции с ACP");
+        }
+    }
+
+    public AcpConf getConfiguration() {
+        return configuration;
+    }
+
+    public void setConfiguration(AcpConf conf) {
+        if (!conf.isFilled()) throw new IllegalFields("Конфигурация не заполнена");
+        configuration = conf;
+        configurationStorage.save(configuration);
+        stompController.changeAcpConfig(configuration);
+    }
+}

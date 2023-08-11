@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.misc;
 
+import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.lang.Nullable;
@@ -13,11 +14,14 @@ public class WorkCalculationForm {
     private Long workLogId;
     @Nullable
     private String emptyDescription;
+    @Nullable
+    private String editingDescription;
     private List<ActionCalculationItem> actions;
     private List<SpreadingItem> spreading;
 
     @Getter
     @Setter
+    @Builder
     public static class ActionCalculationItem {
         @Nullable
         private Long workId;
@@ -28,6 +32,7 @@ public class WorkCalculationForm {
 
     @Getter
     @Setter
+    @Builder
     public static class SpreadingItem {
         private String login;
         private Float ratio;

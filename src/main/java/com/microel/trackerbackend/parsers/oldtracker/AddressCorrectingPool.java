@@ -6,4 +6,8 @@ import java.util.HashMap;
 import java.util.UUID;
 
 public class AddressCorrectingPool extends HashMap<UUID, OldTracker.AddressCorrecting> implements AbstractConfiguration {
+    @Override
+    public Boolean isFilled() {
+        return true;
+    }
 }

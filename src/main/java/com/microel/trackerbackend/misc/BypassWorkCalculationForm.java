@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.misc;
 
+import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
 import com.microel.trackerbackend.storage.entities.team.Employee;
@@ -7,6 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.lang.Nullable;
 
+import java.sql.Date;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Set;
@@ -28,5 +30,9 @@ public class BypassWorkCalculationForm {
         private String report;
         private Set<TaskTag> tags;
         private Timestamp date;
+
+        public Timestamp getDate(){
+            return Timestamp.from(Utils.trimDate(Date.from(date.toInstant())).toInstant());
+        }
     }
 }

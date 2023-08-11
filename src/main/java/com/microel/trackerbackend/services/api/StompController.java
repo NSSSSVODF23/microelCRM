@@ -1,10 +1,15 @@
 package com.microel.trackerbackend.services.api;
 
 import com.microel.trackerbackend.configurations.StompConfig;
+import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
+import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
+import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
+import com.microel.trackerbackend.misc.SalaryTable;
 import com.microel.trackerbackend.misc.SimpleMessage;
 import com.microel.trackerbackend.misc.TreeElementPosition;
 import com.microel.trackerbackend.misc.TreeNode;
 import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
+import com.microel.trackerbackend.services.MonitoringService;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
@@ -14,10 +19,8 @@ import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.SuperMessage;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
-import com.microel.trackerbackend.storage.entities.salary.PaidAction;
-import com.microel.trackerbackend.storage.entities.salary.PaidWork;
-import com.microel.trackerbackend.storage.entities.salary.PaidWorkGroup;
-import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
+import com.microel.trackerbackend.storage.entities.equipment.ClientEquipment;
+import com.microel.trackerbackend.storage.entities.salary.*;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
@@ -300,5 +303,39 @@ public class StompController {
     public void deleteHouse(House house) {
         sendAll(house, "house", house.getHouseId().toString(), "delete");
         sendAll(house, "house", "delete");
+    }
+
+    public void pingMonitoring(MonitoringService.PingMonitoring pingMonitoring) {
+        sendAll(pingMonitoring, "monitoring", "ping", pingMonitoring.getIp());
+    }
+
+    public void changeBillingConfig(BillingConf billingConf) {
+        sendAll(billingConf, "billing-config", "change");
+    }
+
+    public void changeTelegramConfig(TelegramConf telegramConf) {
+        sendAll(telegramConf, "telegram-config", "change");
+    }
+
+    public void changeAcpConfig(AcpConf acpConf) {
+        sendAll(acpConf, "acp-config", "change");
+    }
+
+    public void updateSalaryTable(SalaryTable salaryTable) {
+        sendAll(salaryTable, "salary-table", "update");
+    }
+
+    public void createClientEquipment(ClientEquipment equipment) {
+        sendAll(equipment, "client-equipment", "create");
+    }
+
+    public void updateClientEquipment(ClientEquipment equipment) {
+        sendAll(equipment, "client-equipment", equipment.getClientEquipmentId().toString(), "update");
+        sendAll(equipment, "client-equipment", "update");
+    }
+
+    public void deleteClientEquipment(ClientEquipment equipment) {
+        sendAll(equipment, "client-equipment", equipment.getClientEquipmentId().toString(), "delete");
+        sendAll(equipment, "client-equipment", "delete");
     }
 }

@@ -27,8 +27,11 @@ public class ModelItemMapper {
                 .stringData(modelItem.getStringData())
                 .addressData(AddressMapper.toDto(modelItem.getAddressData()))
                 .wireframeFieldType(modelItem.getWireframeFieldType())
+                .variation(modelItem.getVariation())
                 .timestampData(modelItem.getTimestampData())
                 .phoneData(phoneMap)
+                .connectionServicesData(modelItem.getConnectionServicesData())
+                .equipmentRealizationsData(modelItem.getEquipmentRealizationsData())
                 .textRepresentation(modelItem.getTextRepresentation())
                 .textRepresentationForTlg(modelItem.getTextRepresentationForTlg())
                 .build();
@@ -47,8 +50,11 @@ public class ModelItemMapper {
                 .stringData(modelItem.getStringData())
                 .addressData(AddressMapper.fromDto(modelItem.getAddressData()))
                 .wireframeFieldType(modelItem.getWireframeFieldType())
+                .variation(modelItem.getVariation())
                 .timestampData(modelItem.getTimestampData())
                 .phoneData(modelItem.getPhoneData())
+                .connectionServicesData(modelItem.getConnectionServicesData())
+                .equipmentRealizationsData(modelItem.getEquipmentRealizationsData())
                 .build();
     }
 }

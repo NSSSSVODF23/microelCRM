@@ -7,4 +7,8 @@ import java.util.HashMap;
 import java.util.UUID;
 
 public class UncreatedTasksPool extends HashMap<UUID, TaskDto> implements AbstractConfiguration {
+    @Override
+    public Boolean isFilled() {
+        return true;
+    }
 }

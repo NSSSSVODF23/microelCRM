@@ -9,4 +9,9 @@ public class DefaultCitiesConf extends ArrayList<DefaultCitiesConf.CityDef> impl
         public String name;
         public ArrayList<String> streets;
     }
+
+    @Override
+    public Boolean isFilled() {
+        return true;
+    }
 }

@@ -1,6 +1,8 @@
 package com.microel.trackerbackend.controllers.configuration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
+import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.controllers.configuration.entity.DefaultCitiesConf;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.parsers.oldtracker.AddressCorrectingPool;
@@ -19,6 +21,8 @@ public class ConfigurationStorage {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<Class, String> fileNames = Map.of(
             TelegramConf.class, "telegram.conf",
+            BillingConf.class, "billing.conf",
+            AcpConf.class, "acp.conf",
             OldTrackerParserSettings.class, "oldTracker.conf",
             DefaultCitiesConf.class, "defaultCities.conf",
             AddressCorrectingPool.class, "addressCorrectingPool.json",
