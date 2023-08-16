@@ -531,7 +531,7 @@ public class TaskDispatcher {
         if (task.getTaskStatus().equals(TaskStatus.CLOSE)) throw new IllegalFields("Задача уже закрыта");
 
         // Редактируем поля задачи и сохраняем их в БД
-        task.editFields(modelItemDispatcher.prepareModelItems(modelItems));
+        task.editFields(modelItemDispatcher.prepareModelItems(modelItems)); // FIXME: Выдает ошибку при редактировании подключаемых сервисов
         task.setUpdated(Timestamp.from(Instant.now()));
         return taskRepository.save(task);
     }

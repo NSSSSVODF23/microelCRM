@@ -19,6 +19,7 @@ import org.apache.xmlrpc.client.XmlRpcClientConfigImpl;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
+import java.io.EOFException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.text.ParseException;
