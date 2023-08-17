@@ -1,11 +1,11 @@
-package com.microel.trackerbackend.services.api.external.acp;
+package com.microel.trackerbackend.services.external.acp;
 
 import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.modules.exceptions.Unconfigured;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
-import com.microel.trackerbackend.services.api.external.acp.types.DhcpBinding;
+import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.stereotype.Service;

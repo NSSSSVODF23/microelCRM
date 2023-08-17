@@ -1,4 +1,4 @@
-package com.microel.trackerbackend.services.api.external.billing;
+package com.microel.trackerbackend.services.external.billing;
 
 import com.microel.trackerbackend.CustomException;
 import lombok.NoArgsConstructor;

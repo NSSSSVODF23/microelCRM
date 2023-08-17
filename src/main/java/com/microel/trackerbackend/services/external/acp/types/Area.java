@@ -1,4 +1,4 @@
-package com.microel.trackerbackend.services.api.external.acp.types;
+package com.microel.trackerbackend.services.external.acp.types;
 
 import lombok.*;
 
@@ -7,9 +7,8 @@ import lombok.*;
 @NoArgsConstructor
 @Getter
 @Setter
-public class Street {
+public class Area {
     private Integer id;
     private String name;
-    private Short status;
 
 }

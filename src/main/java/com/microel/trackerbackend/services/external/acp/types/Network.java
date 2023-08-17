@@ -1,4 +1,4 @@
-package com.microel.trackerbackend.services.external.types.acp;
+package com.microel.trackerbackend.services.external.acp.types;
 
 import lombok.*;
 

@@ -1,4 +1,4 @@
-package com.microel.trackerbackend.services.api.external.billing;
+package com.microel.trackerbackend.services.external.billing;
 
 import com.marcospassos.phpserializer.Serializer;
 import com.marcospassos.phpserializer.SerializerBuilder;

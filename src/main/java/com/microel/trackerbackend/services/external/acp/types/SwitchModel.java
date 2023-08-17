@@ -1,4 +1,4 @@
-package com.microel.trackerbackend.services.external.types.acp;
+package com.microel.trackerbackend.services.external.acp.types;
 
 import lombok.*;
 
@@ -7,9 +7,10 @@ import lombok.*;
 @NoArgsConstructor
 @Getter
 @Setter
-public class Street {
+public class SwitchModel {
     private Integer id;
     private String name;
+    private Short portsCount;
     private Short status;
 
 }
