@@ -10,6 +10,7 @@ import com.microel.trackerbackend.misc.TreeElementPosition;
 import com.microel.trackerbackend.misc.TreeNode;
 import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.services.MonitoringService;
+import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
@@ -33,6 +34,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
 import java.util.List;
+import java.util.Map;
 
 @Controller
 public class StompController {
@@ -337,5 +339,13 @@ public class StompController {
     public void deleteClientEquipment(ClientEquipment equipment) {
         sendAll(equipment, "client-equipment", equipment.getClientEquipmentId().toString(), "delete");
         sendAll(equipment, "client-equipment", "delete");
+    }
+
+    public void updateDhcpBinding(DhcpBinding binding) {
+        sendAll(binding, "acp", "dhcp-binding", "update");
+    }
+
+    public void updateHousePageSignal(Integer vlan) {
+        sendAll(Map.of("vlan", vlan), "acp", "dhcp-binding", "house-page", "update");
     }
 }

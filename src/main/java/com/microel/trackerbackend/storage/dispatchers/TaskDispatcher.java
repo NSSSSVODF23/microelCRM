@@ -635,6 +635,17 @@ public class TaskDispatcher {
         return taskRepository.countByModelWireframe_WireframeIdAndDeletedFalseAndTaskStatusNot(wireframeId, TaskStatus.CLOSE);
     }
 
+    public Page<Task> getTasksByLogin(String login, Integer page, Integer limit) {
+        return taskRepository.findAll((root, query, cb) -> {
+            ArrayList<Predicate> predicates = new ArrayList<>();
+            Join<ModelItem, Task> fieldsJoin = root.join("fields", JoinType.LEFT);
+            predicates.add(cb.equal(cb.lower(fieldsJoin.get("stringData")), login.toLowerCase()));
+            predicates.add(cb.equal(root.get("deleted"), false));
+            query.distinct(true);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }, PageRequest.of(page, limit, Sort.by(Sort.Order.desc("updated").nullsLast())));
+    }
+
     @Getter
     @Setter
     public static class FiltrationConditions {

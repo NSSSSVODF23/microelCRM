@@ -3,8 +3,11 @@ package com.microel.trackerbackend.services.external.acp.types;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.microel.trackerbackend.misc.network.NetworkRemoteControl;
 import com.microel.trackerbackend.misc.network.NetworkState;
+import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import lombok.*;
 import org.springframework.lang.Nullable;
+
+import java.util.regex.Pattern;
 
 @Builder
 @AllArgsConstructor
@@ -91,5 +94,36 @@ public class DhcpBinding {
             return NetworkState.OFFLINE;
         }
         return NetworkState.ONLINE;
+    }
+
+    @Getter
+    @Setter
+    public static class AuthForm{
+        private String login;
+        private String macaddr;
+
+        public void setLogin(String login){
+            Pattern p = Pattern.compile("^[a-zA-Z0-9]+$");
+            if(!p.matcher(login).matches()){
+                throw new IllegalFields("Не верный логин");
+            }
+            this.login = login;
+        }
+
+        public void setMacaddr(String macaddr){
+            String trimmed = macaddr.trim().replaceAll("[^0-9A-f]", "").toLowerCase();
+            if(!trimmed.matches("[0-9a-f]{12}")){
+                throw new IllegalFields("Не верный MAC-адрес");
+            }
+            StringBuilder collectedBack = new StringBuilder();
+            char[] chars = trimmed.toCharArray();
+            for (int i = 0; i < chars.length; i++) {
+                collectedBack.append(chars[i]);
+                if(i % 2 == 1 && i != chars.length - 1){
+                    collectedBack.append(":");
+                }
+            }
+            this.macaddr = collectedBack.toString();
+        }
     }
 }

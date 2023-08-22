@@ -5,15 +5,13 @@ import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.modules.transport.Credentials;
 import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.security.exceptions.JwsTokenParseError;
+import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.*;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import javax.servlet.http.Cookie;
@@ -27,10 +25,12 @@ public class PublicRequestController {
 
     private final AuthorizationProvider authorizationProvider;
     private final TelegramController telegramController;
+    private final StompController stompController;
 
-    public PublicRequestController(AuthorizationProvider authorizationProvider, TelegramController telegramController) {
+    public PublicRequestController(AuthorizationProvider authorizationProvider, TelegramController telegramController, StompController stompController) {
         this.authorizationProvider = authorizationProvider;
         this.telegramController = telegramController;
+        this.stompController = stompController;
     }
 
     @PostMapping("sign-in")
@@ -115,5 +115,17 @@ public class PublicRequestController {
         } catch (TelegramApiException e) {
             return ResponseEntity.ok().build();
         }
+    }
+
+    @PostMapping("incoming-update/dhcp-binding")
+    public ResponseEntity<Void> incomingUpdateDhcpBinding(@RequestBody DhcpBinding body) {
+        stompController.updateDhcpBinding(body);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("incoming-update/house-page-signal")
+    public ResponseEntity<Void> incomingUpdateHousePageSignal(@RequestBody Integer vlan) {
+        stompController.updateHousePageSignal(vlan);
+        return ResponseEntity.ok().build();
     }
 }

@@ -7,6 +7,7 @@ import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.equipment.ClientEquipmentRealization;
 import com.microel.trackerbackend.storage.entities.task.Task;
+import com.microel.trackerbackend.storage.entities.templating.ConnectionType;
 import com.microel.trackerbackend.storage.entities.templating.DataConnectionService;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import lombok.*;
@@ -122,12 +123,13 @@ public class ModelItem {
         switch (wireframeFieldType) {
             case LARGE_TEXT:
             case SMALL_TEXT:
-            case CONNECTION_TYPE:
             case IP:
             case REQUEST_INITIATOR:
             case AD_SOURCE:
             case LOGIN:
                 return stringData;
+            case CONNECTION_TYPE:
+                return stringData == null ? "" : ConnectionType.valueOf(stringData).getLabel();
             case INTEGER:
                 return String.valueOf(integerData);
             case FLOAT:
@@ -186,12 +188,13 @@ public class ModelItem {
         switch (wireframeFieldType) {
             case LARGE_TEXT:
             case SMALL_TEXT:
-            case CONNECTION_TYPE:
             case IP:
             case REQUEST_INITIATOR:
             case AD_SOURCE:
             case LOGIN:
                 return stringData;
+            case CONNECTION_TYPE:
+                return stringData == null ? "" : ConnectionType.valueOf(stringData).getLabel();
             case INTEGER:
                 return String.valueOf(integerData);
             case FLOAT:

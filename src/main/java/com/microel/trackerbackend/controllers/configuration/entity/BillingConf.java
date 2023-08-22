@@ -16,6 +16,7 @@ public class BillingConf implements AbstractConfiguration {
     private Integer port;
     private String login;
     private String password;
+    private String daemonName;
     private String selfIp;
 
     @Override
@@ -25,6 +26,7 @@ public class BillingConf implements AbstractConfiguration {
         if (port == null) return false;
         if (login == null || login.isBlank()) return false;
         if (password == null || password.isBlank()) return false;
+        if (daemonName == null || daemonName.isBlank()) return false;
         if (selfIp == null || selfIp.isBlank()) return false;
         return true;
     }
@@ -36,6 +38,7 @@ public class BillingConf implements AbstractConfiguration {
                 ", port=" + port +
                 ", login='" + login + '\'' +
                 ", password='" + password + '\'' +
+                ", daemonName='" + daemonName + '\'' +
                 '}';
         return sb;
     }

@@ -1,13 +1,23 @@
 package com.microel.trackerbackend.services.external.acp;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.modules.exceptions.Unconfigured;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
+import com.microel.trackerbackend.services.external.RestPage;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
+import com.microel.trackerbackend.services.external.acp.types.Switch;
+import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
+import io.netty.handler.codec.http.HttpMethod;
 import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.data.domain.Page;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.RequestEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -36,6 +46,29 @@ public class AcpClient {
         return Arrays.stream(
                 get(DhcpBinding[].class, Map.of("login", login), "dhcp", "bindings")
         ).sorted(Comparator.comparing(DhcpBinding::getSessionTime).reversed()).collect(Collectors.toList());
+    }
+
+    public RestPage<DhcpBinding> getDhcpBindingsByVlan(Integer page, Integer id, String excludeLogin) {
+        RequestEntity<Void> request = RequestEntity.get(url(Map.of("excludeLogin", excludeLogin), "vlan", id.toString(), "dhcp", "bindings", page.toString())).build();
+        return restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<DhcpBinding>>(){}).getBody();
+    }
+
+    public List<AcpHouse> getHouses(@Nullable String query) {
+        return Arrays.stream(
+                get(AcpHouse[].class, Map.of("query", query == null ? "" : query), "buildings")
+        ).collect(Collectors.toList());
+    }
+
+    public List<Switch> getSwitchesByBuildingId(Integer buildingId) {
+        return Arrays.stream(
+                get(Switch[].class, Map.of(), "building", buildingId.toString(), "switches")
+        ).collect(Collectors.toList());
+    }
+
+    public List<Switch> getSwitchesByVlanId(Integer vlanId) {
+        return Arrays.stream(
+                get(Switch[].class, Map.of(), "vlan", vlanId.toString(), "switches")
+        ).collect(Collectors.toList());
     }
 
     private <T> T get(Class<T> clazz, Map<String, String> query, String... params) {
@@ -70,5 +103,13 @@ public class AcpClient {
         configuration = conf;
         configurationStorage.save(configuration);
         stompController.changeAcpConfig(configuration);
+    }
+
+    public void authDhcpBinding(DhcpBinding.AuthForm form) {
+        try {
+            this.restTemplate.postForObject(url(Map.of(), "dhcp", "binding", "auth"), form, Void.class);
+        }catch (Throwable e) {
+            throw new ResponseException(e.getMessage());
+        }
     }
 }

@@ -1,9 +1,9 @@
 package com.microel.trackerbackend.storage.entities.address;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.microel.trackerbackend.misc.AbstractForm;
 import com.microel.trackerbackend.storage.entities.Place;
+import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
 import lombok.*;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
@@ -31,6 +31,9 @@ public class House {
     @Column(columnDefinition = "boolean default false")
     private Boolean isApartmentHouse;
     @Nullable
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    private AcpHouse acpHouseBind;
+    @Nullable
     private Short build;
     @Nullable
     @Column(columnDefinition = "boolean default false")
@@ -44,34 +47,6 @@ public class House {
     @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @JoinColumn(name = "place_id")
     private Place place;
-
-    @Getter
-    @Setter
-    public static class Form implements AbstractForm{
-        private Short houseNum;
-        @Nullable
-        private Character letter;
-        @Nullable
-        private Short fraction;
-        @Nullable
-        private Short build;
-        private Boolean isApartmentHouse;
-
-        @Nullable
-        private Place.Form place;
-
-        @Override
-        public boolean isValid() {
-            return houseNum != null && houseNum > 0 && (fraction == null || fraction > 0) && (build == null || build > 0) && isApartmentHouse != null;
-        }
-
-        public boolean isFullEqual(House house){
-            return Objects.equals(house.houseNum, houseNum) && Objects.equals(house.letter, letter)
-                    && Objects.equals(house.fraction, fraction) && Objects.equals(house.build, build)
-                    && Objects.equals(house.isApartmentHouse, isApartmentHouse)
-                    && Objects.equals(house.place, place == null? null : place.toPlace());
-        }
-    }
 
     public String getHouseName() {
         StringBuilder sb = new StringBuilder();
@@ -88,19 +63,19 @@ public class House {
         return sb.toString();
     }
 
-    public String getAddressName(){
+    public String getAddressName() {
         return getAddress().getAddressName();
     }
 
-    public Long getStreetId(){
+    public Long getStreetId() {
         return street.getStreetId();
     }
 
     @JsonIgnore
-    public boolean isSomeDeleted(){
+    public boolean isSomeDeleted() {
         try {
             return Boolean.TRUE.equals(getDeleted()) || Boolean.TRUE.equals(street.getDeleted()) || Boolean.TRUE.equals(street.getCity().getDeleted());
-        }catch (Exception e){
+        } catch (Exception e) {
             return true;
         }
     }
@@ -175,5 +150,36 @@ public class House {
     @Override
     public int hashCode() {
         return Objects.hash(getHouseId(), getHouseNum(), getLetter(), getFraction(), getBuild());
+    }
+
+    @Getter
+    @Setter
+    public static class Form implements AbstractForm {
+        private Short houseNum;
+        @Nullable
+        private Character letter;
+        @Nullable
+        private Short fraction;
+        @Nullable
+        private Short build;
+        private Boolean isApartmentHouse;
+        @Nullable
+        private AcpHouse acpHouseBind;
+
+        @Nullable
+        private Place.Form place;
+
+        @Override
+        public boolean isValid() {
+            return houseNum != null && houseNum > 0 && (fraction == null || fraction > 0) && (build == null || build > 0) && isApartmentHouse != null;
+        }
+
+        public boolean isFullEqual(House house) {
+            return Objects.equals(house.houseNum, houseNum) && Objects.equals(house.letter, letter)
+                    && Objects.equals(house.fraction, fraction) && Objects.equals(house.build, build)
+                    && Objects.equals(house.isApartmentHouse, isApartmentHouse)
+                    && Objects.equals(house.place, place == null ? null : place.toPlace())
+                    && Objects.equals(house.acpHouseBind == null ? null : house.acpHouseBind.getBuildingId(), acpHouseBind == null ? null : acpHouseBind.getBuildingId());
+        }
     }
 }

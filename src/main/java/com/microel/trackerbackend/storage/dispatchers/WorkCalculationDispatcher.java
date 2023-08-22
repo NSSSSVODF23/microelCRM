@@ -210,34 +210,6 @@ public class WorkCalculationDispatcher {
         return form;
     }
 
-    @Nullable
-    public ResponseWorkEstimationForm getFormInfoByWorkLog(Long workLogId) {
-        List<WorkCalculation> workCalculations = workCalculationRepository.findAll((root, query, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            Join<WorkLog, WorkCalculation> workLogJoin = root.join("workLog", JoinType.LEFT);
-            predicates.add(cb.equal(workLogJoin.get("workLogId"), workLogId));
-            return cb.and(predicates.toArray(Predicate[]::new));
-        });
-
-        if (workCalculations.isEmpty()) return null;
-
-        Map<String, ResponseWorkEstimationForm.EmployeeRatioValue> ratioValueMap = new HashMap<>();
-        for (WorkCalculation workCalculation : workCalculations) {
-            ratioValueMap.put(workCalculation.getEmployee().getLogin(), ResponseWorkEstimationForm.EmployeeRatioValue.builder()
-                    .ratio(workCalculation.getRatio())
-                    .sum(workCalculation.getSum(true))
-                    .build());
-        }
-
-        ResponseWorkEstimationForm form = ResponseWorkEstimationForm.builder()
-                .actions(workCalculations.get(0).getActions().stream().map(ActionTaken::toFormItem).collect(Collectors.toList()))
-                .factorsActions(workCalculations.stream().map(WorkCalculation::getFactorActionsFormItems).flatMap(List::stream).collect(Collectors.toList()))
-                .employeesRatio(ratioValueMap)
-                .build();
-
-        return form;
-    }
-
 
     public void calculateAndSaveBypass(BypassWorkCalculationForm form, Employee employee) {
         Task task = taskDispatcher.createTask(form.getTaskInfo(), form.getReportInfo().getDate(), employee);

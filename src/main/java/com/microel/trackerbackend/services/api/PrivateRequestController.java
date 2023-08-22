@@ -4,9 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
-import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
-import com.microel.trackerbackend.services.external.billing.BillingRequestController;
 import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
+import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.misc.*;
 import com.microel.trackerbackend.misc.network.NetworkRemoteControl;
@@ -19,6 +18,8 @@ import com.microel.trackerbackend.parsers.oldtracker.OldTrackerParserSettings;
 import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
+import com.microel.trackerbackend.services.external.acp.types.Switch;
+import com.microel.trackerbackend.services.external.billing.BillingRequestController;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dispatchers.*;
@@ -28,6 +29,7 @@ import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
 import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
+import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.House;
@@ -470,6 +472,12 @@ public class PrivateRequestController {
                 .header("Server-Timing", "db;desc=\"DB Reading\";dur=" + dbDuration.toMillis())
                 .body(tasks.map(TaskMapper::toListObject));
     }
+
+    @GetMapping("tasks/by-login/{login}")
+    public ResponseEntity<Page<Task>> getTasksByLogin(@PathVariable String login, @RequestParam Integer page){
+        return ResponseEntity.ok(taskDispatcher.getTasksByLogin(login, page, 5));
+    }
+
 
     // Получает страницу с задачами принадлежащими текущему наблюдателю
     @GetMapping("tasks/incoming")
@@ -1793,6 +1801,28 @@ public class PrivateRequestController {
         return ResponseEntity.ok(acpClient.getBindingsByLogin(login));
     }
 
+    @GetMapping("acp/vlan/{id}/dhcp/bindings/{page}")
+    public ResponseEntity<Page<DhcpBinding>> getDhcpBindingsByVlan(@PathVariable Integer page, @PathVariable Integer id, @RequestParam String excludeLogin) {
+        return ResponseEntity.ok(acpClient.getDhcpBindingsByVlan(page, id, excludeLogin));
+    }
+
+    @PostMapping("acp/dhcp/binding/auth")
+    public ResponseEntity<Void> authDhcpBinding(@RequestBody DhcpBinding.AuthForm form) {
+        billingRequestController.getUserInfo(form.getLogin());
+        acpClient.authDhcpBinding(form);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("acp/buildings")
+    public ResponseEntity<List<AcpHouse>> getBuildings(@Nullable @RequestParam String query) {
+        return ResponseEntity.ok(acpClient.getHouses(query));
+    }
+
+    @GetMapping("acp/vlan/{id}/switches")
+    public ResponseEntity<List<Switch>> getSwitches(@PathVariable Integer id) {
+        return ResponseEntity.ok(acpClient.getSwitchesByVlanId(id));
+    }
+
     @GetMapping("remote-control/{ip}/check-access")
     public Mono<ResponseEntity<NetworkRemoteControl>> checkAccess(@PathVariable String ip) {
         if (ip == null) throw new IllegalFields("Не указан IP адрес");
@@ -1863,8 +1893,8 @@ public class PrivateRequestController {
 
     @PostMapping("configuration/acp")
     public ResponseEntity<Void> updateAcpConfiguration(@RequestBody AcpConf conf) {
-            acpClient.setConfiguration(conf);
-            return ResponseEntity.ok().build();
+        acpClient.setConfiguration(conf);
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("client-equipments")

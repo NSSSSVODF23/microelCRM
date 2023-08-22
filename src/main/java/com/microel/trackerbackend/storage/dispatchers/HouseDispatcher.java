@@ -214,13 +214,14 @@ public class HouseDispatcher {
         Street street = house.getStreet();
         boolean exists = isHouseExistsByForm(street, form, id);
         if (exists) throw new AlreadyExists("Дом с таким номером уже существует");
-        if (form.isFullEqual(house)) throw new IllegalFields("Данные для обновления дома не валидны");
+        if (form.isFullEqual(house)) throw new IllegalFields("Данные не изменены");
         house.setHouseNum(form.getHouseNum());
         house.setFraction(form.getFraction());
         house.setLetter(form.getLetter());
         house.setBuild(form.getBuild());
         house.setPlace(form.getPlace() == null ? null : form.getPlace().toPlace());
         house.setIsApartmentHouse(form.getIsApartmentHouse());
+        house.setAcpHouseBind(form.getAcpHouseBind());
         House save = houseRepository.save(house);
         stompController.updateHouse(save);
         return save;

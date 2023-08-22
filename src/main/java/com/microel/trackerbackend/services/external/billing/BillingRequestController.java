@@ -57,7 +57,7 @@ public class BillingRequestController {
 //        config.setServerURL(new URL("http://10.50.0.7:91/rpc_server.php"));
         config.setServerURL(new URL("http://"+billingConf.getHost()+":"+billingConf.getPort()+"/rpc_server.php"));
         client.setConfig(config);
-        Map<String, Map<String, String>> sysMap = Map.of("auth", Map.of("dname", "daemon_x"));
+        Map<String, Map<String, String>> sysMap = Map.of("auth", Map.of("dname", billingConf.getDaemonName()));
         argsMap.put("method", "WDaemon2");
         argsMap.put("rq", rqMap);
         argsMap.put("_Sys", sysMap);
@@ -251,6 +251,7 @@ public class BillingRequestController {
             SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
             UserMainInfo u = new UserMainInfo();
             Map<String, String> map = (Map<String, String>) o;
+            if(map == null) throw new IllegalFields("Информация о клиенте не найдена");
             u.addr = map.get("addr");
             u.coment = map.get("coment");
             try {
