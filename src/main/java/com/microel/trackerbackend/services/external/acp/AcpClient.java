@@ -23,10 +23,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -46,6 +43,18 @@ public class AcpClient {
         return Arrays.stream(
                 get(DhcpBinding[].class, Map.of("login", login), "dhcp", "bindings")
         ).sorted(Comparator.comparing(DhcpBinding::getSessionTime).reversed()).collect(Collectors.toList());
+    }
+
+    public RestPage<DhcpBinding> getLastBindings(Integer page, @Nullable Short state, @Nullable String macaddr, @Nullable String login, @Nullable String ip, @Nullable Integer vlan, @Nullable Integer buildingId) {
+        Map<String, String> query = new HashMap<>();
+        if (state != null) query.put("state", state.toString());
+        if (macaddr != null) query.put("macaddr", macaddr);
+        if (login != null) query.put("login", login);
+        if (ip != null) query.put("ip", ip);
+        if (vlan != null) query.put("vlan", vlan.toString());
+        if (buildingId != null) query.put("buildingId", buildingId.toString());
+        RequestEntity<Void> request = RequestEntity.get(url(query, "dhcp", "bindings", page.toString(), "last")).build();
+        return restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<DhcpBinding>>(){}).getBody();
     }
 
     public RestPage<DhcpBinding> getDhcpBindingsByVlan(Integer page, Integer id, String excludeLogin) {
@@ -104,11 +113,10 @@ public class AcpClient {
         configurationStorage.save(configuration);
         stompController.changeAcpConfig(configuration);
     }
-
     public void authDhcpBinding(DhcpBinding.AuthForm form) {
         try {
             this.restTemplate.postForObject(url(Map.of(), "dhcp", "binding", "auth"), form, Void.class);
-        }catch (Throwable e) {
+        } catch (Throwable e) {
             throw new ResponseException(e.getMessage());
         }
     }

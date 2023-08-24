@@ -1806,6 +1806,17 @@ public class PrivateRequestController {
         return ResponseEntity.ok(acpClient.getDhcpBindingsByVlan(page, id, excludeLogin));
     }
 
+    @GetMapping("acp/dhcp/bindings/{page}/last")
+    public ResponseEntity<Page<DhcpBinding>> getLastBindings(@PathVariable Integer page,
+                                                                        @RequestParam @Nullable Short state,
+                                                                        @RequestParam @Nullable String macaddr,
+                                                                        @RequestParam @Nullable String login,
+                                                                        @RequestParam @Nullable String ip,
+                                                                        @RequestParam @Nullable Integer vlan,
+                                                                        @RequestParam @Nullable Integer buildingId) {
+        return ResponseEntity.ok(acpClient.getLastBindings(page, state, macaddr, login, ip, vlan, buildingId));
+    }
+
     @PostMapping("acp/dhcp/binding/auth")
     public ResponseEntity<Void> authDhcpBinding(@RequestBody DhcpBinding.AuthForm form) {
         billingRequestController.getUserInfo(form.getLogin());

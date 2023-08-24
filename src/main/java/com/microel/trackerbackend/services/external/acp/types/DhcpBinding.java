@@ -60,28 +60,54 @@ public class DhcpBinding {
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String bindGroup;
     private Integer creationTime;
+    @Nullable
+    private Integer streetId;
+    @Nullable
+    private String streetName;
+    @Nullable
+    private Integer buildingId;
+    @Nullable
+    private String houseNum;
 
     public Long getLeaseStart() {
+        if(leaseStart == null){
+            return 0L;
+        }
         return leaseStart * 1000L;
     }
 
     public Long getLeaseExpire() {
+        if(leaseExpire == null){
+            return 0L;
+        }
         return leaseExpire * 1000L;
     }
 
     public Long getSessionTime() {
+        if(sessionTime == null){
+            return 0L;
+        }
         return sessionTime * 1000L;
     }
 
     public Long getAuthDate() {
+        if(authDate == null){
+            return 0L;
+        }
         return authDate * 1000L;
     }
 
     public Long getAuthExpire() {
+        if(authExpire == null){
+            return 0L;
+        }
         return authExpire * 1000L;
     }
 
     public Long getCreationTime() {
+        if(creationTime == null){
+            return 0L;
+        }
         return creationTime * 1000L;
     }
 
