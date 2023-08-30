@@ -22,6 +22,7 @@ public class AddressMapper {
                 .apartmentNum(address.getApartmentNum())
                 .apartmentMod(address.getApartmentMod())
                 .addressName(address.getAddressName())
+                .acpHouseBind(address.getAcpHouseBind())
                 .build();
     }
     @Nullable
@@ -40,6 +41,7 @@ public class AddressMapper {
                 .floor(address.getFloor())
                 .apartmentNum(address.getApartmentNum())
                 .apartmentMod(address.getApartmentMod())
+                .acpHouseBind(address.getAcpHouseBind())
                 .build();
     }
 }

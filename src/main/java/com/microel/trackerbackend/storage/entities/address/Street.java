@@ -44,8 +44,19 @@ public class Street implements Comparable<Street> {
     private Set<House> houses;
 
     @JsonIgnore
-    public List<Address> getAddress() {
-        return houses.stream().filter(house -> !house.isSomeDeleted()).map(House::getAddress).toList();
+    public List<Address> getAddress(@Nullable Boolean isAcpConnected) {
+        return houses.stream()
+                .filter(house -> {
+                    if(isAcpConnected != null) {
+                        if(isAcpConnected) {
+                            return house.getAcpHouseBind() != null && !house.isSomeDeleted();
+                        }else{
+                            return house.getAcpHouseBind() == null && !house.isSomeDeleted();
+                        }
+                    }
+                    return !house.isSomeDeleted();
+                })
+                .map(House::getAddress).toList();
     }
 
     public void setHouses(Set<House> houses) {

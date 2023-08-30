@@ -41,7 +41,7 @@ public class HouseDispatcher {
         return houseEntity;
     }
 
-    public List<House> lookup(AddressDispatcher.AddressLookupRequest request) {
+    public List<House> lookup(AddressDispatcher.AddressLookupRequest request, @Nullable Boolean isAcpConnected) {
         return houseRepository.findAll((root, query, cb) -> {
             List<Predicate> predicatesStreet = new ArrayList<>();
             List<Predicate> predicatesHouse = new ArrayList<>();
@@ -66,6 +66,10 @@ public class HouseDispatcher {
             }
             if (request.getBuild() != null) {
                 predicatesHouse.add(cb.equal(root.get("build"), request.getBuild()));
+            }
+            if(isAcpConnected != null){
+                if(isAcpConnected) predicatesHouse.add(cb.isNotNull(root.get("acpHouseBind")));
+                else predicatesHouse.add(cb.isNull(root.get("acpHouseBind")));
             }
             return cb.and(cb.or(predicatesStreet.toArray(Predicate[]::new)), cb.and(predicatesHouse.toArray(Predicate[]::new)));
         });
@@ -233,5 +237,10 @@ public class HouseDispatcher {
         House save = houseRepository.save(house);
         stompController.deleteHouse(save);
         return save;
+    }
+
+    @Nullable
+    public House getByAcpBindId(Integer buildId) {
+        return houseRepository.findTopByAcpHouseBind_BuildingIdAndDeletedFalse(buildId);
     }
 }

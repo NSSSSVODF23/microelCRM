@@ -11,4 +11,5 @@ import java.util.Optional;
 public interface HouseRepository extends JpaRepository<House, Long>, JpaSpecificationExecutor<House> {
     Optional<House> findFirstByHouseNumAndFractionAndLetterAndBuildAndStreet(Short houseNum, Short fraction, Character letter, Short build, Street street);
     List<House> findByStreet_StreetIdAndDeletedFalseOrderByHouseNum(Long streetId);
+    House findTopByAcpHouseBind_BuildingIdAndDeletedFalse(Integer buildId);
 }

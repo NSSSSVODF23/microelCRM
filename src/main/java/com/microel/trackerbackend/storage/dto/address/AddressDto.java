@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.dto.address;
 
+import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
 import lombok.*;
 
 @Getter
@@ -25,4 +26,6 @@ public class AddressDto {
     private String apartmentMod;
 
     private String addressName;
+
+    private AcpHouse acpHouseBind;
 }

@@ -129,7 +129,7 @@ public class AddressDispatcher {
         }
     }
 
-    public List<AddressDto> getSuggestions(String query) {
+    public List<AddressDto> getSuggestions(String query, @Nullable Boolean isAcpConnected, @Nullable Boolean isHouseOnly) {
         List<Address> suggestions = new ArrayList<>();
         query = CharacterTranslation.translate(query);
         LevenshteinDistance levenshteinDistance = new LevenshteinDistance();
@@ -156,6 +156,7 @@ public class AddressDispatcher {
         );
         List<String> apartParts = List.of(
                 "(( |-| кв.)(?<an>\\d{1,3}))?( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))?( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))?( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))?( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))?( \\((?<am>[а-я]+)\\))?",
                 ""
         );
 
@@ -180,14 +181,20 @@ public class AddressDispatcher {
                         AddressLookupRequest request = AddressLookupRequest.of(matcher);
                         if (request == null) continue;
                         if (request.houseNum != null) {
-                            List<House> foundHouses = houseDispatcher.lookup(request);
+                            List<House> foundHouses = houseDispatcher.lookup(request, isAcpConnected);
                             List<Address> collect = foundHouses.stream().filter(house -> !house.isSomeDeleted())
-                                    .map(house -> house.getAddress(request.entrance, request.floor, request.apartment, request.apartmentMod)).toList();
+                                    .map(house -> {
+                                        if(isHouseOnly != null && isHouseOnly){
+                                            return house.getAddress();
+                                        }
+                                        return house.getAddress(request.entrance, request.floor, request.apartment, request.apartmentMod);
+                                    })
+                                    .toList();
                             suggestions.addAll(collect);
                         } else {
                             List<Street> foundStreets = streetDispatcher.containsInName(request.streetName);
                             for (Street street : foundStreets) {
-                                suggestions.addAll(street.getAddress());
+                                suggestions.addAll(street.getAddress(isAcpConnected));
                             }
                         }
                         if(!suggestions.isEmpty()) break;

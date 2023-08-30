@@ -2,10 +2,12 @@ package com.microel.trackerbackend.storage.entities.address;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
 import lombok.*;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import java.util.Comparator;
@@ -46,6 +48,10 @@ public class Address implements Comparable<Address> {
     private Short apartmentNum;
     @Column(length = 32)
     private String apartmentMod;
+
+    @Nullable
+    @ManyToOne
+    private AcpHouse acpHouseBind;
 
     public Integer countOfFilled() {
         Integer count = 0;

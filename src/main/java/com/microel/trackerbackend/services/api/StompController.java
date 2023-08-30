@@ -11,9 +11,11 @@ import com.microel.trackerbackend.misc.TreeNode;
 import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.services.MonitoringService;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
+import com.microel.trackerbackend.services.external.acp.types.Switch;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
+import com.microel.trackerbackend.storage.entities.acp.AcpCommutator;
 import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.address.Street;
@@ -347,5 +349,21 @@ public class StompController {
 
     public void updateHousePageSignal(Integer vlan) {
         sendAll(Map.of("vlan", vlan), "acp", "dhcp-binding", "house-page", "update");
+    }
+
+    public void updateAcpCommutator(AcpCommutator updatedCommutator) {
+        sendAll(updatedCommutator, "acp", "commutator", "status", "update");
+    }
+
+    public void createCommutator(Switch commutator) {
+        sendAll(commutator, "acp", "commutator", "create");
+    }
+
+    public void updateCommutator(Switch commutator) {
+        sendAll(commutator, "acp", "commutator", "update");
+    }
+
+    public void deleteCommutator(Integer id) {
+        sendAll(Map.of("id", id), "acp", "commutator", "delete");
     }
 }

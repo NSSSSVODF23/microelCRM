@@ -19,6 +19,8 @@ import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.Switch;
+import com.microel.trackerbackend.services.external.acp.types.SwitchModel;
+import com.microel.trackerbackend.services.external.acp.types.SwitchWithAddress;
 import com.microel.trackerbackend.services.external.billing.BillingRequestController;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
@@ -474,7 +476,7 @@ public class PrivateRequestController {
     }
 
     @GetMapping("tasks/by-login/{login}")
-    public ResponseEntity<Page<Task>> getTasksByLogin(@PathVariable String login, @RequestParam Integer page){
+    public ResponseEntity<Page<Task>> getTasksByLogin(@PathVariable String login, @RequestParam Integer page) {
         return ResponseEntity.ok(taskDispatcher.getTasksByLogin(login, page, 5));
     }
 
@@ -1556,8 +1558,10 @@ public class PrivateRequestController {
 
     // Отправляет список адресов как подсказки к автодополнению
     @GetMapping("suggestions/address")
-    public ResponseEntity<List<AddressDto>> getAddressSuggestions(@RequestParam String query) {
-        return ResponseEntity.ok(addressDispatcher.getSuggestions(query));
+    public ResponseEntity<List<AddressDto>> getAddressSuggestions(@RequestParam String query,
+                                                                  @RequestParam @Nullable Boolean isAcpConnected,
+                                                                  @RequestParam @Nullable Boolean isHouseOnly) {
+        return ResponseEntity.ok(addressDispatcher.getSuggestions(query, isAcpConnected, isHouseOnly));
     }
 
     // Получает объект парсера трекера
@@ -1808,12 +1812,12 @@ public class PrivateRequestController {
 
     @GetMapping("acp/dhcp/bindings/{page}/last")
     public ResponseEntity<Page<DhcpBinding>> getLastBindings(@PathVariable Integer page,
-                                                                        @RequestParam @Nullable Short state,
-                                                                        @RequestParam @Nullable String macaddr,
-                                                                        @RequestParam @Nullable String login,
-                                                                        @RequestParam @Nullable String ip,
-                                                                        @RequestParam @Nullable Integer vlan,
-                                                                        @RequestParam @Nullable Integer buildingId) {
+                                                             @RequestParam @Nullable Short state,
+                                                             @RequestParam @Nullable String macaddr,
+                                                             @RequestParam @Nullable String login,
+                                                             @RequestParam @Nullable String ip,
+                                                             @RequestParam @Nullable Integer vlan,
+                                                             @RequestParam @Nullable Integer buildingId) {
         return ResponseEntity.ok(acpClient.getLastBindings(page, state, macaddr, login, ip, vlan, buildingId));
     }
 
@@ -1829,9 +1833,69 @@ public class PrivateRequestController {
         return ResponseEntity.ok(acpClient.getHouses(query));
     }
 
-    @GetMapping("acp/vlan/{id}/switches")
-    public ResponseEntity<List<Switch>> getSwitches(@PathVariable Integer id) {
-        return ResponseEntity.ok(acpClient.getSwitchesByVlanId(id));
+    @GetMapping("acp/commutators/{page}/page")
+    public ResponseEntity<Page<Switch>> getCommutators(@PathVariable Integer page,
+                                                       @RequestParam @Nullable String name,
+                                                       @RequestParam @Nullable String ip,
+                                                       @RequestParam @Nullable Integer buildingId) {
+        return ResponseEntity.ok(acpClient.getCommutators(page, name, ip, buildingId));
+    }
+
+    @GetMapping("acp/commutators/search")
+    public ResponseEntity<List<SwitchWithAddress>> searchCommutators(@RequestParam @Nullable String query) {
+        return ResponseEntity.ok(acpClient.searchCommutators(query));
+    }
+
+    @GetMapping("acp/commutator/{id}")
+    public ResponseEntity<SwitchWithAddress> getCommutator(@PathVariable Integer id) {
+        return ResponseEntity.ok(acpClient.getCommutator(id));
+    }
+
+    @PostMapping("acp/commutator")
+    public ResponseEntity<Void> createCommutator(@RequestBody Switch.Form form) {
+        if(!form.isValid()) throw new IllegalFields("Неверно заполнена форма создания коммутатора");
+        Switch createdCommutator = acpClient.createCommutator(form);
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("acp/commutator/{id}")
+    public ResponseEntity<Void> updateCommutator(@PathVariable Integer id, @RequestBody Switch.Form form) {
+        if(!form.isValid()) throw new IllegalFields("Неверно заполнена форма редактирования коммутатора");
+        Switch updatedCommutator = acpClient.updateCommutator(id, form);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("acp/commutator/{id}")
+    public ResponseEntity<Void> deleteCommutator(@PathVariable Integer id) {
+        acpClient.deleteCommutator(id);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("acp/commutator/check-exist/name")
+    public ResponseEntity<Boolean> checkCommutatorNameExist(@RequestParam String name) {
+        return ResponseEntity.ok(acpClient.checkCommutatorNameExist(name));
+    }
+
+    @GetMapping("acp/commutator/check-exist/ip")
+    public ResponseEntity<Boolean> checkCommutatorIpExist(@RequestParam String ip) {
+        return ResponseEntity.ok(acpClient.checkCommutatorIpExist(ip));
+    }
+
+    @GetMapping("acp/commutator/models")
+    public ResponseEntity<List<SwitchModel>> getCommutatorModels(@RequestParam @Nullable String query) {
+        return ResponseEntity.ok(acpClient.getCommutatorModels(query));
+    }
+
+    @GetMapping("acp/commutator/model/{id}")
+    public ResponseEntity<SwitchModel> getCommutatorModel(@PathVariable Integer id) {
+        return ResponseEntity.ok(acpClient.getCommutatorModel(id));
+    }
+
+    @GetMapping("acp/building/{id}/address")
+    public ResponseEntity<Address> getBuildingAddress(@PathVariable Integer id) {
+        House houseByBind = houseDispatcher.getByAcpBindId(id);
+        if(houseByBind == null) return ResponseEntity.ok(null);
+        return ResponseEntity.ok(houseByBind.getAddress());
     }
 
     @GetMapping("remote-control/{ip}/check-access")

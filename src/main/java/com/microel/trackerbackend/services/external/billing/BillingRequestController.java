@@ -79,6 +79,10 @@ public class BillingRequestController {
 
         try {
             Map<String, Object> execute = (Map<String, Object>) client.execute("daemons.*", Collections.singletonList(argsMap));
+            String state = execute.get("state").toString();
+            if(state.equals("Error")){
+                throw new EmptyResponse(execute.get("__msg").toString());
+            }
             Map<String, String> answer = (Map<String, String>) execute.get("answer");
             Map<String, UserItemData> xdata = (Map<String, UserItemData>) execute.get("xdata");
             return List.copyOf(xdata.values());
@@ -86,6 +90,8 @@ public class BillingRequestController {
             log.warn("Не найдено");
         } catch (XmlRpcException e) {
             throw new EntryNotFound("Ошибка запроса в XMLRPC");
+        } catch (EmptyResponse e) {
+            throw e;
         } catch (Exception e){
             throw new EmptyResponse("Пустой ответ от биллинга");
         }

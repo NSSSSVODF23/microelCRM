@@ -90,6 +90,7 @@ public class House {
         address.setFloor(floor);
         address.setApartmentNum(apartmentNum);
         address.setApartmentMod(apartmentMod);
+        address.setAcpHouseBind(acpHouseBind);
         return address;
     }
 
@@ -99,6 +100,7 @@ public class House {
         address.setCity(street.getCity());
         address.setStreet(street);
         address.setHouse(this);
+        address.setAcpHouseBind(acpHouseBind);
         return address;
     }
 
