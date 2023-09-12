@@ -3,6 +3,8 @@ package com.microel.trackerbackend.services.external.acp;
 import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.modules.exceptions.Unconfigured;
+import com.microel.trackerbackend.parsers.commutator.AbstractRemoteAccess;
+import com.microel.trackerbackend.parsers.commutator.ra.RAFactory;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.RestPage;
@@ -12,8 +14,10 @@ import com.microel.trackerbackend.services.external.acp.types.SwitchModel;
 import com.microel.trackerbackend.services.external.acp.types.SwitchWithAddress;
 import com.microel.trackerbackend.storage.dispatchers.AcpCommutatorDispatcher;
 import com.microel.trackerbackend.storage.dispatchers.HouseDispatcher;
-import com.microel.trackerbackend.storage.entities.acp.AcpCommutator;
 import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
+import com.microel.trackerbackend.storage.entities.acp.commutator.AcpCommutator;
+import com.microel.trackerbackend.storage.entities.acp.commutator.PortInfo;
+import com.microel.trackerbackend.storage.entities.acp.commutator.SystemInfo;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import org.springframework.boot.web.client.RestTemplateBuilder;
@@ -27,6 +31,8 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -38,15 +44,17 @@ public class AcpClient {
     private final AcpCommutatorDispatcher acpCommutatorDispatcher;
     private final CommutatorsAvailabilityCheckService availabilityCheckService;
     private final StompController stompController;
+    private final RAFactory remoteAccessFactory;
     private AcpConf configuration;
 
-    public AcpClient(ConfigurationStorage configurationStorage, HouseDispatcher houseDispatcher, AcpCommutatorDispatcher acpCommutatorDispatcher, @Lazy CommutatorsAvailabilityCheckService availabilityCheckService, StompController stompController) {
+    public AcpClient(ConfigurationStorage configurationStorage, HouseDispatcher houseDispatcher, AcpCommutatorDispatcher acpCommutatorDispatcher, @Lazy CommutatorsAvailabilityCheckService availabilityCheckService, StompController stompController, RAFactory remoteAccessFactory) {
         this.configurationStorage = configurationStorage;
         configuration = configurationStorage.loadOrDefault(AcpConf.class, new AcpConf());
         this.houseDispatcher = houseDispatcher;
         this.acpCommutatorDispatcher = acpCommutatorDispatcher;
         this.availabilityCheckService = availabilityCheckService;
         this.stompController = stompController;
+        this.remoteAccessFactory = remoteAccessFactory;
     }
 
     public List<DhcpBinding> getBindingsByLogin(String login) {
@@ -173,6 +181,7 @@ public class AcpClient {
         return get(Boolean.class, Map.of("ip", ip), "commutator", "check-exist", "ip");
     }
 
+    @Nullable
     public SwitchWithAddress getCommutator(Integer id) {
         return get(SwitchWithAddress.class, Map.of(), "commutator", id.toString());
     }
@@ -218,5 +227,42 @@ public class AcpClient {
         } catch (Throwable e) {
             throw new ResponseException(e.getMessage());
         }
+    }
+
+    public void getCommutatorRemoteUpdate(Integer id) {
+//        SwitchWithAddress commutator = getCommutator(id);
+//        if (commutator == null)
+//            throw new ResponseException("Не найден коммутатор в ACP с id: " + id);
+//
+//        Short modelId = commutator.getCommutator().getSwmodelId();
+//        SwitchModel commutatorModel = getCommutatorModel(modelId.intValue());
+//        if (commutatorModel == null)
+//            throw new ResponseException("Не найдена модель для коммутатора: " + commutator.getCommutator().getName());
+//
+//        System.out.println(commutatorModel);
+//        AcpCommutator additionalInfo = commutator.getCommutator().getAdditionalInfo();
+//        if (additionalInfo != null) {
+//            SystemInfo systemInfo = additionalInfo.getSystemInfo();
+//            List<PortInfo> ports = additionalInfo.getPorts();
+//            AbstractRemoteAccess remoteAccess = remoteAccessFactory.getRemoteAccess(commutatorModel.getName(), commutator.getCommutator().getIpaddr());
+//            remoteAccess.auth();
+//            SystemInfo receivedSystemInfo = remoteAccess.getSystemInfo();
+//            if (systemInfo == null) {
+//                additionalInfo.setSystemInfo(receivedSystemInfo);
+//            } else {
+//                if (!systemInfo.equals(receivedSystemInfo)) {
+//                    systemInfo.setDevice(receivedSystemInfo.getDevice());
+//                    systemInfo.setMac(receivedSystemInfo.getMac());
+//                    systemInfo.setHwVersion(receivedSystemInfo.getHwVersion());
+//                }
+//                systemInfo.setFwVersion(receivedSystemInfo.getFwVersion());
+//                systemInfo.setUptime(receivedSystemInfo.getUptime());
+//
+//            }
+//            additionalInfo.getSystemInfo().setLastUpdate(Timestamp.from(Instant.now()));
+//
+//            System.out.println();
+//            remoteAccess.close();
+//        }
     }
 }

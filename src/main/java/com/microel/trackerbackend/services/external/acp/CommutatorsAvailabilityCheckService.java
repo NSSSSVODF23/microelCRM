@@ -1,9 +1,11 @@
 package com.microel.trackerbackend.services.external.acp;
 
+import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.acp.types.Switch;
 import com.microel.trackerbackend.storage.dispatchers.AcpCommutatorDispatcher;
-import com.microel.trackerbackend.storage.entities.acp.AcpCommutator;
+import com.microel.trackerbackend.storage.entities.acp.commutator.AcpCommutator;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -18,6 +20,7 @@ import java.util.concurrent.ThreadFactory;
 import static java.lang.Thread.sleep;
 
 @Service
+@Slf4j
 public class CommutatorsAvailabilityCheckService {
     private final AcpCommutatorDispatcher acpCommutatorDispatcher;
     private final AcpClient acpClient;
@@ -35,8 +38,12 @@ public class CommutatorsAvailabilityCheckService {
 
     @Scheduled(cron = "0 0 */1 * * *")
     public void synchronizeBetweenBases() {
-        cachedCommutators = acpClient.getAllCommutators();
-        this.acpCommutatorDispatcher.synchronize(cachedCommutators);
+        try {
+            cachedCommutators = acpClient.getAllCommutators();
+            this.acpCommutatorDispatcher.synchronize(cachedCommutators);
+        } catch (ResponseException e) {
+            log.warn("Нет соединения с AcpFlexConnector модулем. {}", e.getMessage());
+        }
     }
 
     @Scheduled(fixedRate = 10000)

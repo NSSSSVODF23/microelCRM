@@ -29,8 +29,8 @@ public class WorkingDay {
     private List<WorkCalculation> calculations;
 
     public SalaryTable.SalaryTableCell toPoint(){
-        Integer sum = calculations.stream().map(WorkCalculation::getSum).reduce(0,Integer::sum);
-        Integer sumWithoutNDFL = calculations.stream().map(WorkCalculation::getSumWithoutNDFL).reduce(0,Integer::sum);
+        Float sum = calculations.stream().map(WorkCalculation::getSum).reduce(0f,Float::sum);
+        Float sumWithoutNDFL = calculations.stream().map(WorkCalculation::getSumWithoutNDFL).reduce(0f, Float::sum);
         return SalaryTable.SalaryTableCell.builder()
                 .date(date)
                 .employee(employee)

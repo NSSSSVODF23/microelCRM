@@ -1,7 +1,7 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.services.external.acp.types.Switch;
-import com.microel.trackerbackend.storage.entities.acp.AcpCommutator;
+import com.microel.trackerbackend.storage.entities.acp.commutator.AcpCommutator;
 import com.microel.trackerbackend.storage.repositories.AcpCommutatorRepository;
 import org.springframework.stereotype.Component;
 

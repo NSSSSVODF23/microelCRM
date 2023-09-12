@@ -1,6 +1,6 @@
 package com.microel.trackerbackend.storage.repositories;
 
-import com.microel.trackerbackend.storage.entities.acp.AcpCommutator;
+import com.microel.trackerbackend.storage.entities.acp.commutator.AcpCommutator;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 

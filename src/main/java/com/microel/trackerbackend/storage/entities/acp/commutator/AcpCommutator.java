@@ -1,4 +1,4 @@
-package com.microel.trackerbackend.storage.entities.acp;
+package com.microel.trackerbackend.storage.entities.acp.commutator;
 
 import com.microel.trackerbackend.services.external.acp.types.Switch;
 import lombok.*;
@@ -6,14 +6,14 @@ import lombok.*;
 import javax.persistence.*;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.Objects;
+import java.util.List;
 
 @Getter
 @Setter
-@Entity
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@Entity
 @Table(name = "acp_commutators")
 public class AcpCommutator {
     @Id
@@ -23,6 +23,11 @@ public class AcpCommutator {
     private Boolean available;
     private Timestamp lastUpdate;
     private Boolean deleted;
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH}, orphanRemoval = true)
+    @JoinColumn(name = "f_system_info_id")
+    private SystemInfo systemInfo;
+    @OneToMany(mappedBy = "commutator", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH}, orphanRemoval = true)
+    private List<PortInfo> ports;
 
     public static AcpCommutator of(Switch sw) {
         return AcpCommutator.builder()
@@ -45,3 +50,4 @@ public class AcpCommutator {
         return sb;
     }
 }
+

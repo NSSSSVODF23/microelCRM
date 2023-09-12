@@ -15,7 +15,7 @@ import com.microel.trackerbackend.services.external.acp.types.Switch;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
-import com.microel.trackerbackend.storage.entities.acp.AcpCommutator;
+import com.microel.trackerbackend.storage.entities.acp.commutator.AcpCommutator;
 import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.address.Street;

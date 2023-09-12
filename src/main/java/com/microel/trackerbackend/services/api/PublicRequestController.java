@@ -3,6 +3,9 @@ package com.microel.trackerbackend.services.api;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.modules.transport.Credentials;
+import com.microel.trackerbackend.parsers.commutator.ra.DES28RemoteAccess;
+import com.microel.trackerbackend.storage.entities.acp.commutator.PortInfo;
+import com.microel.trackerbackend.storage.entities.acp.commutator.SystemInfo;
 import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.security.exceptions.JwsTokenParseError;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
@@ -37,7 +40,7 @@ public class PublicRequestController {
     public ResponseEntity<AuthorizationProvider.TokenChain> signIn(@RequestBody Credentials body, HttpServletResponse response) {
         if (!body.isCorrect()) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
 
-        try{
+        try {
 
             AuthorizationProvider.TokenChain tokenChain = authorizationProvider.signIn(body.getLogin(), body.getPassword());
             if (tokenChain == null) {
@@ -73,12 +76,12 @@ public class PublicRequestController {
 
     @GetMapping("auth-checkout")
     public ResponseEntity<AuthorizationProvider.TokenChain> getAuthCheckout(HttpServletRequest request, HttpServletResponse response) {
-        if(request.getCookies() == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        if (request.getCookies() == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         AuthorizationProvider.TokenChain requestTokens = AuthorizationProvider.getTokensFromCookie(List.of(request.getCookies()));
         if (requestTokens.getToken() != null && requestTokens.getRefreshToken() != null) {
-            if(authorizationProvider.tokenValidate(requestTokens.getToken(), true)){
+            if (authorizationProvider.tokenValidate(requestTokens.getToken(), true)) {
                 return ResponseEntity.ok().build();
-            }else if(authorizationProvider.refreshTokenValidate(requestTokens.getRefreshToken())){
+            } else if (authorizationProvider.refreshTokenValidate(requestTokens.getRefreshToken())) {
                 AuthorizationProvider.TokenChain tokenChain = null;
                 try {
                     tokenChain = authorizationProvider.doRefreshTokenChain(requestTokens.getRefreshToken());
@@ -88,11 +91,11 @@ public class PublicRequestController {
                 response.addCookie(tokenChain.getTokenCookie());
                 response.addCookie(tokenChain.getRefreshTokenCookie());
                 return ResponseEntity.ok(tokenChain);
-            }else{
+            } else {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
             }
         } else if (requestTokens.getRefreshToken() != null) {
-            if(authorizationProvider.refreshTokenValidate(requestTokens.getRefreshToken())){
+            if (authorizationProvider.refreshTokenValidate(requestTokens.getRefreshToken())) {
                 AuthorizationProvider.TokenChain tokenChain = null;
                 try {
                     tokenChain = authorizationProvider.doRefreshTokenChain(requestTokens.getRefreshToken());
@@ -127,5 +130,23 @@ public class PublicRequestController {
     public ResponseEntity<Void> incomingUpdateHousePageSignal(@RequestBody Integer vlan) {
         stompController.updateHousePageSignal(vlan);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("test/remote/{ip}/system-info")
+    public ResponseEntity<SystemInfo> testRemote(@PathVariable String ip) {
+        DES28RemoteAccess remoteAccess = new DES28RemoteAccess(ip);
+        remoteAccess.auth();
+        SystemInfo systemInfo = remoteAccess.getSystemInfo();
+        remoteAccess.close();
+        return ResponseEntity.ok(systemInfo);
+    }
+
+    @GetMapping("test/remote/{ip}/ports")
+    public ResponseEntity<List<PortInfo>> testRemotePorts(@PathVariable String ip) {
+        DES28RemoteAccess remoteAccess = new DES28RemoteAccess(ip);
+        remoteAccess.auth();
+        List<PortInfo> ports = remoteAccess.getPorts();
+        remoteAccess.close();
+        return ResponseEntity.ok(ports);
     }
 }

@@ -1851,6 +1851,12 @@ public class PrivateRequestController {
         return ResponseEntity.ok(acpClient.getCommutator(id));
     }
 
+    @PostMapping("acp/commutator/{id}/get-remote-update")
+    public ResponseEntity<Void> getCommutatorRemoteUpdate(@PathVariable Integer id) {
+        acpClient.getCommutatorRemoteUpdate(id);
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("acp/commutator")
     public ResponseEntity<Void> createCommutator(@RequestBody Switch.Form form) {
         if(!form.isValid()) throw new IllegalFields("Неверно заполнена форма создания коммутатора");

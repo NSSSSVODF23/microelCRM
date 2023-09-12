@@ -52,7 +52,7 @@ public class ResponseWorkEstimationForm {
     @Builder
     public static class EmployeeRatioValue{
         private Float ratio;
-        private Integer sum;
+        private Float sum;
     }
 
 }

@@ -65,8 +65,8 @@ public class WorkCalculation {
     }
 
     @Nullable
-    public EmployeeIntervention getLastEdit(){
-        if(editedBy == null) return null;
+    public EmployeeIntervention getLastEdit() {
+        if (editedBy == null) return null;
         return editedBy.stream().max(Comparator.comparing(EmployeeIntervention::getTimestamp)).orElse(null);
     }
 
@@ -84,9 +84,9 @@ public class WorkCalculation {
                 .build()).collect(Collectors.toList());
     }
 
-    public Integer getSum(Boolean withoutFactorsActions) {
+    public float getSum(Boolean withoutFactorsActions) {
         Float actionsSum = actions.stream().map(actionTaken -> actionTaken.getPaidAction().getCost() * actionTaken.getCount()).reduce(0f, Float::sum);
-        int originalSum = Math.round(actionsSum * ratio);
+        float originalSum = actionsSum * ratio;
         if (factorsActions != null && !withoutFactorsActions) {
             for (FactorAction factorAction : factorsActions) {
                 Float factorActionsSum = factorAction.getActionUuids().stream().map(uuid -> {
@@ -96,23 +96,23 @@ public class WorkCalculation {
                     }
                     return 0f;
                 }).reduce(0f, Float::sum);
-                originalSum += Math.round(((factorActionsSum * ratio) * factorAction.getFactor()) - (factorActionsSum * ratio));
+                originalSum += ((factorActionsSum * ratio) * factorAction.getFactor()) - (factorActionsSum * ratio);
             }
         }
         return originalSum;
     }
 
-    public Integer getSum() {
+    public float getSum() {
         return getSum(false);
     }
 
-    public Integer getSumWithoutNDFL() {
-        Integer actionsSum = actions.stream().map(actionTaken -> {
+    public float getSumWithoutNDFL() {
+        Float actionsSum = actions.stream().map(actionTaken -> {
             Float cost = actionTaken.getPaidAction().getCost();
-            int costWithoutNDFL = Math.round(cost - (cost * .13f));
+            float costWithoutNDFL = cost - (cost * .13f);
             return costWithoutNDFL * actionTaken.getCount();
-        }).reduce(0, Integer::sum);
-        int originalSum = Math.round(actionsSum * ratio);
+        }).reduce(0f, Float::sum);
+        float originalSum = actionsSum * ratio;
         if (factorsActions != null) {
             for (FactorAction factorAction : factorsActions) {
                 Float factorActionsSum = factorAction.getActionUuids().stream().map(uuid -> {
@@ -122,9 +122,9 @@ public class WorkCalculation {
                     }
                     return 0f;
                 }).reduce(0f, Float::sum);
-                originalSum += Math.round(((factorActionsSum * ratio) * factorAction.getFactor()) - (factorActionsSum * ratio));
+                originalSum += ((factorActionsSum * ratio) * factorAction.getFactor()) - (factorActionsSum * ratio);
             }
         }
-        return originalSum;
+        return Math.max(originalSum, 0f);
     }
 }

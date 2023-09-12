@@ -34,8 +34,8 @@ public class SalaryTable {
             SalaryTableTotalCell salaryTableTotalCell = new SalaryTableTotalCell();
             List<SalaryTableCell> row = payload.get(i);
             salaryTableTotalCell.setEmployee(employee);
-            salaryTableTotalCell.setSumWithNDFL(row.stream().map(SalaryTableCell::getSumWithNDFL).reduce(0, Integer::sum));
-            salaryTableTotalCell.setSumWithoutNDFL(row.stream().map(SalaryTableCell::getSumWithoutNDFL).reduce(0, Integer::sum));
+            salaryTableTotalCell.setSumWithNDFL(Math.round(row.stream().map(SalaryTableCell::getSumWithNDFL).reduce(0f, Float::sum)));
+            salaryTableTotalCell.setSumWithoutNDFL(Math.round(row.stream().map(SalaryTableCell::getSumWithoutNDFL).reduce(0f, Float::sum)));
             salaryTableTotalCells.add(salaryTableTotalCell);
             i++;
         }
@@ -46,8 +46,8 @@ public class SalaryTable {
         SalaryTableTotalCell salaryTableTotalCell = new SalaryTableTotalCell();
         for (int i = 0; i < employees.size(); i++) {
             List<SalaryTableCell> row = payload.get(i);
-            salaryTableTotalCell.addSumWithNDFL(row.stream().map(SalaryTableCell::getSumWithNDFL).reduce(0, Integer::sum));
-            salaryTableTotalCell.addSumWithoutNDFL(row.stream().map(SalaryTableCell::getSumWithoutNDFL).reduce(0, Integer::sum));
+            salaryTableTotalCell.addSumWithNDFL(Math.round(row.stream().map(SalaryTableCell::getSumWithNDFL).reduce(0f, Float::sum)));
+            salaryTableTotalCell.addSumWithoutNDFL(Math.round(row.stream().map(SalaryTableCell::getSumWithoutNDFL).reduce(0f, Float::sum)));
         }
         return salaryTableTotalCell;
     }
@@ -63,8 +63,8 @@ public class SalaryTable {
     @Builder
     public static class SalaryTableCell {
         private Employee employee;
-        private Integer sumWithNDFL = 0;
-        private Integer sumWithoutNDFL = 0;
+        private Float sumWithNDFL = 0f;
+        private Float sumWithoutNDFL = 0f;
         private Date date;
 
         public SalaryTableCell(Date date, Employee employee){
