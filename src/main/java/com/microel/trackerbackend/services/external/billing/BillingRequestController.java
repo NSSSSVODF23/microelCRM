@@ -5,6 +5,7 @@ import com.marcospassos.phpserializer.SerializerBuilder;
 import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
 import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigurationException;
 import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
+import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.exceptions.EmptyResponse;
@@ -19,7 +20,6 @@ import org.apache.xmlrpc.client.XmlRpcClientConfigImpl;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
-import java.io.EOFException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.text.ParseException;
@@ -50,12 +50,12 @@ public class BillingRequestController {
     }
 
     private void authenticate() throws MalformedURLException {
-        if(billingConf == null || !billingConf.isFilled()) {
+        if (billingConf == null || !billingConf.isFilled()) {
             log.warn("Конфигурация биллинга не задана. Авторизация не возможна.");
             return;
         }
 //        config.setServerURL(new URL("http://10.50.0.7:91/rpc_server.php"));
-        config.setServerURL(new URL("http://"+billingConf.getHost()+":"+billingConf.getPort()+"/rpc_server.php"));
+        config.setServerURL(new URL("http://" + billingConf.getHost() + ":" + billingConf.getPort() + "/rpc_server.php"));
         client.setConfig(config);
         Map<String, Map<String, String>> sysMap = Map.of("auth", Map.of("dname", billingConf.getDaemonName()));
         argsMap.put("method", "WDaemon2");
@@ -65,127 +65,113 @@ public class BillingRequestController {
 //        argsMap.put("__hostname", "sandbox");
     }
 
-    @Nullable
-    public List<UserItemData> getUsersByLogin(String login) {
-
+    private void prepareRequestBody(String functionName) {
         rqMap.clear();
         rqMap.put(0, "WDaemon.php");
-        rqMap.put("skey", login);
-        rqMap.put("__call", "UsersByLogin");
+        rqMap.put("__call", functionName);
         rqMap.put("__ip", billingConf.getSelfIp());
-        rqMap.put("__person", "root:"+billingConf.getSelfIp());
-//        rqMap.put("uname_live", 1);
-        calculateSign();
+        rqMap.put("__person", "root:" + billingConf.getSelfIp());
+    }
 
+    private void setRequestProp(String name, String value) {
+        rqMap.put(name, value);
+    }
+
+    @Nullable
+    public List<UserItemData> getUsersByLogin(String login) {
+        prepareRequestBody("UsersByLogin");
+        setRequestProp("skey", login);
+        calculateSign();
         try {
-            Map<String, Object> execute = (Map<String, Object>) client.execute("daemons.*", Collections.singletonList(argsMap));
-            String state = execute.get("state").toString();
-            if(state.equals("Error")){
-                throw new EmptyResponse(execute.get("__msg").toString());
-            }
-            Map<String, String> answer = (Map<String, String>) execute.get("answer");
-            Map<String, UserItemData> xdata = (Map<String, UserItemData>) execute.get("xdata");
-            return List.copyOf(xdata.values());
+            return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
         } catch (ClassCastException e) {
-            log.warn("Не найдено");
-        } catch (XmlRpcException e) {
-            throw new EntryNotFound("Ошибка запроса в XMLRPC");
-        } catch (EmptyResponse e) {
-            throw e;
-        } catch (Exception e){
-            throw new EmptyResponse("Пустой ответ от биллинга");
+            return null;
         }
-        return null;
     }
 
     @Nullable
     public List<UserItemData> getUsersByFio(String query) {
 
-        rqMap.clear();
-        rqMap.put(0, "WDaemon.php");
-        rqMap.put("skey", query);
-        rqMap.put("__call", "UsersByFio");
-        rqMap.put("__ip", billingConf.getSelfIp());
-        rqMap.put("__person", "root:"+billingConf.getSelfIp());
-//        rqMap.put("uname_live", 1);
+        prepareRequestBody("UsersByFio");
+        setRequestProp("skey", query);
         calculateSign();
 
         try {
-            Map<String, Object> execute = (Map<String, Object>) client.execute("daemons.*", Collections.singletonList(argsMap));
-            Map<String, String> answer = (Map<String, String>) execute.get("answer");
-            Map<String, UserItemData> xdata = (Map<String, UserItemData>) execute.get("xdata");
-            return List.copyOf(xdata.values());
+            return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
         } catch (ClassCastException e) {
-            log.warn("Не найдено");
-        } catch (XmlRpcException e) {
-            throw new EntryNotFound("Ошибка запроса в XMLRPC");
+            return null;
         }
-        return null;
     }
 
     @Nullable
     public List<UserItemData> getUsersByAddress(Address address) {
 
-        rqMap.clear();
-        rqMap.put(0, "WDaemon.php");
-        rqMap.put("skey", address.getBillingAddress());
-        rqMap.put("__call", "UsersByAddr");
-        rqMap.put("__ip", billingConf.getSelfIp());
-        rqMap.put("__person", "root:"+billingConf.getSelfIp());
-//        rqMap.put("uname_live", 1);
+        prepareRequestBody("UsersByAddr");
+        setRequestProp("skey", address.getBillingAddress());
         calculateSign();
 
         try {
-            Map<String, Object> execute = (Map<String, Object>) client.execute("daemons.*", Collections.singletonList(argsMap));
-            Map<String, String> answer = (Map<String, String>) execute.get("answer");
-            Map<String, UserItemData> xdata = (Map<String, UserItemData>) execute.get("xdata");
-
-            return List.copyOf(xdata.values());
+            return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
         } catch (ClassCastException e) {
-            // FIXIT заглушка для поиска по адресу, если не находит адресов с дробью, ищет без неё
-            rqMap.clear();
-            rqMap.put(0, "WDaemon.php");
-            rqMap.put("skey", address.getBillingAddress(false));
-//              rqMap.put("uname_live", 1);
-            rqMap.put("__call", "UsersByAddr");
-            rqMap.put("__ip", "10.1.3.150");
-            rqMap.put("__person", "root:10.1.3.150");
+            prepareRequestBody("UsersByAddr");
+            setRequestProp("skey", address.getBillingAddress(false));
             calculateSign();
             try {
-                Map<String, Object> execute = (Map<String, Object>) client.execute("daemons.*", Collections.singletonList(argsMap));
-                Map<String, String> answer = (Map<String, String>) execute.get("answer");
-                Map<String, UserItemData> xdata = (Map<String, UserItemData>) execute.get("xdata");
-                return List.copyOf(xdata.values());
+                return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
             } catch (ClassCastException e1) {
-                log.warn("Не найдено");
-            } catch (XmlRpcException e1) {
-                throw new EntryNotFound("Ошибка запроса в XMLRPC");
+                return null;
             }
-        } catch (XmlRpcException e) {
-            throw new EntryNotFound("Ошибка запроса в XMLRPC");
         }
-
-        return null;
     }
 
 
     public TotalUserInfo getUserInfo(String login) {
-        rqMap.clear();
-        rqMap.put(0, "WDaemon.php");
-        rqMap.put("uname", login);
-        rqMap.put("__call", "getUserInfo");
-        rqMap.put("__ip", billingConf.getSelfIp());
-        rqMap.put("__person", "root:"+billingConf.getSelfIp());
+        prepareRequestBody("getUserInfo");
+        setRequestProp("uname", login);
         calculateSign();
+        return TotalUserInfo.from(execute());
+    }
 
-        try {
-            Object execute = client.execute("daemons.*", Collections.singletonList(argsMap));
-            return TotalUserInfo.from(execute);
-        } catch (XmlRpcException e) {
-            throw new EntryNotFound("Ошибка запроса в XMLRPC");
-        } catch (ClassCastException e) {
-            throw new EntryNotFound("Пользователь не найден");
-        }
+    public UserEvents getUserEvents(String login) {
+        prepareRequestBody("getUserEvents");
+        setRequestProp("uname", login);
+        calculateSign();
+        return UserEvents.from(execute());
+    }
+
+    public void makePayment(String login, Float sum, BillingPayType payType, String comment) {
+        prepareRequestBody("regPay");
+        setRequestProp("uname", login);
+        setRequestProp("sum", String.valueOf(sum.intValue()));
+        setRequestProp("paytype", String.valueOf(payType.getValue()));
+        setRequestProp("coment", comment);
+        calculateSign();
+        execute();
+        getUpdatedUserAndPushUpdate(login);
+    }
+
+    public void deferredPayment(String login) {
+        prepareRequestBody("setDefer");
+        setRequestProp("uname", login);
+        calculateSign();
+        execute();
+        getUpdatedUserAndPushUpdate(login);
+    }
+
+    public void stopUserService(String login) {
+        prepareRequestBody("setStop");
+        setRequestProp("uname", login);
+        calculateSign();
+        execute();
+        getUpdatedUserAndPushUpdate(login);
+    }
+
+    public void startUserService(String login) {
+        prepareRequestBody("setStart");
+        setRequestProp("uname", login);
+        calculateSign();
+        execute();
+        getUpdatedUserAndPushUpdate(login);
     }
 
     public void getHelp() throws XmlRpcException {
@@ -206,7 +192,7 @@ public class BillingRequestController {
     }
 
     private void calculateSign() {
-        if(billingConf == null || !billingConf.isFilled()) {
+        if (billingConf == null || !billingConf.isFilled()) {
             throw new BillingAuthenticationException("Нет заданной конфигурации подключения к биллингу");
         }
         CRC32 sign = new CRC32();
@@ -220,11 +206,32 @@ public class BillingRequestController {
     }
 
     public void setConfiguration(BillingConf billingConf) throws MalformedURLException, FailedToWriteConfigurationException {
-        if(!billingConf.isFilled()) throw new IllegalFields("Конфигурация не заполнена");
+        if (!billingConf.isFilled()) throw new IllegalFields("Конфигурация не заполнена");
         this.billingConf = billingConf;
         authenticate();
         configStorage.save(billingConf);
         stompController.changeBillingConfig(billingConf);
+    }
+
+    private void getUpdatedUserAndPushUpdate(String login) {
+        TotalUserInfo userInfo = getUserInfo(login);
+        stompController.updateBillingUser(userInfo);
+    }
+
+    private Map<String, Object> execute() {
+        try {
+            Map<String, Object> execute = (Map<String, Object>) client.execute("daemons.*", Collections.singletonList(argsMap));
+            String state = execute.get("state").toString();
+            if (state.equals("Error")) {
+                throw new EmptyResponse(execute.get("__msg").toString());
+            }
+            if (state.equals("STrap") || state.equals("Trap")) {
+                throw new EmptyResponse(execute.get("msg").toString());
+            }
+            return execute;
+        } catch (XmlRpcException e) {
+            throw new EntryNotFound("Запрос в XMLRPC не удался");
+        }
     }
 
     @Getter
@@ -232,13 +239,78 @@ public class BillingRequestController {
     public static class UserItemData {
         private String tarif;
         private String uname;
-        private String last;
+        private Date last;
         private String phone;
         private String coment;
         private Integer utype;
         private Integer state;
         private String addr;
         private String fio;
+
+        public static UserItemData from(Object o) {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            UserItemData u = new UserItemData();
+            Map<String, String> map = (Map<String, String>) o;
+            u.setTarif(map.get("tarif"));
+            u.setUname(map.get("uname"));
+            try {
+                u.setLast(format.parse(map.get("last")));
+            } catch (ParseException | NullPointerException e) {
+                u.setLast(null);
+            }
+            u.setPhone(map.get("phone"));
+            u.setComent(map.get("coment"));
+            try {
+                u.setUtype(Integer.valueOf(map.get("utype")));
+            } catch (NumberFormatException | NullPointerException e) {
+                u.setUtype(null);
+            }
+            try {
+                u.setState(Integer.valueOf(map.get("state")));
+            } catch (NumberFormatException | NullPointerException e) {
+                u.setState(null);
+            }
+            u.setAddr(map.get("addr"));
+            u.setFio(map.get("fio"));
+
+            return u;
+        }
+
+        public String getStateName() {
+            if (state == null) return "Статус не указан";
+            switch (state) {
+                case 1 -> {
+                    return "Активный";
+                }
+                case 5 -> {
+                    return "Приостановлен";
+                }
+                case 7 -> {
+                    return "Нет денег";
+                }
+                default -> {
+                    return "Неактивный";
+                }
+            }
+        }
+
+        public String getStateColor() {
+            if (state == null) return "#F75555";
+            switch (state) {
+                case 1 -> {
+                    return "#2C8EEF";
+                }
+                case 5 -> {
+                    return "#B744F7";
+                }
+                case 7 -> {
+                    return "#FF842B";
+                }
+                default -> {
+                    return "#F75555";
+                }
+            }
+        }
     }
 
     @Getter
@@ -257,7 +329,7 @@ public class BillingRequestController {
             SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
             UserMainInfo u = new UserMainInfo();
             Map<String, String> map = (Map<String, String>) o;
-            if(map == null) throw new IllegalFields("Информация о клиенте не найдена");
+            if (map == null) throw new IllegalFields("Информация о клиенте не найдена");
             u.addr = map.get("addr");
             u.coment = map.get("coment");
             try {
@@ -400,6 +472,82 @@ public class BillingRequestController {
 
             return u;
         }
+
+        public String getUserStatusName() {
+            if (state == null || tstate == null) return "Нет статуса";
+            switch (state) {
+                case 1 -> {
+                    switch (tstate) {
+                        case 1 -> {
+                            return "Активный";
+                        }
+                        case 3 -> {
+                            return "Отл. платеж";
+                        }
+                    }
+                    return "Активный";
+                }
+                case 5 -> {
+                    return "Приостановлен";
+                }
+                case 7 -> {
+                    switch (tstate) {
+                        case 8 -> {
+                            return "Нет денег";
+                        }
+                        case 9 -> {
+                            return "Отл. платеж просрочен";
+                        }
+                    }
+                    return "Нет денег";
+                }
+                default -> {
+                    return "Неактивный";
+                }
+            }
+        }
+
+        public String getUserStatusColor() {
+            if (state == null || tstate == null) return "red";
+            switch (state) {
+                case 1 -> {
+                    switch (tstate) {
+                        case 1 -> {
+                            return "#7CE065";
+                        }
+                        case 3 -> {
+                            return "#78D3E3";
+                        }
+                    }
+                    return "#7CE065";
+                }
+                case 5 -> {
+                    return "#A1A6E3";
+                }
+                case 7 -> {
+                    switch (tstate) {
+                        case 8 -> {
+                            return "#F2CC5A";
+                        }
+                        case 9 -> {
+                            return "#D15151";
+                        }
+                    }
+                    return "#F2CC5A";
+                }
+                default -> {
+                    return "#D15151";
+                }
+            }
+        }
+
+        public Boolean getIsPossibleEnableDeferredPayment() {
+            return Objects.equals(state, 7) && Objects.equals(tstate, 8);
+        }
+
+        public Boolean getIsServiceSuspended() {
+            return Objects.equals(state, 5);
+        }
     }
 
     @Getter
@@ -490,6 +638,356 @@ public class BillingRequestController {
             u.state = (String) map.get("state");
             u.uname = (String) map.get("uname");
             return u;
+        }
+    }
+
+    @Getter
+    @Setter
+    public static class UserEvents {
+        private String uname;
+        private String fromDate;
+        private List<UserEventLog> events;
+        private List<UserPaysLog> pays;
+        private List<UserTariffLog> tarifs;
+
+        public static UserEvents from(Object o) {
+            UserEvents u = new UserEvents();
+            Map<String, Object> map = (Map<String, Object>) o;
+            u.uname = (String) map.get("uname");
+            u.fromDate = (String) map.get("from_date");
+            u.events = Stream.of(((Object[]) map.get("events"))).map(UserEventLog::from).collect(Collectors.toList());
+            u.pays = Stream.of(((Object[]) map.get("pays"))).map(UserPaysLog::from).collect(Collectors.toList());
+            u.tarifs = Stream.of(((Object[]) map.get("tarifs"))).map(UserTariffLog::from).collect(Collectors.toList());
+            return u;
+        }
+    }
+
+    @Getter
+    @Setter
+    public static class UserEventLog {
+        private String evdate;
+        private String evtime;
+        private Date evTimeStamp;
+        private String xtype;
+        private String lastuse;
+        private String uname;
+        private Float money;
+        private String coment;
+        private Float price;
+        private String event;
+        private Date edate;
+        private Date hdate;
+        private String info;
+
+        public static UserEventLog from(Object o) {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+            UserEventLog u = new UserEventLog();
+            Map<String, String> map = (Map<String, String>) o;
+            u.evdate = map.get("evdate");
+            u.evtime = map.get("evtime");
+            try {
+                u.evTimeStamp = format.parse(u.evdate + " " + u.evtime);
+            } catch (ParseException | NullPointerException e) {
+                u.evTimeStamp = null;
+            }
+            u.xtype = map.get("xtype");
+            u.lastuse = map.get("lastuse");
+            u.uname = map.get("uname");
+            try {
+                u.money = Float.valueOf(map.get("money"));
+            } catch (NumberFormatException e) {
+                u.money = null;
+            }
+            u.coment = map.get("coment");
+            try {
+                u.price = Float.valueOf(map.get("price"));
+            } catch (NumberFormatException e) {
+                u.price = null;
+            }
+            u.event = map.get("event");
+            try {
+                u.edate = format.parse(map.get("edate"));
+            } catch (ParseException | NullPointerException e) {
+                u.edate = null;
+            }
+            try {
+                u.hdate = format.parse(map.get("hdate"));
+            } catch (ParseException | NullPointerException e) {
+                u.hdate = null;
+            }
+            u.info = map.get("info");
+            return u;
+        }
+
+        public String getEventName() {
+            switch (event) {
+                case "A_NEXT", "A_NEXT_X", "A_NEXT_KTV" -> {
+                    return "Начало тарифа";
+                }
+                case "A_END", "A_END_X", "A_END_KTV" -> {
+                    return "Окончание тарифа";
+                }
+                case "A_CHANGE" -> {
+                    return "Смена тарифа";
+                }
+                case "P_FPAY" -> {
+                    if(money <0){
+                        return "Списание";
+                    }else{
+                        return "Пополнение";
+                    }
+                }
+                case "P_TPAY" -> {
+                    return "Пополнение счета";
+                }
+                case "P_RETM" -> {
+                    return "Перерасчет";
+                }
+                default -> {
+                    return event;
+                }
+            }
+        }
+
+        public String getEventColor() {
+            switch (event) {
+                case "A_NEXT", "A_NEXT_X", "A_NEXT_KTV" -> {
+                    return "green";
+                }
+                case "A_END", "A_END_X", "A_END_KTV" -> {
+                    return "red";
+                }
+                case "A_CHANGE" -> {
+                    return "orange";
+                }
+                case "P_FPAY" -> {
+                    if (money < 0) {
+                        return "red";
+                    } else {
+                        return "green";
+                    }
+                }
+                case "P_TPAY" -> {
+                    return "blue";
+                }
+                case "P_RETM" -> {
+                    return "purple";
+                }
+                default -> {
+                    return "black";
+                }
+            }
+        }
+
+        public Integer getMoneyDirection() {
+            switch (event) {
+                case "A_END", "A_END_X", "A_END_KTV" -> {
+                    return -1;
+                }
+                case "P_FPAY", "P_TPAY", "P_RETM" -> {
+                    if (money < 0) return -1;
+                    return 1;
+                }
+                default -> {
+                    return 0;
+                }
+            }
+        }
+    }
+
+    @Getter
+    @Setter
+    public static class UserPaysLog {
+        private Float bmoney;
+        private String uname;
+        private Float money;
+        private Date pdate;
+        private Integer ptype;
+        private String cmt;
+        private String who;
+
+        public static UserPaysLog from(Object o) {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            UserPaysLog u = new UserPaysLog();
+            Map<String, String> map = (Map<String, String>) o;
+            try {
+                u.bmoney = Float.valueOf(map.get("bmoney"));
+            } catch (NumberFormatException e) {
+                u.bmoney = null;
+            }
+            u.uname = map.get("uname");
+            try {
+                u.money = Float.valueOf(map.get("money"));
+            } catch (NumberFormatException e) {
+                u.money = null;
+            }
+            try {
+                u.pdate = format.parse(map.get("pdate"));
+            } catch (ParseException | NullPointerException e) {
+                u.pdate = null;
+            }
+            try {
+                u.ptype = Integer.valueOf(map.get("ptype"));
+            } catch (NumberFormatException e) {
+                u.ptype = null;
+            }
+            u.cmt = map.get("cmt");
+            u.who = map.get("who");
+            return u;
+        }
+
+        public String getPtypeName() {
+            switch (ptype) {
+                case 1 -> {
+                    return "Касса";
+                }
+                case 25 -> {
+                    return "Карта";
+                }
+                case 2 -> {
+                    return "Банк";
+                }
+                case 3 -> {
+                    return "Возврат";
+                }
+                case 4 -> {
+                    return "Кредит";
+                }
+                case 9 -> {
+                    return "Внешний";
+                }
+                case 10 -> {
+                    return "Заморозка";
+                }
+                case 11 -> {
+                    return "Служебный";
+                }
+                case 12 -> {
+                    return "Перерасчет";
+                }
+            }
+            return "Неизвестный";
+        }
+
+        public String getPtypeColor() {
+            switch (ptype) {
+                case 1, 12 -> {
+                    return "green";
+                }
+                case 25 -> {
+                    return "blue";
+                }
+                case 2 -> {
+                    return "grey";
+                }
+                case 3 -> {
+                    return "yellow";
+                }
+                case 4 -> {
+                    return "red";
+                }
+                case 9 -> {
+                    return "orange";
+                }
+                case 10 -> {
+                    return "#53AAFC";
+                }
+                case 11 -> {
+                    return "purple";
+                }
+            }
+            return "black";
+        }
+    }
+
+    @Getter
+    @Setter
+    public static class UserTariffLog {
+        private Date lasttime;
+        private String uname;
+        private Date mdate;
+        private String service;
+        private Float price;
+        private Integer stype;
+        private Date adate;
+        private Integer state;
+        private Date edate;
+        private Date hdate;
+        private Integer iExt;
+
+        public static UserTariffLog from(Object o) {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            UserTariffLog u = new UserTariffLog();
+            Map<String, String> map = (Map<String, String>) o;
+            try {
+                u.lasttime = format.parse(map.get("lasttime"));
+            } catch (ParseException | NullPointerException e) {
+                u.lasttime = null;
+            }
+            u.uname = map.get("uname");
+            try {
+                u.mdate = format.parse(map.get("mdate"));
+            } catch (ParseException | NullPointerException e) {
+                u.mdate = null;
+            }
+            u.service = map.get("service");
+            try {
+                u.price = Float.valueOf(map.get("price"));
+            } catch (NumberFormatException e) {
+                u.price = null;
+            }
+            try {
+                u.stype = Integer.valueOf(map.get("stype"));
+            } catch (NumberFormatException e) {
+                u.stype = null;
+            }
+            try {
+                u.adate = format.parse(map.get("adate"));
+            } catch (ParseException | NullPointerException e) {
+                u.adate = null;
+            }
+            try {
+                u.state = Integer.valueOf(map.get("state"));
+            } catch (NumberFormatException e) {
+                u.state = null;
+            }
+            try {
+                u.edate = format.parse(map.get("edate"));
+            } catch (ParseException | NullPointerException e) {
+                u.edate = null;
+            }
+            try {
+                u.hdate = format.parse(map.get("hdate"));
+            } catch (ParseException | NullPointerException e) {
+                u.hdate = null;
+            }
+            try {
+                u.iExt = Integer.valueOf(map.get("iExt"));
+            } catch (NumberFormatException e) {
+                u.iExt = null;
+            }
+            return u;
+        }
+    }
+
+    @Getter
+    @Setter
+    public static class PaymentForm {
+        private Float sum;
+        private BillingPayType payType;
+        private String comment;
+
+        public void validate() {
+            if (sum == null || sum == 0f) {
+                throw new ResponseException("Не указана сумма оплаты");
+            }
+            if (payType == null) {
+                throw new ResponseException("Тип оплаты не указан");
+            }
+            if (comment == null || comment.isBlank()) {
+                throw new ResponseException("Комментарий к платежу не указан");
+            }
         }
     }
 }

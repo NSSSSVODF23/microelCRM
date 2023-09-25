@@ -8,8 +8,6 @@ import org.apache.commons.net.telnet.TelnetClient;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -20,6 +18,7 @@ import java.util.stream.Collectors;
 
 public class TelnetParser {
     private TelnetClient telnetClient = new TelnetClient();
+    private String ip;
     private PublishSubject<Character> outputStream = PublishSubject.create();
     private String hardwareVariant = null;
 
@@ -39,12 +38,12 @@ public class TelnetParser {
     }
 
     private Observable<String> getInputBufferStream() {
-        return outputStream.buffer(outputStream.debounce(150L, TimeUnit.MILLISECONDS))
+        return outputStream.buffer(outputStream.debounce(500L, TimeUnit.MILLISECONDS))
                 .map(arr -> arr.stream().map(String::valueOf).collect(Collectors.joining())).take(1);
     }
 
     private Observable<String> getInputBufferStream(String until) {
-        Observable<String> observable = outputStream.buffer(outputStream.debounce(150L, TimeUnit.MILLISECONDS))
+        Observable<String> observable = outputStream.buffer(outputStream.debounce(500L, TimeUnit.MILLISECONDS))
                 .map(arr -> arr.stream().map(String::valueOf).collect(Collectors.joining()));
         Observable<String> filter = observable.filter(s -> {
                     Pattern pattern = Pattern.compile(until);
@@ -56,8 +55,9 @@ public class TelnetParser {
     public void connect(String ip) {
         try {
             telnetClient.connect(ip);
+            this.ip = ip;
         } catch (IOException e) {
-            throw new TelnetConnectionException("Не удалось подключиться к " + telnetClient.getRemoteAddress());
+            throw new TelnetConnectionException("Не удалось подключиться к " + ip);
         }
     }
 
@@ -65,7 +65,7 @@ public class TelnetParser {
         try {
             telnetClient.disconnect();
         } catch (IOException e) {
-            throw new TelnetConnectionException("Соединение уже сброшено " + telnetClient.getRemoteAddress());
+            throw new TelnetConnectionException("Соединение уже сброшено " + ip);
         }
     }
 
@@ -75,7 +75,7 @@ public class TelnetParser {
             telnetClient.getOutputStream().flush();
         } catch (IOException e) {
             close();
-            throw new TelnetConnectionException("Не удалось подключиться к " + telnetClient.getRemoteAddress());
+            throw new TelnetConnectionException("Не удалось подключиться к " + ip);
         }
     }
 
@@ -121,7 +121,7 @@ public class TelnetParser {
                 }
             } catch (IOException e) {
                 close();
-                throw new TelnetConnectionException("Не удалось подключиться к " + telnetClient.getRemoteAddress());
+                throw new TelnetConnectionException("Не удалось подключиться к " + ip);
             }
         });
         try {
@@ -134,13 +134,13 @@ public class TelnetParser {
                 }
             }
             close();
-            throw new TelnetConnectionException("Не верный тип оборудования " + telnetClient.getRemoteAddress());
+            throw new TelnetConnectionException("Не верный тип оборудования " + ip);
         } catch (ExecutionException e) {
             close();
-            throw new TelnetConnectionException("Не удалось запустить поток считывания " + telnetClient.getRemoteAddress());
+            throw new TelnetConnectionException("Не удалось запустить поток считывания " + ip);
         } catch (InterruptedException e) {
             close();
-            throw new TelnetConnectionException("Поток считывания прерван " + telnetClient.getRemoteAddress());
+            throw new TelnetConnectionException("Поток считывания прерван " + ip);
         }
     }
 }

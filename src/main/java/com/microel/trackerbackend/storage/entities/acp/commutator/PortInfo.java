@@ -2,11 +2,13 @@ package com.microel.trackerbackend.storage.entities.acp.commutator;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Getter
 @Setter
@@ -35,13 +37,27 @@ public class PortInfo {
     @ManyToOne
     private AcpCommutator commutator;
     @JsonIgnore
-    @OneToMany(mappedBy = "portInfo")
+    @OneToMany(mappedBy = "portInfo", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    @BatchSize(size = 25)
     private List<FdbItem> macTable = new ArrayList<>();
+
+    public Boolean isDownlink(){
+        return macTable.stream().anyMatch(fdbItem -> fdbItem.getVid() == 100 || fdbItem.getVid() == 90 || fdbItem.getVid() == 101 || fdbItem.getVid() == 110);
+    }
+
+    public void appendToMacTable(FdbItem fdbItem){
+        fdbItem.setPortInfo(this);
+        this.macTable.add(fdbItem);
+    }
+
+    public void setMacTable(List<FdbItem> macTable) {
+        this.macTable = macTable.stream().peek(fdbItem -> fdbItem.setPortInfo(this)).collect(Collectors.toList());
+    }
 
     @Nullable
     public Integer getPortId() {
         try {
-            return Integer.parseInt(name);
+            return Integer.parseInt(name.replaceAll("[^\\d]",""));
         }catch (NumberFormatException e){
             return null;
         }

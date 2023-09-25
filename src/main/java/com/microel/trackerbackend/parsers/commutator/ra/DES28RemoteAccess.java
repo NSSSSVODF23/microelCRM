@@ -43,27 +43,26 @@ public class DES28RemoteAccess extends CommutatorCredentials implements Abstract
         telnetParser.sendCommand("disable clipaging");
         String data = telnetParser.sendCommand("show switch");
         telnetParser.sendCommand("enable clipaging");
-        telnetParser.close();
         return DlinkParser.parseSIDes28(data);
     }
 
     @Override
     public List<PortInfo> getPorts() {
         telnetParser.sendCommand("disable clipaging");
-        String portsData = "";
-        if(telnetParser.isHardwareVariant("DES-1210-28/ME")) {
-            portsData += telnetParser.sendCommand("show ports description").replace("\u001B[?25l", "");
-            for (int i = 0; i < 4; i++) {
+        String portsData = telnetParser.sendCommand("show ports description");
+        Pattern pagingPattern = Pattern.compile("CTRL");
+        Pattern lastPagePattern = Pattern.compile("28");
+
+        boolean isMultipage = pagingPattern.matcher(portsData).find();
+        if (isMultipage) {
+            while (!lastPagePattern.matcher(portsData).find()) {
                 portsData += telnetParser.send(" ");
             }
             telnetParser.send("q");
-        }else{
-            portsData = telnetParser.sendCommand("show ports description");
         }
         String portsTypeData = telnetParser.sendCommand("show ports media_type", "#");
         String fdb = telnetParser.sendCommand("show fdb", "#");
         telnetParser.sendCommand("enable clipaging");
-        telnetParser.close();
         return DlinkParser.parsePortsDes28(portsData, portsTypeData, fdb);
     }
 

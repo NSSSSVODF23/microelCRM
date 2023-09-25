@@ -1,6 +1,11 @@
 package com.microel.trackerbackend.storage.entities.acp.commutator;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import lombok.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
+import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 
@@ -22,5 +27,10 @@ public class FdbItem {
     private Integer portId;
     private Boolean dynamic;
     @ManyToOne
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    @JsonIgnore
     private PortInfo portInfo;
+    @Transient
+    @Nullable
+    private DhcpBinding dhcpBinding;
 }

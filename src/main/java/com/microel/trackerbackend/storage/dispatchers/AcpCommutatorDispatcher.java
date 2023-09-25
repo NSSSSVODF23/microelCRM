@@ -3,6 +3,7 @@ package com.microel.trackerbackend.storage.dispatchers;
 import com.microel.trackerbackend.services.external.acp.types.Switch;
 import com.microel.trackerbackend.storage.entities.acp.commutator.AcpCommutator;
 import com.microel.trackerbackend.storage.repositories.AcpCommutatorRepository;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.sql.Timestamp;
@@ -53,7 +54,12 @@ public class AcpCommutatorDispatcher {
         return null;
     }
 
+    @Nullable
     public AcpCommutator getById(Integer id) {
         return acpCommutatorRepository.findTopByExternalId(id);
+    }
+
+    public AcpCommutator save(AcpCommutator additionalInfo) {
+        return acpCommutatorRepository.save(additionalInfo);
     }
 }

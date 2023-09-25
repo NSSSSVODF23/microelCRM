@@ -17,6 +17,10 @@ public class RAFactory {
         modelMap.put("DES-1210-28/ME", DES28RemoteAccess.class);
         modelMap.put("DES-3028", DES28RemoteAccess.class);
         modelMap.put("DES-1228/ME", DES28RemoteAccess.class);
+        modelMap.put("DES-1100-16", DES16WebAccess.class);
+        modelMap.put("DES-1100-24", DES16WebAccess.class);
+        modelMap.put("DGS-1100-8", DGS8WebAccess.class);
+        modelMap.put("DGS-1100-5", DGS8WebAccess.class);
     }
 
     public AbstractRemoteAccess getRemoteAccess(String model, String ip) {

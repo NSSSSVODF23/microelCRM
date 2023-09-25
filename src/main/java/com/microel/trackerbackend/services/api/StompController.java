@@ -12,6 +12,7 @@ import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.services.MonitoringService;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.Switch;
+import com.microel.trackerbackend.services.external.billing.BillingRequestController;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
@@ -23,7 +24,10 @@ import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.SuperMessage;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.equipment.ClientEquipment;
-import com.microel.trackerbackend.storage.entities.salary.*;
+import com.microel.trackerbackend.storage.entities.salary.PaidAction;
+import com.microel.trackerbackend.storage.entities.salary.PaidWork;
+import com.microel.trackerbackend.storage.entities.salary.PaidWorkGroup;
+import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
@@ -58,7 +62,7 @@ public class StompController {
 
     public void createTask(Task task) {
         sendAll(task, "task", "create");
-        for(Employee employee : task.getAllEmployeesObservers()) {
+        for (Employee employee : task.getAllEmployeesObservers()) {
             sendToUser(employee.getLogin(), task, "task", "create");
         }
     }
@@ -149,7 +153,7 @@ public class StompController {
     }
 
     public void sendNotification(Notification notification) {
-        sendToUser( notification.getEmployee().getLogin(), notification, "notification", "create");
+        sendToUser(notification.getEmployee().getLogin(), notification, "notification", "create");
     }
 
     public void updateChat(Chat chat) {
@@ -188,48 +192,48 @@ public class StompController {
     }
 
     public void createChat(ChatDto chat) {
-        for(EmployeeDto employee : chat.getMembers()) {
+        for (EmployeeDto employee : chat.getMembers()) {
             sendToUser(employee.getLogin(), chat, "chat", "create");
         }
     }
 
-    public void createWireframe(Wireframe wireframe){
+    public void createWireframe(Wireframe wireframe) {
         sendAll(wireframe, "wireframe", "create");
     }
 
-    public void updateWireframe(Wireframe wireframe){
+    public void updateWireframe(Wireframe wireframe) {
         sendAll(wireframe, "wireframe", wireframe.getWireframeId().toString(), "update");
         sendAll(wireframe, "wireframe", "update");
     }
 
-    public void deleteWireframe(Wireframe wireframe){
+    public void deleteWireframe(Wireframe wireframe) {
         sendAll(wireframe, "wireframe", wireframe.getWireframeId().toString(), "delete");
         sendAll(wireframe, "wireframe", "delete");
     }
 
-    public void createPaidAction(PaidAction paidAction){
+    public void createPaidAction(PaidAction paidAction) {
         sendAll(paidAction, "paid-action", "create");
     }
 
-    public void updatePaidAction(PaidAction paidAction){
+    public void updatePaidAction(PaidAction paidAction) {
         sendAll(paidAction, "paid-action", paidAction.getPaidActionId().toString(), "update");
         sendAll(paidAction, "paid-action", "update");
     }
 
-    public void deletePaidAction(PaidAction paidAction){
+    public void deletePaidAction(PaidAction paidAction) {
         sendAll(paidAction, "paid-action", paidAction.getPaidActionId().toString(), "delete");
         sendAll(paidAction, "paid-action", "delete");
     }
 
-    public void createPaidWorkGroup(PaidWorkGroup paidWorkGroup){
+    public void createPaidWorkGroup(PaidWorkGroup paidWorkGroup) {
         sendAll(paidWorkGroup, "paid-work-group", "create");
     }
 
-    public void updatePaidWorkGroup(PaidWorkGroup paidWorkGroup){
+    public void updatePaidWorkGroup(PaidWorkGroup paidWorkGroup) {
         sendAll(paidWorkGroup, "paid-work-group", "update");
     }
 
-    public void deletePaidWorkGroup(PaidWorkGroup paidWorkGroup){
+    public void deletePaidWorkGroup(PaidWorkGroup paidWorkGroup) {
         sendAll(paidWorkGroup, "paid-work-group", "delete");
     }
 
@@ -253,7 +257,7 @@ public class StompController {
         sendAll(event, "paid-works", "tree", "reposition");
     }
 
-    public void updatePaidWork(PaidWork paidWork){
+    public void updatePaidWork(PaidWork paidWork) {
         sendAll(paidWork, "paid-work", paidWork.getPaidWorkId().toString(), "update");
         sendAll(paidWork, "paid-work", "update");
     }
@@ -315,6 +319,11 @@ public class StompController {
 
     public void changeBillingConfig(BillingConf billingConf) {
         sendAll(billingConf, "billing-config", "change");
+    }
+
+    public void updateBillingUser(BillingRequestController.TotalUserInfo userInfo) {
+        sendAll(userInfo, "billing", "user", "update");
+        sendAll(userInfo, "billing", "user", userInfo.getUname(), "update");
     }
 
     public void changeTelegramConfig(TelegramConf telegramConf) {

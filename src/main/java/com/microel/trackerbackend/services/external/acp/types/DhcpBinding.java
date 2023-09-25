@@ -3,6 +3,7 @@ package com.microel.trackerbackend.services.external.acp.types;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.microel.trackerbackend.misc.network.NetworkRemoteControl;
 import com.microel.trackerbackend.misc.network.NetworkState;
+import com.microel.trackerbackend.storage.entities.acp.NetworkConnectionLocation;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import lombok.*;
 import org.springframework.lang.Nullable;
@@ -68,6 +69,8 @@ public class DhcpBinding {
     private Integer buildingId;
     @Nullable
     private String houseNum;
+    @Nullable
+    private NetworkConnectionLocation lastConnectionLocation;
 
     public Long getLeaseStart() {
         if(leaseStart == null){

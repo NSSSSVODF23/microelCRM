@@ -21,6 +21,7 @@ import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.Switch;
 import com.microel.trackerbackend.services.external.acp.types.SwitchModel;
 import com.microel.trackerbackend.services.external.acp.types.SwitchWithAddress;
+import com.microel.trackerbackend.services.external.billing.BillingPayType;
 import com.microel.trackerbackend.services.external.billing.BillingRequestController;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
@@ -32,6 +33,7 @@ import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
 import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
+import com.microel.trackerbackend.storage.entities.acp.commutator.FdbItem;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.House;
@@ -1789,6 +1791,36 @@ public class PrivateRequestController {
         return ResponseEntity.ok(billingRequestController.getUserInfo(login));
     }
 
+    @GetMapping("billing/user/{login}/events")
+    public ResponseEntity<BillingRequestController.UserEvents> getBillingUserEvents(@PathVariable String login) {
+        return ResponseEntity.ok(billingRequestController.getUserEvents(login));
+    }
+
+    @PostMapping("billing/user/{login}/make-payment")
+    public ResponseEntity<Void> makePayment(@PathVariable String login, @RequestBody BillingRequestController.PaymentForm paymentForm) {
+        paymentForm.validate();
+        billingRequestController.makePayment(login, paymentForm.getSum(), paymentForm.getPayType(), paymentForm.getComment());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("billing/user/{login}/deferred-payment")
+    public ResponseEntity<Void> setDeferredPayment(@PathVariable String login){
+        billingRequestController.deferredPayment(login);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("billing/user/{login}/start-service")
+    public ResponseEntity<Void> startService(@PathVariable String login){
+        billingRequestController.startUserService(login);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("billing/user/{login}/stop-service")
+    public ResponseEntity<Void> stopService(@PathVariable String login){
+        billingRequestController.stopUserService(login);
+        return ResponseEntity.ok().build();
+    }
+
     @GetMapping("convert/billing-address-string")
     public ResponseEntity<AddressDto> convertBillingAddressString(@RequestParam @Nullable String addressString) {
         if (addressString == null) return ResponseEntity.ok(null);
@@ -1857,6 +1889,18 @@ public class PrivateRequestController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("acp/commutators/get-remote-update")
+    public ResponseEntity<Void> getCommutatorsRemoteUpdate(){
+        acpClient.getAllCommutatorsRemoteUpdate();
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("acp/commutator/port/{id}/fdb")
+    public ResponseEntity<List<FdbItem>> getCommutatorFdb(@PathVariable Long id) {
+        return ResponseEntity.ok(acpClient.getFdbByPort(id));
+    }
+
+
     @PostMapping("acp/commutator")
     public ResponseEntity<Void> createCommutator(@RequestBody Switch.Form form) {
         if(!form.isValid()) throw new IllegalFields("Неверно заполнена форма создания коммутатора");
@@ -1923,6 +1967,11 @@ public class PrivateRequestController {
     @GetMapping("types/connection-type")
     public ResponseEntity<List<Map<String, String>>> getConnectionTypeTypes() {
         return ResponseEntity.ok(ConnectionType.getList());
+    }
+
+    @GetMapping("types/billing-payment-type")
+    public ResponseEntity<List<BillingPayType.ListItem>> getPaymentTypeTypes() {
+        return ResponseEntity.ok(BillingPayType.getList());
     }
 
     @GetMapping("types/connection-service/suggestions")
