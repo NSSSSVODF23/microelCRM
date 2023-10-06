@@ -145,7 +145,7 @@ public class WorkCalculationDispatcher {
                         workCalculation.setEmpty(empty);
                         workCalculation.setEmptyDescription(emptyCalcDescription);
                         workCalculation.addEditedBy(creator, editingDescription);
-                        workCalculation.setIsPaidWork(isPaidWork);
+                        workCalculation.setIsPaidWork(isPaidWork != null && isPaidWork);
                         workCalculation.setAmountOfMoneyTaken(amountOfMoneyTaken);
                         workCalculationRepository.save(workCalculation);
                     }
@@ -170,7 +170,7 @@ public class WorkCalculationDispatcher {
                     .creator(creator)
                     .empty(empty)
                     .emptyDescription(emptyCalcDescription)
-                    .isPaidWork(isPaidWork)
+                    .isPaidWork(isPaidWork != null && isPaidWork)
                     .amountOfMoneyTaken(amountOfMoneyTaken)
                     .build();
             WorkCalculation saved = workCalculationRepository.save(workCalculation);
