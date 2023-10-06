@@ -7,7 +7,6 @@ import org.hibernate.annotations.BatchSize;
 import javax.persistence.*;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -27,16 +26,16 @@ public class AcpCommutator {
     private Boolean available;
     private Timestamp lastUpdate;
     private Boolean deleted;
-    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH,  CascadeType.REMOVE}, orphanRemoval = true)
     @JoinColumn(name = "f_system_info_id")
     private SystemInfo systemInfo;
-    @OneToMany(mappedBy = "commutator", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    @OneToMany(mappedBy = "commutator", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH,  CascadeType.REMOVE}, orphanRemoval = true)
     @BatchSize(size = 25)
     private List<PortInfo> ports;
 
-    public List<PortInfo> getPorts() {
-        return ports.stream().sorted(Comparator.comparing(PortInfo::getPortId, Comparator.nullsLast(Comparator.naturalOrder()))).collect(Collectors.toList());
-    }
+//    public List<PortInfo> getPorts() {
+//        return ports.stream().sorted(Comparator.comparing(PortInfo::getPortId, Comparator.nullsLast(Comparator.naturalOrder()))).collect(Collectors.toList());
+//    }
 
     public void setPorts(List<PortInfo> ports) {
         this.ports = ports.stream().peek(portInfo -> portInfo.setCommutator(this)).collect(Collectors.toList());
@@ -61,6 +60,19 @@ public class AcpCommutator {
                 ", deleted=" + deleted +
                 '}';
         return sb;
+    }
+
+    public void clearPorts() {
+        getPorts().removeAll(getPorts().stream().peek(p -> {
+            p.setCommutator(null);
+        }).toList());
+    }
+
+    public void appendPorts(List<PortInfo> ports) {
+        for(PortInfo port : ports){
+            port.setCommutator(this);
+            getPorts().add(port);
+        }
     }
 }
 

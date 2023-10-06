@@ -1,9 +1,11 @@
-package com.microel.trackerbackend.configurations;
+package com.microel.trackerbackend.storage.configurations;
 
 import com.microel.trackerbackend.controllers.EmployeeSessionsController;
 import com.microel.trackerbackend.services.MonitoringService;
+import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
@@ -27,10 +29,12 @@ public class StompConfig implements WebSocketMessageBrokerConfigurer {
     public static final String SIMPLE_BROKER_PREFIX = "/api";
     private final EmployeeSessionsController employeeSessionController;
     private final MonitoringService monitoringService;
+    private final AcpClient acpClient;
 
-    public StompConfig(EmployeeSessionsController employeeSessionController, MonitoringService monitoringService) {
+    public StompConfig(EmployeeSessionsController employeeSessionController, MonitoringService monitoringService, @Lazy AcpClient acpClient) {
         this.employeeSessionController = employeeSessionController;
         this.monitoringService = monitoringService;
+        this.acpClient = acpClient;
     }
 
 
@@ -61,6 +65,13 @@ public class StompConfig implements WebSocketMessageBrokerConfigurer {
                     monitoringService.appendPingMonitoring(path[2], sessionId);
                 }catch (ArrayIndexOutOfBoundsException e){
                     throw new IllegalFields("Не указан ip адрес цели мониторинга");
+                }
+            }
+        }
+        if ("acp".equals(path[0])){
+            if("commutator".equals(path[1])){
+                if("remote-update-pool".equals(path[2])){
+                    acpClient.multicastUpdateCommutatorRemoteUpdatePool();
                 }
             }
         }

@@ -4,7 +4,6 @@ import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.modules.exceptions.Unconfigured;
 import com.microel.trackerbackend.parsers.commutator.AbstractRemoteAccess;
-import com.microel.trackerbackend.parsers.commutator.exceptions.TelnetConnectionException;
 import com.microel.trackerbackend.parsers.commutator.ra.RAFactory;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
@@ -19,6 +18,9 @@ import com.microel.trackerbackend.storage.entities.acp.commutator.PortInfo;
 import com.microel.trackerbackend.storage.entities.acp.commutator.SystemInfo;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.ParameterizedTypeReference;
@@ -30,9 +32,11 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import javax.validation.constraints.NotNull;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -46,6 +50,7 @@ public class AcpClient {
     private final PortInfoDispatcher portInfoDispatcher;
     private final FdbItemDispatcher fdbItemDispatcher;
     private final NetworkConnectionLocationDispatcher networkConnectionLocationDispatcher;
+    private final Set<RemoteUpdatingCommutatorItem> commutatorPoolInTheProcessOfUpdating = ConcurrentHashMap.newKeySet();
     private final RAFactory remoteAccessFactory;
     private final CommutatorsAvailabilityCheckService availabilityCheckService;
     private final StompController stompController;
@@ -70,6 +75,18 @@ public class AcpClient {
         List<DhcpBinding> bindings = Arrays.stream(dhcpBindings).sorted(Comparator.comparing(DhcpBinding::getSessionTime).reversed()).collect(Collectors.toList());
         bindings.forEach(binding -> {
             NetworkConnectionLocation location = networkConnectionLocationDispatcher.getByBindingId(binding.getId());
+            if (location != null && location.getPortId() != null) {
+                AcpCommutator foundCommutator = acpCommutatorDispatcher.getById(location.getCommutatorId());
+                if (foundCommutator != null) {
+                    location.setLastPortCheck(foundCommutator.getSystemInfo().getLastUpdate());
+                    if (location.getPortId() != null) {
+                        foundCommutator.getPorts().stream().filter(port -> port.getPortInfoId().equals(location.getPortId())).findFirst().ifPresent(portInfo -> {
+                            location.setIsHasLink(Objects.equals(portInfo.getStatus(), PortInfo.Status.UP));
+                            location.setPortSpeed(portInfo.getSpeed());
+                        });
+                    }
+                }
+            }
             binding.setLastConnectionLocation(location);
         });
         return bindings;
@@ -86,9 +103,22 @@ public class AcpClient {
         RequestEntity<Void> request = RequestEntity.get(url(query, "dhcp", "bindings", page.toString(), "last")).build();
         RestPage<DhcpBinding> pageResponse = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
         }).getBody();
-        if(pageResponse == null) return pageResponse;
+        if (pageResponse == null) return pageResponse;
         pageResponse.forEach(binding -> {
             NetworkConnectionLocation location = networkConnectionLocationDispatcher.getByBindingId(binding.getId());
+            if (location != null && location.getPortId() != null) {
+                AcpCommutator foundCommutator = acpCommutatorDispatcher.getById(location.getCommutatorId());
+                if (foundCommutator != null) {
+                    location.setLastPortCheck(foundCommutator.getSystemInfo().getLastUpdate());
+                    if (location.getPortId() != null) {
+                        foundCommutator.getPorts().stream().filter(port -> port.getPortInfoId().equals(location.getPortId())).findFirst().ifPresent(portInfo -> {
+                            location.setIsHasLink(Objects.equals(portInfo.getStatus(), PortInfo.Status.UP));
+                            location.setPortSpeed(portInfo.getSpeed());
+
+                        });
+                    }
+                }
+            }
             binding.setLastConnectionLocation(location);
         });
         return pageResponse;
@@ -96,8 +126,26 @@ public class AcpClient {
 
     public RestPage<DhcpBinding> getDhcpBindingsByVlan(Integer page, Integer id, String excludeLogin) {
         RequestEntity<Void> request = RequestEntity.get(url(Map.of("excludeLogin", excludeLogin), "vlan", id.toString(), "dhcp", "bindings", page.toString())).build();
-        return restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
+        RestPage<DhcpBinding> pageResponse = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
         }).getBody();
+        if (pageResponse == null) return pageResponse;
+        pageResponse.forEach(binding -> {
+            NetworkConnectionLocation location = networkConnectionLocationDispatcher.getByBindingId(binding.getId());
+            if (location != null && location.getPortId() != null) {
+                AcpCommutator foundCommutator = acpCommutatorDispatcher.getById(location.getCommutatorId());
+                if (foundCommutator != null) {
+                    location.setLastPortCheck(foundCommutator.getSystemInfo().getLastUpdate());
+                    if (location.getPortId() != null) {
+                        foundCommutator.getPorts().stream().filter(port -> port.getPortInfoId().equals(location.getPortId())).findFirst().ifPresent(portInfo -> {
+                            location.setIsHasLink(Objects.equals(portInfo.getStatus(), PortInfo.Status.UP));
+                            location.setPortSpeed(portInfo.getSpeed());
+                        });
+                    }
+                }
+            }
+            binding.setLastConnectionLocation(location);
+        });
+        return pageResponse;
     }
 
     @Nullable
@@ -127,11 +175,12 @@ public class AcpClient {
         return get(SwitchModel.class, Map.of(), "commutator", "model", id.toString());
     }
 
-    public Page<Switch> getCommutators(Integer page, @Nullable String name, @Nullable String ip, @Nullable Integer buildingId) {
+    public Page<Switch> getCommutators(Integer page, @Nullable String name, @Nullable String ip, @Nullable Integer buildingId, @Nullable Integer pageSize) {
         Map<String, String> query = new HashMap<>();
         if (name != null) query.put("name", name);
         if (ip != null) query.put("ip", ip);
         if (buildingId != null) query.put("buildingId", buildingId.toString());
+        if (pageSize != null) query.put("pageSize", pageSize.toString());
         RequestEntity<Void> request = RequestEntity.get(url(query, "commutators", page.toString())).build();
         return Objects.requireNonNull(restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<Switch>>() {
         }).getBody()).map(commutator -> {
@@ -292,8 +341,8 @@ public class AcpClient {
         Map<Integer, String> commutatorModels = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
 
         int page = 0;
-        Page<Switch> commutatorsPage = getCommutators(page, null, null, null);
-        while (!commutatorsPage.getContent().isEmpty()){
+        Page<Switch> commutatorsPage = getCommutators(page, null, null, null, 100);
+        while (!commutatorsPage.getContent().isEmpty()) {
             CountDownLatch latch = new CountDownLatch(commutatorsPage.getContent().size());
             for (Switch commutator : commutatorsPage.getContent()) {
                 AcpCommutator additionalInfo = commutator.getAdditionalInfo();
@@ -301,9 +350,9 @@ public class AcpClient {
                 List<PortInfo> ports = additionalInfo == null ? null : commutator.getAdditionalInfo().getPorts();
                 Thread thread = new Thread(() -> {
                     try {
-                        System.out.println("Begin update commutator " + commutator.getName());
+//                        System.out.println("Begin update commutator " + commutator.getName());
                         connectToCommutatorAndUpdate(commutator, additionalInfo, systemInfo, ports, commutatorModels);
-                        System.out.println("Commutator " + commutator.getName() + " updated");
+//                        System.out.println("Commutator " + commutator.getName() + " updated");
                     } catch (Throwable e) {
                         System.out.println(e.getMessage());
                     }
@@ -316,70 +365,76 @@ public class AcpClient {
             } catch (InterruptedException e) {
                 throw new RuntimeException(e.getMessage());
             }
-            commutatorsPage = getCommutators(++page, null, null, null);
+            commutatorsPage = getCommutators(++page, null, null, null, 100);
         }
     }
 
+    private synchronized boolean appendCommutatorInUpdatePool(@NotNull Switch commutator) {
+        boolean isNotAppend = !commutatorPoolInTheProcessOfUpdating.add(RemoteUpdatingCommutatorItem.of(commutator));
+        if (isNotAppend)
+            throw new ResponseException("Коммутатор уже обновляется");
+        stompController.updateCommutatorUpdatePool(commutatorPoolInTheProcessOfUpdating);
+        return isNotAppend;
+    }
+
+    private synchronized void removeCommutatorFromUpdatePool(@NotNull Switch commutator) {
+        boolean isRemoved = commutatorPoolInTheProcessOfUpdating.removeIf(sw -> Objects.equals(sw.id, commutator.getId()));
+        if (isRemoved) stompController.updateCommutatorUpdatePool(commutatorPoolInTheProcessOfUpdating);
+    }
+
     private void connectToCommutatorAndUpdate(Switch commutator, AcpCommutator additionalInfo, SystemInfo systemInfo, List<PortInfo> ports, Map<Integer, String> models) {
+
         String modelName = models.get(commutator.getSwmodelId().intValue());
         if (modelName == null)
             throw new ResponseException("Не найдена модель для коммутатора: " + commutator.getName());
 
-        List<Long> portsToRemove = new ArrayList<>();
-        List<Long> fdbItemsToRemove = new ArrayList<>();
-        if (additionalInfo != null) {
-            System.out.println(modelName + " " + commutator.getIpaddr());
-            AbstractRemoteAccess remoteAccess = remoteAccessFactory.getRemoteAccess(modelName, commutator.getIpaddr());
-            remoteAccess.auth();
-            SystemInfo receivedSystemInfo = remoteAccess.getSystemInfo();
-            List<PortInfo> receivedPorts = remoteAccess.getPorts();
-            if (systemInfo == null) {
-                additionalInfo.setSystemInfo(receivedSystemInfo);
-                if(additionalInfo.getPorts() == null || additionalInfo.getPorts().isEmpty()) {
-                    additionalInfo.setPorts(receivedPorts);
-                }else{
-                    portsToRemove = ports.stream().map(PortInfo::getMacTable).flatMap(Collection::stream).map(FdbItem::getFdbItemId).toList();
-                    additionalInfo.setPorts(receivedPorts);
-                }
-            } else {
-                if (!systemInfo.equals(receivedSystemInfo) || ports.isEmpty() || ports.size() != receivedPorts.size()) {
-                    portsToRemove = ports.stream().map(PortInfo::getMacTable).flatMap(Collection::stream).map(FdbItem::getFdbItemId).toList();
-                    systemInfo.setDevice(receivedSystemInfo.getDevice());
-                    systemInfo.setMac(receivedSystemInfo.getMac());
-                    systemInfo.setHwVersion(receivedSystemInfo.getHwVersion());
-                    additionalInfo.setPorts(receivedPorts);
-                }
-                for (PortInfo port : additionalInfo.getPorts()) {
-                    receivedPorts.stream().filter(p -> p.getName().equals(port.getName())).findFirst().ifPresent(receivedPort -> {
-                        fdbItemsToRemove.addAll(port.getMacTable().stream().map(FdbItem::getFdbItemId).toList());
-                        port.setUptime(receivedPort.getUptime());
-                        port.setForce(receivedPort.getForce());
-                        port.setDescription(receivedPort.getDescription());
-                        port.setSpeed(receivedPort.getSpeed());
-                        port.setStatus(receivedPort.getStatus());
-                        port.setMacTable(receivedPort.getMacTable());
-                    });
-                }
-                systemInfo.setFwVersion(receivedSystemInfo.getFwVersion());
-                systemInfo.setUptime(receivedSystemInfo.getUptime());
-            }
-            additionalInfo.getSystemInfo().setLastUpdate(Timestamp.from(Instant.now()));
-            acpCommutatorDispatcher.save(additionalInfo);
-            if(!portsToRemove.isEmpty()) portInfoDispatcher.removeAll(portsToRemove);
-            if(!fdbItemsToRemove.isEmpty()) fdbItemDispatcher.removeAll(fdbItemsToRemove);
-            remoteAccess.close();
+        appendCommutatorInUpdatePool(commutator);
 
-            for(PortInfo port : additionalInfo.getPorts()){
-                if(port.isDownlink()) continue;
-                for(FdbItem fdbItem : port.getMacTable()){
-                    DhcpBinding existingSession = getDhcpBindingByMacAndVlan(fdbItem.getMac(), fdbItem.getVid());
-                    if(existingSession != null){
-                        networkConnectionLocationDispatcher.checkAndWrite(existingSession, commutator, port, fdbItem);
+        try {
+            if (additionalInfo != null) {
+                AbstractRemoteAccess remoteAccess = remoteAccessFactory.getRemoteAccess(modelName, commutator.getIpaddr());
+                remoteAccess.auth();
+                SystemInfo receivedSystemInfo = remoteAccess.getSystemInfo();
+                List<PortInfo> receivedPorts = remoteAccess.getPorts();
+                if (systemInfo == null) {
+                    additionalInfo.setSystemInfo(receivedSystemInfo);
+                    if (additionalInfo.getPorts() == null || additionalInfo.getPorts().isEmpty()) {
+                        additionalInfo.appendPorts(receivedPorts);
+                    } else {
+                        additionalInfo.clearPorts();
+                        additionalInfo.appendPorts(receivedPorts);
+                    }
+                } else {
+                    if (!systemInfo.equals(receivedSystemInfo) || ports.isEmpty() || ports.size() != receivedPorts.size()) {
+                        systemInfo.setDevice(receivedSystemInfo.getDevice());
+                        systemInfo.setMac(receivedSystemInfo.getMac());
+                        systemInfo.setHwVersion(receivedSystemInfo.getHwVersion());
+                    }
+                    additionalInfo.clearPorts();
+                    additionalInfo.appendPorts(receivedPorts);
+                    systemInfo.setFwVersion(receivedSystemInfo.getFwVersion());
+                    systemInfo.setUptime(receivedSystemInfo.getUptime());
+                }
+                additionalInfo.getSystemInfo().setLastUpdate(Timestamp.from(Instant.now()));
+                additionalInfo = acpCommutatorDispatcher.save(additionalInfo);
+                remoteAccess.close();
+
+                for (PortInfo port : additionalInfo.getPorts()) {
+                    if (port.isDownlink()) continue;
+                    for (FdbItem fdbItem : port.getMacTable()) {
+                        DhcpBinding existingSession = getDhcpBindingByMac(fdbItem.getMac());
+                        if (existingSession != null) {
+                            networkConnectionLocationDispatcher.checkAndWrite(existingSession, commutator, port, fdbItem);
+                        }
                     }
                 }
-            }
 
-            stompController.updateCommutator(commutator);
+                stompController.updateCommutator(commutator);
+            }
+        } catch (Throwable e) {
+            throw new ResponseException(e.getMessage());
+        } finally {
+            removeCommutatorFromUpdatePool(commutator);
         }
     }
 
@@ -389,5 +444,34 @@ public class AcpClient {
             fdbItem.setDhcpBinding(getDhcpBindingByMac(fdbItem.getMac()));
         });
         return fdbByPort;
+    }
+
+    public void multicastUpdateCommutatorRemoteUpdatePool() {
+        stompController.updateCommutatorUpdatePool(commutatorPoolInTheProcessOfUpdating);
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor
+    public static class RemoteUpdatingCommutatorItem {
+        private Integer id;
+        private String name;
+        private String ip;
+
+        public static RemoteUpdatingCommutatorItem of(Switch sw) {
+            return new RemoteUpdatingCommutatorItem(sw.getId(), sw.getName(), sw.getIpaddr());
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof RemoteUpdatingCommutatorItem that)) return false;
+            return getId().equals(that.getId()) && getName().equals(that.getName());
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(getId(), getName());
+        }
     }
 }

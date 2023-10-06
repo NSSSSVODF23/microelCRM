@@ -8,6 +8,7 @@ import org.hibernate.annotations.OnDeleteAction;
 import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
+import java.util.Objects;
 
 @Getter
 @Setter
@@ -27,10 +28,21 @@ public class FdbItem {
     private Integer portId;
     private Boolean dynamic;
     @ManyToOne
-    @OnDelete(action = OnDeleteAction.CASCADE)
     @JsonIgnore
     private PortInfo portInfo;
     @Transient
     @Nullable
     private DhcpBinding dhcpBinding;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof FdbItem fdbItem)) return false;
+        return Objects.equals(getVid(), fdbItem.getVid()) && Objects.equals(getVlanName(), fdbItem.getVlanName()) && Objects.equals(getMac(), fdbItem.getMac()) && Objects.equals(getPortId(), fdbItem.getPortId()) && Objects.equals(getDynamic(), fdbItem.getDynamic());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getVid(), getVlanName(), getMac(), getPortId(), getDynamic());
+    }
 }

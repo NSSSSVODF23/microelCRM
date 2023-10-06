@@ -9,12 +9,11 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.util.Objects;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import static java.lang.Thread.sleep;
 
 public class TelnetParser {
     private TelnetClient telnetClient = new TelnetClient();
@@ -112,7 +111,7 @@ public class TelnetParser {
     }
 
     public void listen(String... checkInitialData) {
-        Executors.newSingleThreadExecutor().execute(() -> {
+        Thread listenThread = new Thread(()->{
             try (Reader reader = new InputStreamReader(telnetClient.getInputStream())) {
                 int r;
                 while ((r = reader.read()) != -1) {
@@ -124,8 +123,9 @@ public class TelnetParser {
                 throw new TelnetConnectionException("Не удалось подключиться к " + ip);
             }
         });
+        listenThread.start();
         try {
-            String data = getInputBufferStream().toFuture().get();
+            String data = getInputBufferStream().toFuture().get(3,  TimeUnit.SECONDS);
             for (String initRegExp : checkInitialData) {
                 Pattern dataPattern = Pattern.compile(initRegExp);
                 if (dataPattern.matcher(data).find()) {
@@ -141,6 +141,9 @@ public class TelnetParser {
         } catch (InterruptedException e) {
             close();
             throw new TelnetConnectionException("Поток считывания прерван " + ip);
+        } catch (TimeoutException e) {
+            close();
+            throw new TelnetConnectionException("Таймаут ответа telnet " + ip);
         }
     }
 }

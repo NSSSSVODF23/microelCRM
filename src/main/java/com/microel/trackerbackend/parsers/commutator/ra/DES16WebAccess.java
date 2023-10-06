@@ -94,7 +94,10 @@ public class DES16WebAccess extends CommutatorCredentials implements AbstractRem
                 }
             }
 
-            return DlinkParser.parsePortsDes16(portInfoResponse.body(), fdbInfoRaw);
+            Connection.Response vlanInfoResponse = Jsoup.connect("http://" + getIp() + "/QVLAN.js")
+                    .cookies(sessionCookie).method(Connection.Method.GET).ignoreContentType(true).execute();
+
+            return DlinkParser.parsePortsDes16(portInfoResponse.body(), fdbInfoRaw, vlanInfoResponse.body());
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

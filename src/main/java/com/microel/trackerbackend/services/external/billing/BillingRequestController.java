@@ -104,23 +104,24 @@ public class BillingRequestController {
     }
 
     @Nullable
-    public List<UserItemData> getUsersByAddress(Address address) {
+    public List<UserItemData> getUsersByAddress(String address) {
 
         prepareRequestBody("UsersByAddr");
-        setRequestProp("skey", address.getBillingAddress());
+        setRequestProp("skey", address);
         calculateSign();
 
         try {
             return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
         } catch (ClassCastException e) {
-            prepareRequestBody("UsersByAddr");
-            setRequestProp("skey", address.getBillingAddress(false));
-            calculateSign();
-            try {
-                return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
-            } catch (ClassCastException e1) {
-                return null;
-            }
+            return null;
+//            prepareRequestBody("UsersByAddr");
+//            setRequestProp("skey", address);
+//            calculateSign();
+//            try {
+//                return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
+//            } catch (ClassCastException e1) {
+//                return null;
+//            }
         }
     }
 

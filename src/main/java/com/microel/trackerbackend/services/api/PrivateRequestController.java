@@ -1777,13 +1777,7 @@ public class PrivateRequestController {
 
     @GetMapping("billing/users/by-address")
     public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByAddress(@RequestParam String address) {
-        ObjectMapper objectMapper = new ObjectMapper();
-        try {
-            Address addressObject = objectMapper.readValue(address, Address.class);
-            return ResponseEntity.ok(billingRequestController.getUsersByAddress(addressObject));
-        } catch (JsonProcessingException e) {
-            throw new IllegalFields(e.getMessage());
-        }
+        return ResponseEntity.ok(billingRequestController.getUsersByAddress(address));
     }
 
     @GetMapping("billing/user/{login}")
@@ -1804,19 +1798,19 @@ public class PrivateRequestController {
     }
 
     @PostMapping("billing/user/{login}/deferred-payment")
-    public ResponseEntity<Void> setDeferredPayment(@PathVariable String login){
+    public ResponseEntity<Void> setDeferredPayment(@PathVariable String login) {
         billingRequestController.deferredPayment(login);
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("billing/user/{login}/start-service")
-    public ResponseEntity<Void> startService(@PathVariable String login){
+    public ResponseEntity<Void> startService(@PathVariable String login) {
         billingRequestController.startUserService(login);
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("billing/user/{login}/stop-service")
-    public ResponseEntity<Void> stopService(@PathVariable String login){
+    public ResponseEntity<Void> stopService(@PathVariable String login) {
         billingRequestController.stopUserService(login);
         return ResponseEntity.ok().build();
     }
@@ -1870,7 +1864,7 @@ public class PrivateRequestController {
                                                        @RequestParam @Nullable String name,
                                                        @RequestParam @Nullable String ip,
                                                        @RequestParam @Nullable Integer buildingId) {
-        return ResponseEntity.ok(acpClient.getCommutators(page, name, ip, buildingId));
+        return ResponseEntity.ok(acpClient.getCommutators(page, name, ip, buildingId, 15));
     }
 
     @GetMapping("acp/commutators/search")
@@ -1890,7 +1884,7 @@ public class PrivateRequestController {
     }
 
     @PostMapping("acp/commutators/get-remote-update")
-    public ResponseEntity<Void> getCommutatorsRemoteUpdate(){
+    public ResponseEntity<Void> getCommutatorsRemoteUpdate() {
         acpClient.getAllCommutatorsRemoteUpdate();
         return ResponseEntity.ok().build();
     }
@@ -1903,14 +1897,14 @@ public class PrivateRequestController {
 
     @PostMapping("acp/commutator")
     public ResponseEntity<Void> createCommutator(@RequestBody Switch.Form form) {
-        if(!form.isValid()) throw new IllegalFields("Неверно заполнена форма создания коммутатора");
+        if (!form.isValid()) throw new IllegalFields("Неверно заполнена форма создания коммутатора");
         Switch createdCommutator = acpClient.createCommutator(form);
         return ResponseEntity.ok().build();
     }
 
     @PatchMapping("acp/commutator/{id}")
     public ResponseEntity<Void> updateCommutator(@PathVariable Integer id, @RequestBody Switch.Form form) {
-        if(!form.isValid()) throw new IllegalFields("Неверно заполнена форма редактирования коммутатора");
+        if (!form.isValid()) throw new IllegalFields("Неверно заполнена форма редактирования коммутатора");
         Switch updatedCommutator = acpClient.updateCommutator(id, form);
         return ResponseEntity.ok().build();
     }
@@ -1944,7 +1938,7 @@ public class PrivateRequestController {
     @GetMapping("acp/building/{id}/address")
     public ResponseEntity<Address> getBuildingAddress(@PathVariable Integer id) {
         House houseByBind = houseDispatcher.getByAcpBindId(id);
-        if(houseByBind == null) return ResponseEntity.ok(null);
+        if (houseByBind == null) return ResponseEntity.ok(null);
         return ResponseEntity.ok(houseByBind.getAddress());
     }
 

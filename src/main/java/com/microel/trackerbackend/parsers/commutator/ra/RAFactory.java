@@ -16,11 +16,16 @@ public class RAFactory {
     public RAFactory() {
         modelMap.put("DES-1210-28/ME", DES28RemoteAccess.class);
         modelMap.put("DES-3028", DES28RemoteAccess.class);
+        modelMap.put("DES-3200-28", DES28RemoteAccess.class);
         modelMap.put("DES-1228/ME", DES28RemoteAccess.class);
+        modelMap.put("DES-3200-18", DES18RemoteAccess.class);
         modelMap.put("DES-1100-16", DES16WebAccess.class);
         modelMap.put("DES-1100-24", DES16WebAccess.class);
         modelMap.put("DGS-1100-8", DGS8WebAccess.class);
         modelMap.put("DGS-1100-5", DGS8WebAccess.class);
+        modelMap.put("Huawei S2326TP-EI", HuaweiOldRemoteAccess.class);
+        modelMap.put("Huawei S2309TP-EI", HuaweiOldRemoteAccess.class);
+        modelMap.put("Huawei S3928-TP", HuaweiRemoteAccess.class);
     }
 
     public AbstractRemoteAccess getRemoteAccess(String model, String ip) {

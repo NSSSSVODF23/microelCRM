@@ -30,6 +30,7 @@ public class NetworkConnectionLocationDispatcher {
             if(lastConnectionLocation.isLocationRelevant(commutator, port, fdbItem)){
                 lastConnectionLocation.setCommutatorName(commutator.getName());
                 lastConnectionLocation.setVlanName(fdbItem.getVlanName());
+                lastConnectionLocation.setPortId(port.getPortInfoId());
                 lastConnectionLocation.setCheckedAt(Timestamp.from(Instant.now()));
                 networkConnectionLocationRepository.save(lastConnectionLocation);
             }else{

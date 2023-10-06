@@ -20,6 +20,8 @@ public class ResponseWorkEstimationForm {
     private List<WorkActionFormItem> actions;
     private List<FactorWorkActionFormItem> factorsActions;
     private Map<String, EmployeeRatioValue> employeesRatio;
+    private Boolean isPaidWork;
+    private Float amountOfMoneyTaken;
 
     @Getter
     @Setter

@@ -18,6 +18,9 @@ public class WorkCalculationForm {
     private String editingDescription;
     private List<ActionCalculationItem> actions;
     private List<SpreadingItem> spreading;
+    private Boolean isPaidWork;
+    @Nullable
+    private Float amountOfMoneyTaken;
 
     @Getter
     @Setter

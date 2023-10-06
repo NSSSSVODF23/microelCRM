@@ -8,25 +8,26 @@ import com.microel.trackerbackend.parsers.commutator.parsers.DlinkParser;
 import com.microel.trackerbackend.storage.entities.acp.commutator.PortInfo;
 import com.microel.trackerbackend.storage.entities.acp.commutator.SystemInfo;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
-public class DES28RemoteAccess extends CommutatorCredentials implements AbstractRemoteAccess {
+public class DES18RemoteAccess extends CommutatorCredentials implements AbstractRemoteAccess {
 
     private TelnetParser telnetParser = new TelnetParser();
 
-    public DES28RemoteAccess(String ip, String login, String password) {
+    public DES18RemoteAccess(String ip, String login, String password) {
         super(ip, login, password);
     }
 
-    public DES28RemoteAccess(String ip) {
+    public DES18RemoteAccess(String ip) {
         super(ip);
     }
 
     @Override
     public void auth() {
         telnetParser.connect(getIp());
-        telnetParser.listen("DES-1210-28/ME", "DES-3028", "DES-1228/ME", "DES-3200-28");
+        telnetParser.listen("DES-3200-18");
         telnetParser.sendCommand(getLogin());
         String loginResponse = telnetParser.sendCommand(getPassword());
         String[] errorPatterns = new String[]{"Fail!", "Incorrect"};
@@ -51,7 +52,7 @@ public class DES28RemoteAccess extends CommutatorCredentials implements Abstract
         telnetParser.sendCommand("disable clipaging");
         String portsData = telnetParser.sendCommand("show ports description");
         Pattern pagingPattern = Pattern.compile("CTRL");
-        Pattern lastPagePattern = Pattern.compile("28");
+        Pattern lastPagePattern = Pattern.compile("18");
 
         boolean isMultipage = pagingPattern.matcher(portsData).find();
         if (isMultipage) {
@@ -61,7 +62,10 @@ public class DES28RemoteAccess extends CommutatorCredentials implements Abstract
             telnetParser.send("q");
         }
         String portsTypeData = telnetParser.sendCommand("show ports media_type", "#");
-        String fdb = telnetParser.sendCommand("show fdb", "#");
+        List<String> fdb = new ArrayList<>();
+        for (int i = 1; i <= 18 ; i++) {
+            fdb.add(telnetParser.sendCommand("show fdb port " + i, "#"));
+        }
         telnetParser.sendCommand("enable clipaging");
         return DlinkParser.parsePortsDes28(portsData, portsTypeData, fdb);
     }

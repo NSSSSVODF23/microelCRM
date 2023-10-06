@@ -7,6 +7,8 @@ import lombok.*;
 import org.apache.commons.validator.routines.InetAddressValidator;
 import org.springframework.lang.Nullable;
 
+import java.util.Objects;
+
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
@@ -34,6 +36,18 @@ public class Switch {
     private Address address;
     @Nullable
     private AcpCommutator additionalInfo;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Switch aSwitch)) return false;
+        return Objects.equals(getId(), aSwitch.getId()) && Objects.equals(getIpaddr(), aSwitch.getIpaddr());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getId(), getIpaddr());
+    }
 
     @Getter
     @Setter

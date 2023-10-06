@@ -20,6 +20,7 @@ public class SystemInfo {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long systemInfoId;
     private String device;
+    @Nullable
     private String mac;
     private String hwVersion;
     private String fwVersion;

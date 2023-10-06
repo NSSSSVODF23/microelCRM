@@ -22,6 +22,9 @@ public class BypassWorkCalculationForm {
     private InstallersReportForm reportInfo;
     private List<WorkCalculationForm.ActionCalculationItem> actions;
     private List<WorkCalculationForm.SpreadingItem> spreading;
+    private Boolean isPaidWork;
+    @Nullable
+    private Float amountOfMoneyTaken;
 
     @Getter
     @Setter

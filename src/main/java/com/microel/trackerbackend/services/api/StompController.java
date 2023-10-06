@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.services.api;
 
-import com.microel.trackerbackend.configurations.StompConfig;
+import com.microel.trackerbackend.services.external.acp.AcpClient;
+import com.microel.trackerbackend.storage.configurations.StompConfig;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
@@ -41,6 +42,7 @@ import org.springframework.stereotype.Controller;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Controller
 public class StompController {
@@ -374,5 +376,9 @@ public class StompController {
 
     public void deleteCommutator(Integer id) {
         sendAll(Map.of("id", id), "acp", "commutator", "delete");
+    }
+
+    public void updateCommutatorUpdatePool(Set<AcpClient.RemoteUpdatingCommutatorItem> commutators) {
+        sendAll(commutators, "acp", "commutator", "remote-update-pool");
     }
 }

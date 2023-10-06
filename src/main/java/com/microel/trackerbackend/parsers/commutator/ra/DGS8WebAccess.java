@@ -44,7 +44,7 @@ public class DGS8WebAccess extends CommutatorCredentials implements AbstractRemo
             Matcher sessionPathMatcher = sessionPathPattern.matcher(sessionPathResponse.body());
             if(!sessionPathMatcher.find()) throw new ParsingException("Не найден путь сессии в DGS");
             sessionPath = sessionPathMatcher.group(1);
-            Document document = Jsoup.connect("http://" + getIp()+"/"+sessionPath+"/login2.htm").get();
+            Document document = Jsoup.connect("http://" + getIp()+"/"+sessionPath+"/login2.htm").header("Referer","http://"+getIp()+"/").get();
             boolean isPassCrypt = document.html().contains("CryptoJS");
             MessageDigest md = MessageDigest.getInstance("MD5");
             byte[] md5PassEncoded = md.digest(getPassword().getBytes(StandardCharsets.UTF_8));
@@ -60,7 +60,7 @@ public class DGS8WebAccess extends CommutatorCredentials implements AbstractRemo
 //            headers.put("Content-Length", "37");
 //            headers.put("Origin", "http://"+getIp());
 //            headers.put("Connection", "keep-alive");
-//            headers.put("Referer", "http://"+getIp()+"/"+sessionPath+"/login2.htm");
+            headers.put("Referer", "http://"+getIp()+"/"+sessionPath+"/login2.htm");
 //            headers.put("Upgrade-Insecure-Requests", "1");
             Connection.Response loginResponse = Jsoup.connect("http://" + getIp() + "/cgi/login.cgi")
                     .data("pass", pass)
@@ -93,9 +93,9 @@ public class DGS8WebAccess extends CommutatorCredentials implements AbstractRemo
         }
         try {
             Connection.Response constInfoResponse = Jsoup.connect("http://" + getIp() + "/"+sessionPath+"/DS/const.js")
-                    .cookies(sessionCookie).method(Connection.Method.GET).ignoreContentType(true).execute();
+                    .cookies(sessionCookie).header("Referer","http://"+getIp()+"/").method(Connection.Method.GET).ignoreContentType(true).execute();
             Connection.Response switchInfoResponse = Jsoup.connect("http://" + getIp() + "/"+sessionPath+"/DS/Switch.js")
-                    .cookies(sessionCookie).method(Connection.Method.GET).ignoreContentType(true).execute();
+                    .cookies(sessionCookie).header("Referer","http://"+getIp()+"/").method(Connection.Method.GET).ignoreContentType(true).execute();
 
             return DlinkParser.parseSIDgs8(constInfoResponse.body(), switchInfoResponse.body());
         } catch (IOException e) {
@@ -110,9 +110,9 @@ public class DGS8WebAccess extends CommutatorCredentials implements AbstractRemo
         }
         try {
             Connection.Response portInfoResponse = Jsoup.connect("http://" + getIp() + "/"+sessionPath+"/DS/Port.js")
-                    .cookies(sessionCookie).method(Connection.Method.GET).ignoreContentType(true).execute();
+                    .cookies(sessionCookie).header("Referer","http://"+getIp()+"/").method(Connection.Method.GET).ignoreContentType(true).execute();
             Connection.Response fdbInfoResponse = Jsoup.connect("http://" + getIp() + "/"+sessionPath+"/DS/DFT.js")
-                    .cookies(sessionCookie).method(Connection.Method.GET).ignoreContentType(true).execute();
+                    .cookies(sessionCookie).header("Referer","http://"+getIp()+"/").method(Connection.Method.GET).ignoreContentType(true).execute();
             String fdbInfoRaw = fdbInfoResponse.body();
 
             Pattern fdbPagesCountPattern = Pattern.compile("var ds_TotalPage ?= ?(\\d+);");
@@ -125,10 +125,11 @@ public class DGS8WebAccess extends CommutatorCredentials implements AbstractRemo
                             .data("portsel", "0")
                             .data("pagenum", String.valueOf(index))
                             .header("Content-Type", "application/x-www-form-urlencoded")
+                            .header("Referer","http://"+getIp()+"/")
                             .ignoreContentType(true)
                             .execute();
                     fdbInfoResponse = Jsoup.connect("http://" + getIp() + "/"+sessionPath+"/DS/DFT.js")
-                            .cookies(sessionCookie).method(Connection.Method.GET).ignoreContentType(true).execute();
+                            .cookies(sessionCookie).header("Referer","http://"+getIp()+"/").method(Connection.Method.GET).ignoreContentType(true).execute();
                     fdbInfoRaw += fdbInfoResponse.body();
                 }
             }

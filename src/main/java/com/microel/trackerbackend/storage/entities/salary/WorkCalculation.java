@@ -55,6 +55,10 @@ public class WorkCalculation {
     private Boolean empty;
     @Column(columnDefinition = "text default ''")
     private String emptyDescription;
+    @Column(columnDefinition = "boolean default false")
+    private Boolean isPaidWork;
+    @Nullable
+    private Float amountOfMoneyTaken;
 
     public void addEditedBy(Employee employee, String description) {
         this.editedBy.add(EmployeeIntervention.builder()
@@ -85,6 +89,9 @@ public class WorkCalculation {
     }
 
     public float getSum(Boolean withoutFactorsActions) {
+        if(isPaidWork && amountOfMoneyTaken != null && amountOfMoneyTaken > 0) {
+            return 0f;
+        }
         Float actionsSum = actions.stream().map(actionTaken -> actionTaken.getPaidAction().getCost() * actionTaken.getCount()).reduce(0f, Float::sum);
         float originalSum = actionsSum * ratio;
         if (factorsActions != null && !withoutFactorsActions) {
@@ -107,6 +114,9 @@ public class WorkCalculation {
     }
 
     public float getSumWithoutNDFL() {
+        if(isPaidWork && amountOfMoneyTaken != null && amountOfMoneyTaken > 0) {
+            return 0f;
+        }
         Float actionsSum = actions.stream().map(actionTaken -> {
             Float cost = actionTaken.getPaidAction().getCost();
             float costWithoutNDFL = cost - (cost * .13f);

@@ -37,12 +37,14 @@ public class PortInfo {
     @ManyToOne
     private AcpCommutator commutator;
     @JsonIgnore
-    @OneToMany(mappedBy = "portInfo", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    @OneToMany(mappedBy = "portInfo", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH, CascadeType.REMOVE}, orphanRemoval = true)
     @BatchSize(size = 25)
     private List<FdbItem> macTable = new ArrayList<>();
+    @JsonIgnore
+    private Boolean forceDownlink = false;
 
     public Boolean isDownlink(){
-        return macTable.stream().anyMatch(fdbItem -> fdbItem.getVid() == 100 || fdbItem.getVid() == 90 || fdbItem.getVid() == 101 || fdbItem.getVid() == 110);
+        return (forceDownlink != null && forceDownlink) || macTable.stream().anyMatch(fdbItem -> fdbItem.getVid() == 100 || fdbItem.getVid() == 90 || fdbItem.getVid() == 101 || fdbItem.getVid() == 110);
     }
 
     public void appendToMacTable(FdbItem fdbItem){

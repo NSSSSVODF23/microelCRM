@@ -1,4 +1,4 @@
-package com.microel.trackerbackend.configurations;
+package com.microel.trackerbackend.storage.configurations;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
