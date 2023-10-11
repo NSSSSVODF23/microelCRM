@@ -3,14 +3,18 @@ package com.microel.trackerbackend.parsers.commutator.ra;
 import com.microel.trackerbackend.parsers.commutator.AbstractRemoteAccess;
 import com.microel.trackerbackend.parsers.commutator.CommutatorCredentials;
 import com.microel.trackerbackend.parsers.commutator.TelnetParser;
-import com.microel.trackerbackend.parsers.commutator.exceptions.AuthorizationException;
 import com.microel.trackerbackend.parsers.commutator.exceptions.ParsingException;
+import com.microel.trackerbackend.parsers.commutator.parsers.DlinkParser;
 import com.microel.trackerbackend.parsers.commutator.parsers.HuaweiParser;
 import com.microel.trackerbackend.storage.entities.acp.commutator.PortInfo;
 import com.microel.trackerbackend.storage.entities.acp.commutator.SystemInfo;
 
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
+
+import static net.sf.expectit.matcher.Matchers.contains;
+import static net.sf.expectit.matcher.Matchers.regexp;
 
 public class HuaweiOldRemoteAccess extends CommutatorCredentials implements AbstractRemoteAccess {
 
@@ -28,30 +32,38 @@ public class HuaweiOldRemoteAccess extends CommutatorCredentials implements Abst
     public void auth() {
         telnetParser.connect(getIp());
         telnetParser.listen("Login authentication");
-        telnetParser.sendCommand(getLogin());
-        String loginResponse = telnetParser.sendCommand(getPassword());
-        String[] errorPatterns = new String[]{"Error"};
-        for (String errorPattern : errorPatterns) {
-            Pattern pattern = Pattern.compile(errorPattern);
-            if (pattern.matcher(loginResponse).find()) {
-                throw new AuthorizationException("Неверный логин или пароль " + getIp());
-            }
+        try {
+            telnetParser.sendCommand(getLogin()).expect(contains(":"));
+            telnetParser.sendCommand(getPassword()).expect(regexp("<[^>]+>"));
+            telnetParser.sendCommand("screen-length 0 temporary").expect(regexp("<[^>]+>"));
+        } catch (IOException e) {
+            close();
+            throw new ParsingException("Не удалось авторизоваться на устройстве");
         }
-        telnetParser.sendCommand("screen-length 0 temporary");
     }
 
     @Override
     public SystemInfo getSystemInfo() {
-        String data = telnetParser.sendCommand("display version");
-        if(data.contains("Quidway S3928TP-SI")) throw new ParsingException("Не верная модель Huawei");
-        return HuaweiParser.parseSiOldHu(data);
+        try {
+            String data = telnetParser.sendCommand("display version").expect(regexp("<[^>]+>")).getBefore();
+            if (data.contains("Quidway S3928TP-SI")) throw new ParsingException("Не верная модель Huawei");
+            return HuaweiParser.parseSiOldHu(data);
+        } catch (IOException e) {
+            close();
+            throw new ParsingException("Не удалось получить информацию о системе");
+        }
     }
 
     @Override
     public List<PortInfo> getPorts() {
-        String portsData = telnetParser.sendCommand("display interface", "<[^>]+>");
-        String fdbData = telnetParser.sendCommand("display mac-address", "<[^>]+>");
-        return HuaweiParser.parsePortsOldHu(portsData, fdbData);
+        try {
+            String portsData = telnetParser.sendCommand("display interface").expect(regexp("<[^>]+>")).getBefore();
+            String fdbData = telnetParser.sendCommand("display mac-address").expect(regexp("<[^>]+>")).getBefore();
+            return HuaweiParser.parsePortsOldHu(portsData, fdbData);
+        } catch (IOException e) {
+            close();
+            throw new ParsingException("Не удалось получить информацию о портах");
+        }
     }
 
     @Override

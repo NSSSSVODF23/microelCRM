@@ -675,8 +675,8 @@ public class TelegramController {
 
     public void broadcastUpdatesToWeb(SuperMessage message) throws EntryNotFound {
         if (message != null) {
-            stompController.createMessage(message);
             ChatDto chat = chatDispatcher.getChatDto(message.getParentChatId());
+            stompController.createMessage(message, chat.getMembers());
             stompController.updateChat(ChatMapper.fromDto(chat));
             refreshChatUnreadCount(ChatMapper.fromDto(chat), message);
         }

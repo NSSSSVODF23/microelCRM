@@ -166,7 +166,8 @@ public class StompController {
         sendAll(chat, "chat", "close");
     }
 
-    public void createMessage(SuperMessage message) {
+    public void createMessage(SuperMessage message, Set<EmployeeDto> chatMembers) {
+        chatMembers.forEach(employeeDto -> sendToUser(employeeDto.getLogin(), message, "chat", "message", "create"));
         sendAll(message, "chat", message.getParentChatId().toString(), "message", "create");
         sendAll(message, "chat", "message", "create");
     }

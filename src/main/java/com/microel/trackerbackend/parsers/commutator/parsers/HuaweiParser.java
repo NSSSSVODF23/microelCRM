@@ -180,9 +180,9 @@ public class HuaweiParser {
         return result;
     }
 
-    public static List<PortInfo> parsePortsHu(String data, String fdbData) {
+    public static List<PortInfo> parsePortsHu(List<String> interfaces, List<String> fdbData) {
         List<PortInfo> result = new ArrayList<>();
-        String[] interfaces = data.split("\\s+\\d+\\s+lost carrier, (\\d+|-) no carrier[\\r\\n]+[\\r\\n]+");
+
         Pattern interfaceStatusPattern = Pattern.compile("(?<type>Ethernet|GigabitEthernet)\\d/\\d/\\d{1,2} current state : (?<state>(UP|DOWN|ADMINISTRATIVELY DOWN))");
         Pattern interfaceHWPattern = Pattern.compile("Media type is optical fiber");
         Pattern interfaceSpeedDuplexPattern = Pattern.compile("(?<speed>\\d{2,4})Mbps-speed mode, (?<duplex>full|half)-duplex mode");
@@ -192,8 +192,8 @@ public class HuaweiParser {
 
         int ethLast = 0;
 
-        for (int i = 0; i < interfaces.length; i++) {
-            String interfaceData = interfaces[i];
+        for (int i = 0; i < interfaces.size(); i++) {
+            String interfaceData = interfaces.get(i);
             Matcher interfaceStatusMatcher = interfaceStatusPattern.matcher(interfaceData);
             Matcher interfaceSpeedDuplexMatcher = interfaceSpeedDuplexPattern.matcher(interfaceData);
             Matcher interfaceForceMatcher = interfaceForcePattern.matcher(interfaceData);
@@ -203,7 +203,40 @@ public class HuaweiParser {
             PortInfo portInfo = new PortInfo();
             portInfo.setName(String.valueOf(i+1));
             portInfo.setPortType(PortInfo.PortType.COPPER);
-            portInfo.setMacTable(new ArrayList<>());
+
+            Matcher fdbMatcher = fdbPattern.matcher(fdbData.get(i));
+            ArrayList<FdbItem> fdbTable = new ArrayList<>();
+
+            while (fdbMatcher.find()) {
+                try {
+                    String macRaw = fdbMatcher.group("mac").replaceAll("-", "").toLowerCase().trim();
+                    StringBuilder mac = new StringBuilder();
+                    for(int chi = 0; chi < 5; chi++){
+                        mac.append(macRaw.substring(chi * 2, chi * 2 + 2)).append(":");
+                    }
+
+                    String ifName = fdbMatcher.group("ifName");
+                    int ifIdx = Integer.parseInt(fdbMatcher.group("ifIdx"));
+                    mac.append(macRaw.substring(5*2));
+
+                    if(ifName.equals("GigabitEthernet"))
+                        ifIdx += ethLast;
+
+                    FdbItem fdbItem = FdbItem.builder()
+                            .portId(ifIdx)
+                            .mac(mac.toString())
+                            .dynamic(true)
+                            .vid(Integer.parseInt(fdbMatcher.group("vlan")))
+                            .vlanName("Нет имени")
+                            .build();
+
+                    fdbTable.add(fdbItem);
+                } catch (Throwable e) {
+                    throw new ParsingException("Ошибка чтения FDB таблицы: " + e.getMessage());
+                }
+            }
+
+            portInfo.setMacTable(fdbTable);
 
             if(interfaceHWPattern.matcher(interfaceData).find())
                 portInfo.setPortType(PortInfo.PortType.FIBER);
@@ -250,39 +283,6 @@ public class HuaweiParser {
             }
 
             result.add(portInfo);
-        }
-
-        Matcher fdbMatcher = fdbPattern.matcher(fdbData);
-
-        while (fdbMatcher.find()) {
-
-            try {
-
-                String macRaw = fdbMatcher.group("mac").replaceAll("-", "").toLowerCase().trim();
-                StringBuilder mac = new StringBuilder();
-                for(int i = 0; i < 5; i++){
-                    mac.append(macRaw.substring(i * 2, i * 2 + 2)).append(":");
-                }
-
-                String ifName = fdbMatcher.group("ifName");
-                int ifIdx = Integer.parseInt(fdbMatcher.group("ifIdx"));
-                mac.append(macRaw.substring(5*2));
-
-                if(ifName.equals("GigabitEthernet"))
-                    ifIdx += ethLast;
-
-                FdbItem fdbItem = FdbItem.builder()
-                        .portId(ifIdx)
-                        .mac(mac.toString())
-                        .dynamic(true)
-                        .vid(Integer.parseInt(fdbMatcher.group("vlan")))
-                        .vlanName("Нет имени")
-                        .build();
-
-                result.get(ifIdx-1).appendToMacTable(fdbItem);
-            } catch (Throwable e) {
-                throw new ParsingException("Ошибка чтения FDB таблицы: " + e.getMessage());
-            }
         }
 
         return result;

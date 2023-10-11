@@ -205,6 +205,7 @@ public class HouseDispatcher {
                 .street(street)
                 .place(form.getPlace() == null ? null : form.getPlace().toPlace())
                 .isApartmentHouse(form.getIsApartmentHouse())
+                .acpHouseBind(form.getAcpHouseBind())
                 .deleted(false)
                 .build();
         House save = houseRepository.save(house);

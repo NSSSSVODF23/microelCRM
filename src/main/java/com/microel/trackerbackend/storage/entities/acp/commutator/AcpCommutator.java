@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.entities.acp.commutator;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.services.external.acp.types.Switch;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
@@ -7,9 +8,9 @@ import org.hibernate.annotations.BatchSize;
 import javax.persistence.*;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Getter
 @Setter
@@ -32,6 +33,9 @@ public class AcpCommutator {
     @OneToMany(mappedBy = "commutator", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH,  CascadeType.REMOVE}, orphanRemoval = true)
     @BatchSize(size = 25)
     private List<PortInfo> ports;
+    @OneToMany(mappedBy = "commutator", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH,  CascadeType.REMOVE}, orphanRemoval = true)
+    @BatchSize(size = 25)
+    private List<RemoteUpdateLog> remoteUpdateLogs;
 
 //    public List<PortInfo> getPorts() {
 //        return ports.stream().sorted(Comparator.comparing(PortInfo::getPortId, Comparator.nullsLast(Comparator.naturalOrder()))).collect(Collectors.toList());
@@ -73,6 +77,37 @@ public class AcpCommutator {
             port.setCommutator(this);
             getPorts().add(port);
         }
+    }
+
+    public Boolean getIsLastUpdateError(){
+        if(getRemoteUpdateLogs() == null || getRemoteUpdateLogs().isEmpty()) return false;
+        return getRemoteUpdateLogs().get(getRemoteUpdateLogs().size() - 1).getIsError();
+    }
+
+    public String getLastErrorMessage() {
+        if (getRemoteUpdateLogs() == null || getRemoteUpdateLogs().isEmpty()) return "";
+        RemoteUpdateLog lastLog = getRemoteUpdateLogs().get(getRemoteUpdateLogs().size() - 1);
+        if (lastLog.getIsError()) return lastLog.getMessage();
+        return "";
+    }
+
+    public void appendRemoteUpdateLog(RemoteUpdateLog remoteUpdateLog) {
+        remoteUpdateLog.setCommutator(this);
+        getRemoteUpdateLogs().add(remoteUpdateLog);
+    }
+
+    public void removeOldRemoteUpdateLogs() {
+        if(getRemoteUpdateLogs().size() > 19){
+            getRemoteUpdateLogs().remove(0);
+        }
+    }
+
+    @JsonIgnore
+    public Integer getMacTableSize() {
+        return getPorts().stream().map(p -> {
+            if(p == null || p.getMacTable() == null) return 0;
+            return p.getMacTable().size();
+        }).reduce(Integer::sum).orElse(0);
     }
 }
 

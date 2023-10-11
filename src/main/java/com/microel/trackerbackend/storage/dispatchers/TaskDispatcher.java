@@ -643,7 +643,7 @@ public class TaskDispatcher {
             predicates.add(cb.equal(root.get("deleted"), false));
             query.distinct(true);
             return cb.and(predicates.toArray(Predicate[]::new));
-        }, PageRequest.of(page, limit, Sort.by(Sort.Order.desc("updated").nullsLast())));
+        }, PageRequest.of(page, limit, Sort.by(Sort.Order.desc("created").nullsLast(), Sort.Order.desc("updated").nullsLast())));
     }
 
     @Getter

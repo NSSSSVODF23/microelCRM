@@ -95,117 +95,85 @@ public class DlinkParser {
         return result;
     }
 
-    public static List<PortInfo> parsePortsDes28(String statusData, String portTypeData, String fdbData) {
-        Pattern statusPostPattern = Pattern.compile(" ?(?<name>\\d{1,2}\\s*(\\([CF]\\))?)\\s+(?<state>(Enabled|Disabled))\\s+(?<setspd>[\\w\\/]+)\\s+(?<speed>(Link ?Down|[\\w\\/]+))\\s+\\w+\\s+(\\w+|N\\/A)?\\s+(Desc|Description):(?<desc>.*)");
-        Matcher statusPostMatcher = statusPostPattern.matcher(statusData);
+    public static List<PortInfo> parsePortsDes28(List<String> portData, List<String> fdbData) {
+        Pattern statusPostPattern = Pattern.compile(" ?(?<name>\\d{1,2}\\s*(\\([CF]\\))?)\\s+(?<state>(Enabled|Disabled))\\s+(?<setspd>[\\w\\/]+)\\s+(?<speed>(Link ?Down|[\\w\\/]+))");
         List<PortInfo> ports = new ArrayList<>();
-        while (statusPostMatcher.find()) {
-            try {
-                PortInfo.PortInfoBuilder builder = PortInfo.builder();
-                String name = statusPostMatcher.group("name");
-                String state = statusPostMatcher.group("state");
-                String setspd = statusPostMatcher.group("setspd");
-                String speed = statusPostMatcher.group("speed");
-                String desc = null;
+
+        for (int i = 0; i < portData.size(); i++) {
+            Matcher statusPostMatcher = statusPostPattern.matcher(portData.get(i));
+
+            Pattern fdbPattern = Pattern.compile("(?<vid>\\d{1,4})\\s+(?<name>[^ ]+)\\s+(?<mac>[A-F\\d]{2}-[A-F\\d]{2}-[A-F\\d]{2}-[A-F\\d]{2}-[A-F\\d]{2}-[A-F\\d]{2})\\s+(T|po)?(?<port>\\d{1,2})\\s+(?<type>\\w+)");
+            Matcher fdbMatcher = fdbPattern.matcher(fdbData.get(i));
+            List<FdbItem> fdbTable = new ArrayList<>();
+            while (fdbMatcher.find()) {
                 try {
-                    desc = statusPostMatcher.group("desc").trim();
-                } catch (Throwable ignore) {
+                    FdbItem fdbItem = FdbItem.builder()
+                            .portId(Integer.parseInt(fdbMatcher.group("port")))
+                            .mac(fdbMatcher.group("mac").toLowerCase().replaceAll("-", ":"))
+                            .dynamic(fdbMatcher.group("type").equals("Dynamic"))
+                            .vid(Integer.parseInt(fdbMatcher.group("vid")))
+                            .vlanName(fdbMatcher.group("name"))
+                            .build();
+                    fdbTable.add(fdbItem);
+                } catch (Throwable e) {
+                    throw new ParsingException("Ошибка чтения FDB таблицы: " + e.getMessage());
                 }
+            }
 
-                builder.name(name);
+            while (statusPostMatcher.find()) {
+                try {
+                    PortInfo.PortInfoBuilder builder = PortInfo.builder();
+                    String name = statusPostMatcher.group("name");
+                    String state = statusPostMatcher.group("state");
+                    String setspd = statusPostMatcher.group("setspd");
+                    String speed = statusPostMatcher.group("speed");
 
-                if (state.equals("Disabled")) {
-                    builder.status(PortInfo.Status.ADMIN_DOWN);
-                } else if (speed.equals("Link Down") || speed.equals("LinkDown")) {
-                    builder.status(PortInfo.Status.DOWN);
-                } else {
-                    builder.status(PortInfo.Status.UP);
-                    String[] split = speed.split("/");
-                    if (split[1].equals("Full")) {
-                        switch (split[0]) {
-                            case "10M" -> builder.speed(PortInfo.Speed.FULL10);
-                            case "100M" -> builder.speed(PortInfo.Speed.FULL100);
-                            case "1000M" -> builder.speed(PortInfo.Speed.FULL1000);
-                        }
-                    } else if (split[1].equals("Half")) {
-                        switch (split[0]) {
-                            case "10M" -> builder.speed(PortInfo.Speed.HALF10);
-                            case "100M" -> builder.speed(PortInfo.Speed.HALF100);
-                            case "1000M" -> builder.speed(PortInfo.Speed.HALF1000);
+                    builder.name(name);
+
+                    if (state.equals("Disabled")) {
+                        builder.status(PortInfo.Status.ADMIN_DOWN);
+                    } else if (speed.equals("Link Down") || speed.equals("LinkDown")) {
+                        builder.status(PortInfo.Status.DOWN);
+                    } else {
+                        builder.status(PortInfo.Status.UP);
+                        String[] split = speed.split("/");
+                        if (split[1].equals("Full")) {
+                            switch (split[0]) {
+                                case "10M" -> builder.speed(PortInfo.Speed.FULL10);
+                                case "100M" -> builder.speed(PortInfo.Speed.FULL100);
+                                case "1000M" -> builder.speed(PortInfo.Speed.FULL1000);
+                            }
+                        } else if (split[1].equals("Half")) {
+                            switch (split[0]) {
+                                case "10M" -> builder.speed(PortInfo.Speed.HALF10);
+                                case "100M" -> builder.speed(PortInfo.Speed.HALF100);
+                                case "1000M" -> builder.speed(PortInfo.Speed.HALF1000);
+                            }
                         }
                     }
-                }
 
-                String[] split = setspd.split("/");
-                if (split.length == 2 && split[0].equals("Auto")) {
-                    builder.force(false);
-                } else {
-                    builder.force(true);
-                }
+                    String[] split = setspd.split("/");
+                    if (split.length == 2 && split[0].equals("Auto")) {
+                        builder.force(false);
+                    } else {
+                        builder.force(true);
+                    }
 
-                builder.description(desc);
-                builder.macTable(new ArrayList<>());
-                PortInfo port = builder.build();
-                ports.add(port);
-            } catch (IllegalArgumentException e) {
-                throw new ParsingException("Ошибка парсинга статуса портов");
+                    PortInfo port = builder.build();
+                    port.setMacTable(fdbTable);
+                    if(!port.getStatus().equals(PortInfo.Status.UP) && name.contains("C")){
+                        continue;
+                    }
+                    ports.add(port);
+                    break;
+                } catch (IllegalArgumentException e) {
+                    throw new ParsingException("Ошибка парсинга статуса портов");
+                }
             }
         }
 
         if (ports.size() == 0)
             throw new ParsingException("Ошибка парсинга портов");
-
-        Pattern portTypePattern = Pattern.compile("^\\d{1,2}\\s+\\([CF]\\)\\s+(?<ptype>\\w+)", Pattern.MULTILINE);
-        Matcher portTypeMatcher = portTypePattern.matcher(portTypeData);
-        int idx = 0;
-        while (portTypeMatcher.find()) {
-            try {
-                String portType = portTypeMatcher.group("ptype");
-                PortInfo portInfo = ports.get(idx);
-                switch (portType) {
-                    case "100BASE" -> {
-                        portInfo.setPortType(PortInfo.PortType.COPPER);
-                        portInfo.setType(PortInfo.InterfaceType.ETHERNET);
-                    }
-                    case "1000BASE" -> {
-                        portInfo.setPortType(PortInfo.PortType.COPPER);
-                        portInfo.setType(PortInfo.InterfaceType.GIGABIT);
-                    }
-                    case "SFP" -> {
-                        portInfo.setPortType(PortInfo.PortType.FIBER);
-                        portInfo.setType(PortInfo.InterfaceType.GIGABIT);
-                    }
-                }
-                idx++;
-            } catch (IllegalArgumentException e) {
-                throw new ParsingException("Ошибка парсинга типа портов");
-            }
-        }
-
-        Pattern fdbPattern = Pattern.compile("(?<vid>\\d{1,4})\\s+(?<name>[^ ]+)\\s+(?<mac>[A-F\\d]{2}-[A-F\\d]{2}-[A-F\\d]{2}-[A-F\\d]{2}-[A-F\\d]{2}-[A-F\\d]{2})\\s+(?<port>\\d{1,2})\\s+(?<type>\\w+)");
-        Matcher fdbMatcher = fdbPattern.matcher(fdbData);
-        List<FdbItem> fdbTable = new ArrayList<>();
-        while (fdbMatcher.find()) {
-            try {
-                FdbItem fdbItem = FdbItem.builder()
-                        .portId(Integer.parseInt(fdbMatcher.group("port")))
-                        .mac(fdbMatcher.group("mac").toLowerCase().replaceAll("-", ":"))
-                        .dynamic(fdbMatcher.group("type").equals("Dynamic"))
-                        .vid(Integer.parseInt(fdbMatcher.group("vid")))
-                        .vlanName(fdbMatcher.group("name"))
-                        .build();
-                fdbTable.add(fdbItem);
-            } catch (Throwable e) {
-                throw new ParsingException("Ошибка чтения FDB таблицы: " + e.getMessage());
-            }
-        }
-
-        if (fdbTable.isEmpty()) return ports;
-
-        fdbTable.sort(Comparator.comparingInt(FdbItem::getPortId));
-        for (FdbItem item : fdbTable) {
-            ports.stream().filter(port -> Objects.equals(port.getPortId(), item.getPortId())).findFirst().ifPresent(port -> port.appendToMacTable(item));
-        }
 
         return ports;
     }

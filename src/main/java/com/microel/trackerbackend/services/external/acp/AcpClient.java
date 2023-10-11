@@ -12,10 +12,7 @@ import com.microel.trackerbackend.services.external.acp.types.*;
 import com.microel.trackerbackend.storage.dispatchers.*;
 import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
 import com.microel.trackerbackend.storage.entities.acp.NetworkConnectionLocation;
-import com.microel.trackerbackend.storage.entities.acp.commutator.AcpCommutator;
-import com.microel.trackerbackend.storage.entities.acp.commutator.FdbItem;
-import com.microel.trackerbackend.storage.entities.acp.commutator.PortInfo;
-import com.microel.trackerbackend.storage.entities.acp.commutator.SystemInfo;
+import com.microel.trackerbackend.storage.entities.acp.commutator.*;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import lombok.AllArgsConstructor;
@@ -341,7 +338,7 @@ public class AcpClient {
         Map<Integer, String> commutatorModels = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
 
         int page = 0;
-        Page<Switch> commutatorsPage = getCommutators(page, null, null, null, 100);
+        Page<Switch> commutatorsPage = getCommutators(page, null, null, null, 25);
         while (!commutatorsPage.getContent().isEmpty()) {
             CountDownLatch latch = new CountDownLatch(commutatorsPage.getContent().size());
             for (Switch commutator : commutatorsPage.getContent()) {
@@ -365,7 +362,7 @@ public class AcpClient {
             } catch (InterruptedException e) {
                 throw new RuntimeException(e.getMessage());
             }
-            commutatorsPage = getCommutators(++page, null, null, null, 100);
+            commutatorsPage = getCommutators(++page, null, null, null, 25);
         }
     }
 
@@ -416,6 +413,8 @@ public class AcpClient {
                     systemInfo.setUptime(receivedSystemInfo.getUptime());
                 }
                 additionalInfo.getSystemInfo().setLastUpdate(Timestamp.from(Instant.now()));
+                additionalInfo.removeOldRemoteUpdateLogs();
+                additionalInfo.appendRemoteUpdateLog(RemoteUpdateLog.success(receivedPorts.size(), additionalInfo.getMacTableSize()));
                 additionalInfo = acpCommutatorDispatcher.save(additionalInfo);
                 remoteAccess.close();
 
@@ -432,6 +431,12 @@ public class AcpClient {
                 stompController.updateCommutator(commutator);
             }
         } catch (Throwable e) {
+            if(additionalInfo != null){
+                additionalInfo.removeOldRemoteUpdateLogs();
+                additionalInfo.appendRemoteUpdateLog(RemoteUpdateLog.error(e));
+                acpCommutatorDispatcher.save(additionalInfo);
+                stompController.updateCommutator(commutator);
+            }
             throw new ResponseException(e.getMessage());
         } finally {
             removeCommutatorFromUpdatePool(commutator);
