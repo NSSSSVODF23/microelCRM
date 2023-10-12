@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
+import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.security.PasswordService;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.storage.entities.team.Employee;
@@ -11,6 +12,7 @@ import com.microel.trackerbackend.storage.exceptions.EditingNotPossible;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.repositories.EmployeeRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
@@ -19,10 +21,7 @@ import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 @Component
 @Slf4j
@@ -31,17 +30,19 @@ public class EmployeeDispatcher {
     private final DepartmentDispatcher departmentDispatcher;
     private final PositionDispatcher positionDispatcher;
     private final PasswordService passwordService;
+    private final TelegramController telegramController;
 
     public EmployeeDispatcher(EmployeeRepository employeeRepository,
-                              DepartmentDispatcher departmentDispatcher, PositionDispatcher positionDispatcher, PasswordService passwordService) {
+                              DepartmentDispatcher departmentDispatcher, PositionDispatcher positionDispatcher, PasswordService passwordService, @Lazy TelegramController telegramController) {
         this.employeeRepository = employeeRepository;
         this.departmentDispatcher = departmentDispatcher;
         this.positionDispatcher = positionDispatcher;
         this.passwordService = passwordService;
+        this.telegramController = telegramController;
 
-        if(employeeRepository.count() == 0){
+        if (employeeRepository.count() == 0) {
             try {
-                create("","","","admin","admin", 0, "", "", null, null, false);
+                create("", "", "", "admin", "admin", 0, "", "", null, null, false);
             } catch (AlreadyExists | EntryNotFound e) {
                 log.warn("Не удалось создать запись администратора");
             }
@@ -70,9 +71,9 @@ public class EmployeeDispatcher {
             }
             if (isDeleted != null) flagsPredicates.add(cb.equal(root.get("deleted"), isDeleted));
             if (isOffsite != null) flagsPredicates.add(cb.equal(root.get("offsite"), isOffsite));
-            if(!globalSearchPredicates.isEmpty()){
+            if (!globalSearchPredicates.isEmpty()) {
                 return cb.and(cb.or(globalSearchPredicates.toArray(Predicate[]::new)), cb.and(flagsPredicates.toArray(Predicate[]::new)));
-            }else{
+            } else {
                 return cb.and(flagsPredicates.toArray(Predicate[]::new));
             }
         }, Sort.by(Sort.Direction.ASC, "secondName", "firstName", "lastName", "login"));
@@ -95,6 +96,19 @@ public class EmployeeDispatcher {
     ) throws AlreadyExists, EntryNotFound {
         boolean exists = employeeRepository.existsById(login);
         if (exists) throw new AlreadyExists();
+        Employee foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(telegramUserId).orElse(null);
+        if (
+                (telegramUserId != null && !telegramUserId.isBlank())
+                        && foundEmployeeTelegramId != null
+                        && !Objects.equals(foundEmployeeTelegramId.getLogin(), login)
+        )
+            throw new ResponseException("Уже есть сотрудник с данным Telegram ID");
+
+        try {
+            telegramController.sendMessageToTlgId(telegramUserId, "Ваш аккаунт в Telegram привязан к учетной записи Microel");
+        } catch (Throwable e) {
+            throw new ResponseException("Не корректный Telegram ID");
+        }
 
         Department foundDepartment = departmentDispatcher.getById(department);
 
@@ -138,7 +152,21 @@ public class EmployeeDispatcher {
         Employee foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(telegramUserId).orElse(null);
         if (foundEmployee == null) throw new EntryNotFound();
         if (foundEmployee.getDeleted()) throw new EditingNotPossible();
-        if (foundEmployeeTelegramId == null) throw new ResponseException("Уже есть сотрудник с данным Telegram ID");
+        if (
+                (telegramUserId != null && !telegramUserId.isBlank())
+                        && foundEmployeeTelegramId != null
+                        && !Objects.equals(foundEmployeeTelegramId.getLogin(), login)
+        )
+            throw new ResponseException("Уже есть сотрудник с данным Telegram ID");
+
+        if (foundEmployeeTelegramId == null || (telegramUserId != null && !telegramUserId.isBlank() && !Objects.equals(foundEmployeeTelegramId.getTelegramUserId(), telegramUserId))) {
+            try {
+                telegramController.sendMessageToTlgId(telegramUserId, "Ваш аккаунт в Telegram привязан к учетной записи Microel");
+            } catch (Throwable e) {
+                throw new ResponseException("Не корректный Telegram ID");
+            }
+        }
+
         Department foundDepartment = departmentDispatcher.getById(department);
         Position foundPosition = positionDispatcher.getById(position);
 
@@ -165,7 +193,7 @@ public class EmployeeDispatcher {
 
     public Employee getEmployee(String login) throws EntryNotFound {
         Employee employee = employeeRepository.findById(login).orElse(null);
-        if(employee==null) throw new EntryNotFound("Сотрудника с логином "+login+" не существует");
+        if (employee == null) throw new EntryNotFound("Сотрудника с логином " + login + " не существует");
         return employee;
     }
 
@@ -220,7 +248,7 @@ public class EmployeeDispatcher {
     }
 
     public List<Employee> getByPosition(Long position) {
-        return employeeRepository.findAll((root,query,cb)->{
+        return employeeRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.join("position", JoinType.LEFT).get("positionId"), position));
             predicates.add(cb.isFalse(root.get("deleted")));

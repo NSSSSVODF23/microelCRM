@@ -7,6 +7,7 @@ import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.filemanager.FileData;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
@@ -716,10 +717,17 @@ public class TelegramController {
             // Проверка валидности чата
             if (targetChatId == null || targetChatId.isBlank() || employee.getLogin().equals(message.getAuthor().getLogin()))
                 continue;
-
-            responses.add(TelegramMessageFactory.create(targetChatId, mainBot).broadcastTextMessage(message).execute());
+            try {
+                responses.add(TelegramMessageFactory.create(targetChatId, mainBot).broadcastTextMessage(message).execute());
+            }catch (Throwable e){
+                log.warn("Не удалось отправить сообщение в чат {} {}", targetChatId, employee.getLogin());
+            }
         }
         return responses;
+    }
+
+    public void sendMessageToTlgId(String chatId, String message) throws TelegramApiException {
+        TelegramMessageFactory.create(chatId, mainBot).simpleMessage(message).execute();
     }
 
     /**
@@ -796,10 +804,16 @@ public class TelegramController {
     }
 
     public void assignInstallers(WorkLog workLog, Employee employee) throws TelegramApiException {
-        for (Employee installer : workLog.getEmployees()) {
-            if (installer.getTelegramUserId() == null || installer.getTelegramUserId().isBlank())
-                continue;
-            TelegramMessageFactory.create(installer.getTelegramUserId(), mainBot).acceptWorkLog(workLog, employee).execute();
+        boolean hasNotTelegram = workLog.getEmployees().stream().anyMatch(ins -> ins.getTelegramUserId() == null || ins.getTelegramUserId().isBlank());
+        if (hasNotTelegram){
+            throw new ResponseException("У сотрудников не назначен telegram id");
+        }
+        try {
+            for (Employee installer : workLog.getEmployees()) {
+                TelegramMessageFactory.create(installer.getTelegramUserId(), mainBot).acceptWorkLog(workLog, employee).execute();
+            }
+        }catch (Throwable e){
+            throw new ResponseException("Один или несколько сотрудников имеют не верный telegram id");
         }
     }
 

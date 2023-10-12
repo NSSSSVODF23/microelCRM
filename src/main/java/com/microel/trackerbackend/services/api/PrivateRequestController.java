@@ -1071,7 +1071,8 @@ public class PrivateRequestController {
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.createdWorkLog(workLog.getTask(), workLog, employeeFromRequest));
             stompController.createTaskEvent(taskId, taskEvent);
 
-        } catch (EntryNotFound | IllegalFields | TelegramApiException e) {
+        } catch (Throwable e) {
+            taskDispatcher.abortAssignation(taskId);
             throw new ResponseException(e.getMessage());
         }
         return ResponseEntity.ok().build();

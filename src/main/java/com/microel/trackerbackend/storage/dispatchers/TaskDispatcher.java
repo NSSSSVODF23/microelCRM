@@ -294,6 +294,15 @@ public class TaskDispatcher {
         return workLog;
     }
 
+    public void abortAssignation(Long taskId) {
+        Task task = taskRepository.findByTaskId(taskId).orElse(null);
+        if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
+        workLogDispatcher.getActiveWorkLogByTask(task).ifPresent(workLogDispatcher::remove);
+        task.setTaskStatus(TaskStatus.ACTIVE);
+        task.setUpdated(Timestamp.from(Instant.now()));
+        taskRepository.save(task);
+    }
+
     public WorkLog forceCloseWorkLog(Long taskId, String reasonOfClosing, Employee employeeFromRequest) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);

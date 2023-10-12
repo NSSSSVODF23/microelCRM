@@ -285,4 +285,8 @@ public class WorkLogDispatcher {
             return cb.and(predicates.toArray(Predicate[]::new));
         }, Sort.by(Sort.Direction.DESC, "created"));
     }
+
+    public void remove(WorkLog workLog) {
+        workLogRepository.delete(workLog);
+    }
 }
