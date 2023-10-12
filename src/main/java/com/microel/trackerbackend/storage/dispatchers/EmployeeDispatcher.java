@@ -96,18 +96,18 @@ public class EmployeeDispatcher {
     ) throws AlreadyExists, EntryNotFound {
         boolean exists = employeeRepository.existsById(login);
         if (exists) throw new AlreadyExists();
-        Employee foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(telegramUserId).orElse(null);
-        if (
-                (telegramUserId != null && !telegramUserId.isBlank())
-                        && foundEmployeeTelegramId != null
-                        && !Objects.equals(foundEmployeeTelegramId.getLogin(), login)
-        )
+        Employee foundEmployeeTelegramId = null;
+        if(telegramUserId != null && !telegramUserId.isBlank())
+            foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(telegramUserId).orElse(null);
+        if (foundEmployeeTelegramId != null)
             throw new ResponseException("Уже есть сотрудник с данным Telegram ID");
 
-        try {
-            telegramController.sendMessageToTlgId(telegramUserId, "Ваш аккаунт в Telegram привязан к учетной записи Microel");
-        } catch (Throwable e) {
-            throw new ResponseException("Не корректный Telegram ID");
+        if(telegramUserId != null && !telegramUserId.isBlank()) {
+            try {
+                telegramController.sendMessageToTlgId(telegramUserId, "Ваш аккаунт в Telegram привязан к учетной записи Microel");
+            } catch (Throwable e) {
+                throw new ResponseException("Не корректный Telegram ID");
+            }
         }
 
         Department foundDepartment = departmentDispatcher.getById(department);
@@ -149,17 +149,15 @@ public class EmployeeDispatcher {
             Boolean offsite
     ) throws EntryNotFound, EditingNotPossible {
         Employee foundEmployee = employeeRepository.findById(login).orElse(null);
-        Employee foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(telegramUserId).orElse(null);
+        Employee foundEmployeeTelegramId = null;
+        if(telegramUserId != null && !telegramUserId.isBlank())
+            foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(telegramUserId).orElse(null);
         if (foundEmployee == null) throw new EntryNotFound();
         if (foundEmployee.getDeleted()) throw new EditingNotPossible();
-        if (
-                (telegramUserId != null && !telegramUserId.isBlank())
-                        && foundEmployeeTelegramId != null
-                        && !Objects.equals(foundEmployeeTelegramId.getLogin(), login)
-        )
+        if (foundEmployeeTelegramId != null && !Objects.equals(foundEmployeeTelegramId.getLogin(), login))
             throw new ResponseException("Уже есть сотрудник с данным Telegram ID");
 
-        if (foundEmployeeTelegramId == null || (telegramUserId != null && !telegramUserId.isBlank() && !Objects.equals(foundEmployeeTelegramId.getTelegramUserId(), telegramUserId))) {
+        if ((telegramUserId != null && !telegramUserId.isBlank()) && (foundEmployeeTelegramId == null || !Objects.equals(foundEmployeeTelegramId.getTelegramUserId(), telegramUserId))) {
             try {
                 telegramController.sendMessageToTlgId(telegramUserId, "Ваш аккаунт в Telegram привязан к учетной записи Microel");
             } catch (Throwable e) {
