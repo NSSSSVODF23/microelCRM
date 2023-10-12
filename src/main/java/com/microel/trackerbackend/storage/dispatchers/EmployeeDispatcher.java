@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.security.PasswordService;
+import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.util.Department;
 import com.microel.trackerbackend.storage.entities.team.util.EmployeeStatus;
@@ -134,8 +135,10 @@ public class EmployeeDispatcher {
             Boolean offsite
     ) throws EntryNotFound, EditingNotPossible {
         Employee foundEmployee = employeeRepository.findById(login).orElse(null);
+        Employee foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(telegramUserId).orElse(null);
         if (foundEmployee == null) throw new EntryNotFound();
         if (foundEmployee.getDeleted()) throw new EditingNotPossible();
+        if (foundEmployeeTelegramId == null) throw new ResponseException("Уже есть сотрудник с данным Telegram ID");
         Department foundDepartment = departmentDispatcher.getById(department);
         Position foundPosition = positionDispatcher.getById(position);
 
@@ -213,7 +216,7 @@ public class EmployeeDispatcher {
     }
 
     public Optional<Employee> getByTelegramId(Long chatId) {
-        return employeeRepository.findByTelegramUserId(chatId.toString());
+        return employeeRepository.findTopByTelegramUserId(chatId.toString());
     }
 
     public List<Employee> getByPosition(Long position) {
