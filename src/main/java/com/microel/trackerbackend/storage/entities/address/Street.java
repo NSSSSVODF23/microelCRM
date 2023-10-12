@@ -69,7 +69,8 @@ public class Street implements Comparable<Street> {
     }
 
     public String getStreetName() {
-        return city.getName() + " " + prefix + "." + name;
+        if(this.city == null) return "";
+        return city.getName() + " " + getNameWithPrefix();
     }
 
     @Override
