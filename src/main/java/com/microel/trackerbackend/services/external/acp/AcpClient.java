@@ -35,6 +35,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -70,23 +71,19 @@ public class AcpClient {
         DhcpBinding[] dhcpBindings = get(DhcpBinding[].class, Map.of("login", login), "dhcp", "bindings");
         if (dhcpBindings == null) return Collections.emptyList();
         List<DhcpBinding> bindings = Arrays.stream(dhcpBindings).sorted(Comparator.comparing(DhcpBinding::getSessionTime).reversed()).collect(Collectors.toList());
-        bindings.forEach(binding -> {
-            NetworkConnectionLocation location = networkConnectionLocationDispatcher.getByBindingId(binding.getId());
-            if (location != null && location.getPortId() != null) {
-                AcpCommutator foundCommutator = acpCommutatorDispatcher.getById(location.getCommutatorId());
-                if (foundCommutator != null) {
-                    location.setLastPortCheck(foundCommutator.getSystemInfo().getLastUpdate());
-                    if (location.getPortId() != null) {
-                        foundCommutator.getPorts().stream().filter(port -> port.getPortInfoId().equals(location.getPortId())).findFirst().ifPresent(portInfo -> {
-                            location.setIsHasLink(Objects.equals(portInfo.getStatus(), PortInfo.Status.UP));
-                            location.setPortSpeed(portInfo.getSpeed());
-                        });
-                    }
-                }
-            }
-            binding.setLastConnectionLocation(location);
-        });
+        bindings.forEach(this::prepareBinding);
         return bindings;
+    }
+
+    public DhcpBinding prepareBinding(DhcpBinding binding){
+        NetworkConnectionLocation location = networkConnectionLocationDispatcher.getByBindingId(binding.getId());
+        if (location != null && location.getPortId() != null) {
+            AcpCommutator foundCommutator = acpCommutatorDispatcher.getById(location.getCommutatorId());
+            if(foundCommutator != null && foundCommutator.getSystemInfo() != null && foundCommutator.getPorts() != null)
+                location.setCommutatorInfo(foundCommutator.getSystemInfo().getLastUpdate(), foundCommutator.getPorts());
+        }
+        binding.setLastConnectionLocation(location);
+        return binding;
     }
 
     public RestPage<DhcpBinding> getLastBindings(Integer page, @Nullable Short state, @Nullable String macaddr, @Nullable String login, @Nullable String ip, @Nullable Integer vlan, @Nullable Integer buildingId) {
@@ -101,23 +98,7 @@ public class AcpClient {
         RestPage<DhcpBinding> pageResponse = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
         }).getBody();
         if (pageResponse == null) return pageResponse;
-        pageResponse.forEach(binding -> {
-            NetworkConnectionLocation location = networkConnectionLocationDispatcher.getByBindingId(binding.getId());
-            if (location != null && location.getPortId() != null) {
-                AcpCommutator foundCommutator = acpCommutatorDispatcher.getById(location.getCommutatorId());
-                if (foundCommutator != null) {
-                    location.setLastPortCheck(foundCommutator.getSystemInfo().getLastUpdate());
-                    if (location.getPortId() != null) {
-                        foundCommutator.getPorts().stream().filter(port -> port.getPortInfoId().equals(location.getPortId())).findFirst().ifPresent(portInfo -> {
-                            location.setIsHasLink(Objects.equals(portInfo.getStatus(), PortInfo.Status.UP));
-                            location.setPortSpeed(portInfo.getSpeed());
-
-                        });
-                    }
-                }
-            }
-            binding.setLastConnectionLocation(location);
-        });
+        pageResponse.forEach(this::prepareBinding);
         return pageResponse;
     }
 
@@ -188,6 +169,21 @@ public class AcpClient {
             if (house != null) commutator.setAddress(house.getAddress());
             return commutator;
         });
+    }
+
+    public List<Switch> getCommutatorsByVlan(Integer vlan) {
+        Map<String, String> query = new HashMap<>();
+        query.put("vlan", vlan.toString());
+        RequestEntity<Void> request = RequestEntity.get(url(query, "commutators", "by-vlan")).build();
+        return Objects.requireNonNull(restTemplate.exchange(request, new ParameterizedTypeReference<List<Switch>>() {
+        }).getBody()).stream().map(commutator -> {
+            if (commutator.getBuildId() == null) return commutator;
+            House house = houseDispatcher.getByAcpBindId(commutator.getBuildId());
+            AcpCommutator additionalInfo = acpCommutatorDispatcher.getById(commutator.getId());
+            if (additionalInfo != null) commutator.setAdditionalInfo(additionalInfo);
+            if (house != null) commutator.setAddress(house.getAddress());
+            return commutator;
+        }).collect(Collectors.toList());
     }
 
     public List<Switch> getAllCommutators() {
@@ -322,8 +318,7 @@ public class AcpClient {
 
     public void getCommutatorRemoteUpdate(Integer id) {
         SwitchWithAddress commutator = getCommutator(id);
-        if (commutator == null)
-            throw new ResponseException("Не найден коммутатор в ACP с id: " + id);
+        if (commutator == null) throw new ResponseException("Не найден коммутатор в ACP с id: " + id);
 
         Map<Integer, String> commutatorModels = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
         AcpCommutator additionalInfo = commutator.getCommutator().getAdditionalInfo();
@@ -331,6 +326,30 @@ public class AcpClient {
         List<PortInfo> ports = additionalInfo == null ? null : commutator.getCommutator().getAdditionalInfo().getPorts();
 
         connectToCommutatorAndUpdate(commutator.getCommutator(), additionalInfo, systemInfo, ports, commutatorModels);
+    }
+
+    public void getCommutatorsByVlanRemoteUpdate(Integer vlan) {
+        List<Switch> commutatorsByVlan = getCommutatorsByVlan(vlan);
+        Map<Integer, String> commutatorModels = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
+        CountDownLatch latch = new CountDownLatch(commutatorsByVlan.size());
+        for (Switch commutator : commutatorsByVlan) {
+            Executors.newSingleThreadExecutor().execute(() -> {
+                try {
+                    AcpCommutator additionalInfo = commutator.getAdditionalInfo();
+                    SystemInfo systemInfo = additionalInfo == null ? null : commutator.getAdditionalInfo().getSystemInfo();
+                    List<PortInfo> ports = additionalInfo == null ? null : commutator.getAdditionalInfo().getPorts();
+                    connectToCommutatorAndUpdate(commutator, additionalInfo, systemInfo, ports, commutatorModels);
+                } catch (Throwable ignore) {
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        try {
+            latch.await(60, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            throw new ResponseException("Таймаут обновления коммутаторов");
+        }
     }
 
     public void getAllCommutatorsRemoteUpdate() {
@@ -368,8 +387,7 @@ public class AcpClient {
 
     private synchronized boolean appendCommutatorInUpdatePool(@NotNull Switch commutator) {
         boolean isNotAppend = !commutatorPoolInTheProcessOfUpdating.add(RemoteUpdatingCommutatorItem.of(commutator));
-        if (isNotAppend)
-            throw new ResponseException("Коммутатор уже обновляется");
+        if (isNotAppend) throw new ResponseException("Коммутатор уже обновляется");
         stompController.updateCommutatorUpdatePool(commutatorPoolInTheProcessOfUpdating);
         return isNotAppend;
     }
@@ -423,18 +441,24 @@ public class AcpClient {
                     for (FdbItem fdbItem : port.getMacTable()) {
                         DhcpBinding existingSession = getDhcpBindingByMac(fdbItem.getMac());
                         if (existingSession != null) {
-                            networkConnectionLocationDispatcher.checkAndWrite(existingSession, commutator, port, fdbItem);
+                            NetworkConnectionLocation location = networkConnectionLocationDispatcher.checkAndWrite(existingSession, commutator, port, fdbItem);
+                            if(additionalInfo.getSystemInfo() != null && additionalInfo.getPorts() != null) {
+                                location.setCommutatorInfo(additionalInfo.getSystemInfo().getLastUpdate(), additionalInfo.getPorts());
+                                existingSession.setLastConnectionLocation(location);
+                                stompController.updateDhcpBinding(existingSession);
+                            }
                         }
                     }
                 }
-
+                commutator.setAdditionalInfo(additionalInfo);
                 stompController.updateCommutator(commutator);
             }
         } catch (Throwable e) {
-            if(additionalInfo != null){
+            if (additionalInfo != null) {
                 additionalInfo.removeOldRemoteUpdateLogs();
                 additionalInfo.appendRemoteUpdateLog(RemoteUpdateLog.error(e));
                 acpCommutatorDispatcher.save(additionalInfo);
+                commutator.setAdditionalInfo(additionalInfo);
                 stompController.updateCommutator(commutator);
             }
             throw new ResponseException(e.getMessage());
@@ -454,6 +478,7 @@ public class AcpClient {
     public void multicastUpdateCommutatorRemoteUpdatePool() {
         stompController.updateCommutatorUpdatePool(commutatorPoolInTheProcessOfUpdating);
     }
+
 
     @Getter
     @Setter

@@ -186,6 +186,7 @@ public class EmployeeDispatcher {
         Employee foundEmployee = employeeRepository.findById(login).orElse(null);
         if (foundEmployee == null) throw new EntryNotFound();
         foundEmployee.setDeleted(true);
+        foundEmployee.setTelegramUserId("");
         return employeeRepository.save(foundEmployee);
     }
 

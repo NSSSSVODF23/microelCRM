@@ -11,6 +11,7 @@ import org.springframework.lang.Nullable;
 import javax.persistence.*;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 
 @Getter
@@ -67,5 +68,15 @@ public class NetworkConnectionLocation {
                 && Objects.equals(targetCommutator.getIpaddr(), commutatorIp)
                 && Objects.equals(targetPort.getName(), portName)
                 && Objects.equals(fdbItem.getVid(), vid);
+    }
+
+    public void setCommutatorInfo(Timestamp lastUpdate, List<PortInfo> ports) {
+        setLastPortCheck(lastUpdate);
+        if (getPortId() != null) {
+            ports.stream().filter(port -> port.getPortInfoId().equals(getPortId())).findFirst().ifPresent(portInfo -> {
+                setIsHasLink(Objects.equals(portInfo.getStatus(), PortInfo.Status.UP));
+                setPortSpeed(portInfo.getSpeed());
+            });
+        }
     }
 }

@@ -10,7 +10,6 @@ import lombok.Setter;
 import lombok.ToString;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.Nullable;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -30,7 +29,8 @@ import java.util.stream.Stream;
 public class MonitoringService {
 
     private final Map<InetAddress, PingMonitoringHolder> pingMonitoringMap = new ConcurrentHashMap<>();
-    private final Map<InetAddress, Set<UUID>> pingSessionMap = new ConcurrentHashMap<>();
+    private final Map<InetAddress, Set<String>> pingSessionMap = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<String>> sessionSubIdMap = new ConcurrentHashMap<>();
     private final StompController stompController;
 
     public MonitoringService(@Lazy StompController stompController) {
@@ -56,36 +56,46 @@ public class MonitoringService {
                 });
     }
 
-    public void appendPingMonitoring(String ip, UUID sessionId) {
+    public void appendPingMonitoring(String ip, UUID sessionId, String subId) {
         try {
             InetAddress address = InetAddress.getByName(ip);
-            if(!pingMonitoringMap.containsKey(address)){
+            if (!pingMonitoringMap.containsKey(address)) {
                 PingMonitoringHolder monitoringHolder = new PingMonitoringHolder(address, getFlux(address));
                 pingMonitoringMap.put(address, monitoringHolder);
                 monitoringHolder.run(stompController);
             }
+            sessionSubIdMap.computeIfAbsent(sessionId, k -> new HashSet<>());
+            sessionSubIdMap.get(sessionId).add(sessionId + subId);
             pingSessionMap.computeIfPresent(address, (k, v) -> {
-                v.add(sessionId);
+                v.add(sessionId + subId);
                 return v;
             });
-            pingSessionMap.putIfAbsent(address, Stream.of(sessionId).collect(Collectors.toSet()));
+            pingSessionMap.putIfAbsent(address, Stream.of(sessionId + subId).collect(Collectors.toSet()));
         } catch (UnknownHostException e) {
             throw new RuntimeException(e);
         }
     }
 
-    public void releasePingMonitoring(UUID sessionId) {
+    public void releasePingMonitoring(String subId) {
         // find address by session id from pingSessionMap
         pingSessionMap.forEach((k, v) -> {
-            if(v.contains(sessionId)){
-                v.remove(sessionId);
-                if(v.isEmpty()){
+            if (v.contains(subId)) {
+                v.remove(subId);
+                if (v.isEmpty()) {
                     PingMonitoringHolder remove = pingMonitoringMap.remove(k);
                     pingSessionMap.remove(k);
-                    if(remove != null) remove.dispose();
+                    if (remove != null) remove.dispose();
                 }
             }
         });
+    }
+
+    public void releasePingMonitoring(UUID sessionId) {
+        sessionSubIdMap.computeIfPresent(sessionId, (k, v) -> {
+            v.forEach(this::releasePingMonitoring);
+            return v;
+        });
+        sessionSubIdMap.remove(sessionId);
     }
 
     @Getter
@@ -153,16 +163,16 @@ public class MonitoringService {
             return pingResponses.getLast().isReachable();
         }
 
-        public ChartData getChartData(){
+        public ChartData getChartData() {
             List<ChartDataSet.ChartPoint> data = pingResponses.stream()
                     .skip(Math.max(0, pingResponses.size() - 50))
                     .map(pingResponse ->
-                            new ChartDataSet.ChartPoint(Instant.ofEpochMilli(pingResponse.iteration),pingResponse.delay != null ? pingResponse.delay.toNanos() / 1000000d : null) )
+                            new ChartDataSet.ChartPoint(Instant.ofEpochMilli(pingResponse.iteration), pingResponse.delay != null ? pingResponse.delay.toNanos() / 1000000d : null))
                     .toList();
             ChartDataSet dataSet = new ChartDataSet();
             dataSet.setLabel("Ping");
             dataSet.setDataOfPoints(data);
-            return new ChartData(null,List.of(dataSet));
+            return new ChartData(null, List.of(dataSet));
         }
     }
 
@@ -177,7 +187,7 @@ public class MonitoringService {
 
         public PingResponse(Boolean reachable, Instant start, Long iteration) {
             this.reachable = reachable;
-            this.delay = reachable  ? Duration.between(start, Instant.now()) : null;
+            this.delay = reachable ? Duration.between(start, Instant.now()) : null;
             this.iteration = iteration;
         }
 

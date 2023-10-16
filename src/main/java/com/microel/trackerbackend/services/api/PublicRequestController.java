@@ -4,6 +4,7 @@ import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.modules.transport.Credentials;
 import com.microel.trackerbackend.parsers.commutator.ra.DES28RemoteAccess;
+import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.storage.entities.acp.commutator.PortInfo;
 import com.microel.trackerbackend.storage.entities.acp.commutator.SystemInfo;
 import com.microel.trackerbackend.security.AuthorizationProvider;
@@ -28,11 +29,13 @@ public class PublicRequestController {
 
     private final AuthorizationProvider authorizationProvider;
     private final TelegramController telegramController;
+    private final AcpClient acpClient;
     private final StompController stompController;
 
-    public PublicRequestController(AuthorizationProvider authorizationProvider, TelegramController telegramController, StompController stompController) {
+    public PublicRequestController(AuthorizationProvider authorizationProvider, TelegramController telegramController, AcpClient acpClient, StompController stompController) {
         this.authorizationProvider = authorizationProvider;
         this.telegramController = telegramController;
+        this.acpClient = acpClient;
         this.stompController = stompController;
     }
 
@@ -122,7 +125,7 @@ public class PublicRequestController {
 
     @PostMapping("incoming-update/dhcp-binding")
     public ResponseEntity<Void> incomingUpdateDhcpBinding(@RequestBody DhcpBinding body) {
-        stompController.updateDhcpBinding(body);
+        stompController.updateDhcpBinding(acpClient.prepareBinding(body));
         return ResponseEntity.ok().build();
     }
 

@@ -20,6 +20,7 @@ import org.springframework.web.socket.messaging.SessionSubscribeEvent;
 import org.springframework.web.socket.messaging.SessionUnsubscribeEvent;
 
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.UUID;
 
 @Configuration
@@ -58,11 +59,12 @@ public class StompConfig implements WebSocketMessageBrokerConfigurer {
     public void onSubscribeEvent(SessionSubscribeEvent event) {
         Message<byte[]> message = event.getMessage();
         UUID sessionId = getSessionId(message);
+        String subId = getSubId(message);
         String[] path = getDestination(message);
         if ("monitoring".equals(path[0])) {
             if ("ping".equals(path[1])) {
                 try{
-                    monitoringService.appendPingMonitoring(path[2], sessionId);
+                    monitoringService.appendPingMonitoring(path[2], sessionId, subId);
                 }catch (ArrayIndexOutOfBoundsException e){
                     throw new IllegalFields("Не указан ip адрес цели мониторинга");
                 }
@@ -80,16 +82,20 @@ public class StompConfig implements WebSocketMessageBrokerConfigurer {
     @EventListener
     public void onUnsubscribeEvent(SessionUnsubscribeEvent event) {
         UUID sessionId = getSessionId(event.getMessage());
-        monitoringService.releasePingMonitoring(sessionId);
+        String subId = getSubId(event.getMessage());
+        monitoringService.releasePingMonitoring(sessionId+subId);
     }
 
     private String[] getDestination(Message<byte[]> message) {
-        String destination = message.getHeaders().get(SimpMessageHeaderAccessor.DESTINATION_HEADER).toString();
+        String destination = Objects.requireNonNull(message.getHeaders().get(SimpMessageHeaderAccessor.DESTINATION_HEADER)).toString();
         return Arrays.stream(destination.split("/")).skip(2).toArray(String[]::new);
     }
 
     private UUID getSessionId(Message<byte[]> message) {
-        return UUID.fromString(message.getHeaders().get(SimpMessageHeaderAccessor.SESSION_ID_HEADER).toString());
+        return UUID.fromString(Objects.requireNonNull(message.getHeaders().get(SimpMessageHeaderAccessor.SESSION_ID_HEADER)).toString());
+    }
+    private String getSubId(Message<byte[]> message) {
+        return Objects.requireNonNull(message.getHeaders().get(SimpMessageHeaderAccessor.SUBSCRIPTION_ID_HEADER)).toString();
     }
 
     @Override

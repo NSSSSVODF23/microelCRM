@@ -1868,6 +1868,11 @@ public class PrivateRequestController {
         return ResponseEntity.ok(acpClient.getCommutators(page, name, ip, buildingId, 15));
     }
 
+    @GetMapping("acp/commutators/vlan/{vlan}")
+    public ResponseEntity<List<Switch>> getCommutatorsByVlan(@PathVariable Integer vlan) {
+        return ResponseEntity.ok(acpClient.getCommutatorsByVlan(vlan));
+    }
+
     @GetMapping("acp/commutators/search")
     public ResponseEntity<List<SwitchWithAddress>> searchCommutators(@RequestParam @Nullable String query) {
         return ResponseEntity.ok(acpClient.searchCommutators(query));
@@ -1881,6 +1886,12 @@ public class PrivateRequestController {
     @PostMapping("acp/commutator/{id}/get-remote-update")
     public ResponseEntity<Void> getCommutatorRemoteUpdate(@PathVariable Integer id) {
         acpClient.getCommutatorRemoteUpdate(id);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("acp/commutators/vlan/{vlan}/get-remote-update")
+    public ResponseEntity<Void> getCommutatorsByVlanRemoteUpdate(@PathVariable Integer vlan) {
+        acpClient.getCommutatorsByVlanRemoteUpdate(vlan);
         return ResponseEntity.ok().build();
     }
 
