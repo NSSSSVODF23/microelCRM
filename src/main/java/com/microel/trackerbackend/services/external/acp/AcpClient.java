@@ -1,5 +1,7 @@
 package com.microel.trackerbackend.services.external.acp;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.modules.exceptions.Unconfigured;
@@ -17,6 +19,7 @@ import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Lazy;
@@ -37,6 +40,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Service
@@ -75,6 +80,11 @@ public class AcpClient {
         return bindings;
     }
 
+    /**
+     * Добавляет информацию к сессии абонента о последнем месте включения в коммутатор
+     * @param binding
+     * @return
+     */
     public DhcpBinding prepareBinding(DhcpBinding binding){
         NetworkConnectionLocation location = networkConnectionLocationDispatcher.getByBindingId(binding.getId());
         if (location != null && location.getPortId() != null) {
@@ -86,7 +96,9 @@ public class AcpClient {
         return binding;
     }
 
-    public RestPage<DhcpBinding> getLastBindings(Integer page, @Nullable Short state, @Nullable String macaddr, @Nullable String login, @Nullable String ip, @Nullable Integer vlan, @Nullable Integer buildingId) {
+    public RestPage<DhcpBinding> getLastBindings(Integer page, @Nullable Short state, @Nullable String macaddr,
+                                                 @Nullable String login, @Nullable String ip, @Nullable Integer vlan,
+                                                 @Nullable Integer buildingId, @Nullable List<Integer> targetIds) {
         Map<String, String> query = new HashMap<>();
         if (state != null) query.put("state", state.toString());
         if (macaddr != null) query.put("macaddr", macaddr);
@@ -94,12 +106,35 @@ public class AcpClient {
         if (ip != null) query.put("ip", ip);
         if (vlan != null) query.put("vlan", vlan.toString());
         if (buildingId != null) query.put("buildingId", buildingId.toString());
+        try {
+            if (targetIds != null) query.put("targetIds", new ObjectMapper().writeValueAsString(targetIds));
+        }catch (JsonProcessingException e){
+            throw new ResponseException("Ошибка при попытке конвертирования списка идентификаторов целевых сессий");
+        }
         RequestEntity<Void> request = RequestEntity.get(url(query, "dhcp", "bindings", page.toString(), "last")).build();
         RestPage<DhcpBinding> pageResponse = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
         }).getBody();
-        if (pageResponse == null) return pageResponse;
+        if (pageResponse == null) return null;
         pageResponse.forEach(this::prepareBinding);
         return pageResponse;
+    }
+
+    public RestPage<DhcpBinding> getLastBindings(Integer page, @Nullable Short state, @Nullable String macaddr,
+                                                 @Nullable String login, @Nullable String ip, @Nullable Integer vlan,
+                                                 @Nullable Integer buildingId, Integer commutator, @Nullable Integer port) {
+
+        List<NetworkConnectionLocation> lastByCommutator = networkConnectionLocationDispatcher.getLastByCommutator(commutator, port);
+
+        return getLastBindings(
+                page,
+                state,
+                macaddr,
+                login,
+                ip,
+                vlan,
+                buildingId,
+                lastByCommutator.stream().map(NetworkConnectionLocation::getDhcpBindingId).collect(Collectors.toList())
+        );
     }
 
     public RestPage<DhcpBinding> getDhcpBindingsByVlan(Integer page, Integer id, String excludeLogin) {
@@ -479,6 +514,72 @@ public class AcpClient {
         stompController.updateCommutatorUpdatePool(commutatorPoolInTheProcessOfUpdating);
     }
 
+    public NCLHistoryWrapper getNetworkConnectionLocationHistory(Integer id) {
+        List<NetworkConnectionLocation> nclByBinding = networkConnectionLocationDispatcher.getAllByBindingId(id);
+
+
+
+        Long start = nclByBinding.stream().map(ncl->ncl.getCreatedAt().getTime()).min(Long::compareTo).orElse(0L);
+        Long end = nclByBinding.stream().map(ncl->ncl.getCheckedAt().getTime()).max(Long::compareTo).orElse(0L);
+
+        if(start > end) end = start;
+
+        Long duration = end - start;
+        Long step = duration / 100;
+        AtomicLong prevPercent = new AtomicLong(-1L);
+
+        Map<String, List<NCLHistoryItem>> items = nclByBinding.stream().map(ncl->{
+            Long nclStart = ncl.getCreatedAt().getTime();
+            Long nclEnd = ncl.getCheckedAt().getTime();
+            Long nclStartPercent = (nclStart - start) / step;
+            if(nclStartPercent.equals(prevPercent.get())) nclStartPercent++;
+            Long nclEndPercent = ((nclEnd - nclStart) / step)+nclStartPercent;
+            if(nclEndPercent <= nclStartPercent) nclEndPercent = nclStartPercent+1;
+            if(nclEndPercent > 99L) nclEndPercent = 99L;
+            prevPercent.set(nclEndPercent);
+            return NCLHistoryItem.of(ncl, nclStartPercent.intValue(), nclEndPercent.intValue());
+        }).collect(Collectors.groupingBy(NCLHistoryItem::getConnectionName));
+
+        return new NCLHistoryWrapper(new Timestamp(start), new Timestamp(end), items);
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class NCLHistoryItem {
+        private Long nclId;
+        private String color;
+        private String borderColor;
+        private String connectionName;
+        private Integer commutatorId;
+        private Integer bindingId;
+        private Timestamp timeStart;
+        private Timestamp timeEnd;
+        private Integer percentStart;
+        private Integer percentEnd;
+
+        public static NCLHistoryItem of(NetworkConnectionLocation ncl, Integer percentStart, Integer percentEnd) {
+            int nameHash = ncl.getConnectionName().hashCode();
+            return new NCLHistoryItem(ncl.getNetworkConnectionLocationId(), color(nameHash, 0.8f, 0.9f), color(nameHash, 0.8f, 0.75f), ncl.getConnectionName(), ncl.getCommutatorId(),
+                    ncl.getDhcpBindingId(), ncl.getCreatedAt(), ncl.getCheckedAt(), percentStart, percentEnd);
+        }
+
+        private static String color(int hash, float saturation, float lightness) {
+            int b = Math.round((360f/255f)*(hash & 0x0000FF));
+            return "hsl("+b+","+saturation*100+"%,"+lightness*100+"%)";
+        }
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class NCLHistoryWrapper{
+        private Timestamp from;
+        private Timestamp to;
+        private Map<String, List<NCLHistoryItem>> nclItems;
+    }
 
     @Getter
     @Setter

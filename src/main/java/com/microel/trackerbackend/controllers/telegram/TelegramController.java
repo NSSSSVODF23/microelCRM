@@ -169,7 +169,7 @@ public class TelegramController {
             Integer messageId = u.getCallbackQuery().getMessage().getMessageId();
             if (data.isData("active_task")) {
                 mainBot.send(DeleteMessage.builder().chatId(chatId).messageId(messageId).build());
-                WorkLogDto acceptedByTelegramId = workLogDispatcher.getAcceptedByTelegramId(chatId);
+                WorkLogDto acceptedByTelegramId = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
                 TelegramMessageFactory.create(chatId, mainBot).currentActiveTask(acceptedByTelegramId.getTask()).execute();
                 return true;
             } else if (data.isData("tasks_queue")) {
@@ -235,7 +235,7 @@ public class TelegramController {
             mainBot.send(DeleteMessage.builder().chatId(chatId).messageId(messageId).build());
             if (chatsInTaskCloseMode.containsKey(chatId)) {
                 chatsInTaskCloseMode.remove(chatId);
-                WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramId(chatId);
+                WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
                 TelegramMessageFactory.create(chatId, mainBot).currentActiveTask(workLog.getTask()).execute();
                 TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Вы отменили завершение задачи, она вновь активна. Вы находитесь в режиме чата задачи.").execute();
                 return true;
@@ -248,7 +248,7 @@ public class TelegramController {
             // Получаем активную задачу по идентификатору чата
             Long chatId = update.getMessage().getChatId();
             try {
-                WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramId(chatId);
+                WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
                 TelegramMessageFactory.create(chatId, mainBot).closeWorkLogMessage().execute();
                 TelegramMessageFactory.create(chatId, mainBot).clearKeyboardMenu().execute();
                 chatsInTaskCloseMode.put(chatId, new ArrayList<>());
@@ -633,7 +633,7 @@ public class TelegramController {
         Employee author = employeeDispatcher.getByTelegramId(receivedMessage.getChatId()).orElseThrow(() -> new EntryNotFound("Идентификатор телеграм не привязан ни к одному аккаунту"));
         // Пытаемся получить активный журнал задачи монтажника который написал сообщение,
         // чтобы понять в какой чат транслировать сообщение.
-        WorkLogDto activeWorkLog = workLogDispatcher.getAcceptedByTelegramId(receivedMessage.getChatId());
+        WorkLogDto activeWorkLog = workLogDispatcher.getAcceptedByTelegramIdDTO(receivedMessage.getChatId());
         // Получаем целевой чат
         ChatDto chat = activeWorkLog.getChat();
         if (chat == null) throw new IllegalFields("Чат не прикреплен к журналу работ");

@@ -128,7 +128,7 @@ public class DlinkParser {
                     String setspd = statusPostMatcher.group("setspd");
                     String speed = statusPostMatcher.group("speed");
 
-                    builder.name(name);
+                    builder.name(name.trim());
 
                     if (state.equals("Disabled")) {
                         builder.status(PortInfo.Status.ADMIN_DOWN);
@@ -195,7 +195,7 @@ public class DlinkParser {
                 } catch (Throwable ignore) {
                 }
 
-                builder.name(name);
+                builder.name(name.trim());
 
                 if (state.equals("Disabled")) {
                     builder.status(PortInfo.Status.ADMIN_DOWN);

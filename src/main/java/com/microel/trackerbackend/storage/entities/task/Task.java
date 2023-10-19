@@ -190,6 +190,10 @@ public class Task {
         return getAllEmployeesObservers(null);
     }
 
+    public void appendEvent(TaskEvent taskEvent) {
+        getTaskEvents().add(taskEvent);
+    }
+
     /**
      * Объект для получения информации о задаче для создания
      */

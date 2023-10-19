@@ -12,55 +12,33 @@ import org.springframework.stereotype.Component;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 
 @Component
 public class NetworkConnectionLocationDispatcher {
     private final NetworkConnectionLocationRepository networkConnectionLocationRepository;
-    private final StompController stompController;
 
-    public NetworkConnectionLocationDispatcher(NetworkConnectionLocationRepository networkConnectionLocationRepository, StompController stompController) {
+    public NetworkConnectionLocationDispatcher(NetworkConnectionLocationRepository networkConnectionLocationRepository) {
         this.networkConnectionLocationRepository = networkConnectionLocationRepository;
-        this.stompController = stompController;
     }
 
     public NetworkConnectionLocation checkAndWrite(DhcpBinding existingSession, Switch commutator, PortInfo port, FdbItem fdbItem) {
         NetworkConnectionLocation lastConnectionLocation = networkConnectionLocationRepository.findFirstByDhcpBindingIdAndIsLast(existingSession.getId(), true);
         if (lastConnectionLocation == null) {
             NetworkConnectionLocation newLocation = NetworkConnectionLocation.of(existingSession, commutator, port, fdbItem);
-            NetworkConnectionLocation location = networkConnectionLocationRepository.save(newLocation);
-            return location;
-
-//            if(commutator.getAdditionalInfo() != null && commutator.getAdditionalInfo().getLastUpdate() != null && commutator.getAdditionalInfo().getPorts() != null) {
-//                location.setCommutatorInfo(commutator.getAdditionalInfo().getLastUpdate(), commutator.getAdditionalInfo().getPorts());
-//                existingSession.setLastConnectionLocation(location);
-//                stompController.updateDhcpBinding(existingSession);
-//            }
+            return networkConnectionLocationRepository.save(newLocation);
         }else{
             if(lastConnectionLocation.isLocationRelevant(commutator, port, fdbItem)){
                 lastConnectionLocation.setCommutatorName(commutator.getName());
                 lastConnectionLocation.setVlanName(fdbItem.getVlanName());
                 lastConnectionLocation.setPortId(port.getPortInfoId());
                 lastConnectionLocation.setCheckedAt(Timestamp.from(Instant.now()));
-                NetworkConnectionLocation location = networkConnectionLocationRepository.save(lastConnectionLocation);
-                return location;
-
-//                if(commutator.getAdditionalInfo() != null && commutator.getAdditionalInfo().getLastUpdate() != null && commutator.getAdditionalInfo().getPorts() != null) {
-//                    location.setCommutatorInfo(commutator.getAdditionalInfo().getLastUpdate(), commutator.getAdditionalInfo().getPorts());
-//                    existingSession.setLastConnectionLocation(location);
-//                    stompController.updateDhcpBinding(existingSession);
-//                }
+                return networkConnectionLocationRepository.save(lastConnectionLocation);
             }else{
                 lastConnectionLocation.setIsLast(false);
                 networkConnectionLocationRepository.save(lastConnectionLocation);
                 NetworkConnectionLocation newLocation = NetworkConnectionLocation.of(existingSession, commutator, port, fdbItem);
-                NetworkConnectionLocation location = networkConnectionLocationRepository.save(newLocation);
-                return location;
-
-//                if(commutator.getAdditionalInfo() != null && commutator.getAdditionalInfo().getLastUpdate() != null && commutator.getAdditionalInfo().getPorts() != null) {
-//                    location.setCommutatorInfo(commutator.getAdditionalInfo().getLastUpdate(), commutator.getAdditionalInfo().getPorts());
-//                    existingSession.setLastConnectionLocation(location);
-//                    stompController.updateDhcpBinding(existingSession);
-//                }
+                return networkConnectionLocationRepository.save(newLocation);
             }
         }
     }
@@ -68,5 +46,16 @@ public class NetworkConnectionLocationDispatcher {
     @Nullable
     public NetworkConnectionLocation getByBindingId(Integer bindingId) {
         return networkConnectionLocationRepository.findFirstByDhcpBindingIdAndIsLast(bindingId, true);
+    }
+
+    public List<NetworkConnectionLocation> getLastByCommutator(Integer id, @Nullable Integer port) {
+        if( port == null) {
+            return networkConnectionLocationRepository.findAllByCommutatorIdAndIsLast(id, true);
+        }
+        return networkConnectionLocationRepository.findAllByCommutatorIdAndPortNameLikeIgnoreCaseAndIsLast(id, "%"+port+"%", true);
+    }
+
+    public List<NetworkConnectionLocation> getAllByBindingId(Integer id) {
+        return networkConnectionLocationRepository.findAllByDhcpBindingId(id);
     }
 }

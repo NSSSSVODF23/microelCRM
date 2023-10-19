@@ -33,6 +33,7 @@ import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
 import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
+import com.microel.trackerbackend.storage.entities.acp.NetworkConnectionLocation;
 import com.microel.trackerbackend.storage.entities.acp.commutator.FdbItem;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.City;
@@ -1112,7 +1113,9 @@ public class PrivateRequestController {
         return ResponseEntity.ok(workLogDispatcher.getAllByTaskId(taskId));
     }
 
-    // Получить список активных журналов работ
+    /**
+     *Получить список активных журналов работ
+     */
     @GetMapping("work-logs/active")
     public ResponseEntity<List<WorkLog>> getActiveWorkLogs() {
         return ResponseEntity.ok(workLogDispatcher.getActive());
@@ -1767,18 +1770,18 @@ public class PrivateRequestController {
     }
 
     @GetMapping("billing/users/by-login")
-    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByLogin(@RequestParam String login) {
-        return ResponseEntity.ok(billingRequestController.getUsersByLogin(login));
+    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByLogin(@RequestParam String login, @RequestParam Boolean isActive) {
+        return ResponseEntity.ok(billingRequestController.getUsersByLogin(login, isActive));
     }
 
     @GetMapping("billing/users/by-fio")
-    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByFio(@RequestParam String query) {
-        return ResponseEntity.ok(billingRequestController.getUsersByFio(query));
+    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByFio(@RequestParam String query, @RequestParam Boolean isActive) {
+        return ResponseEntity.ok(billingRequestController.getUsersByFio(query, isActive));
     }
 
     @GetMapping("billing/users/by-address")
-    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByAddress(@RequestParam String address) {
-        return ResponseEntity.ok(billingRequestController.getUsersByAddress(address));
+    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByAddress(@RequestParam String address, @RequestParam Boolean isActive) {
+        return ResponseEntity.ok(billingRequestController.getUsersByAddress(address, isActive));
     }
 
     @GetMapping("billing/user/{login}")
@@ -1844,8 +1847,18 @@ public class PrivateRequestController {
                                                              @RequestParam @Nullable String login,
                                                              @RequestParam @Nullable String ip,
                                                              @RequestParam @Nullable Integer vlan,
-                                                             @RequestParam @Nullable Integer buildingId) {
-        return ResponseEntity.ok(acpClient.getLastBindings(page, state, macaddr, login, ip, vlan, buildingId));
+                                                             @RequestParam @Nullable Integer buildingId,
+                                                             @RequestParam @Nullable Integer commutator,
+                                                             @RequestParam @Nullable Integer port) {
+        if(commutator == null)
+            return ResponseEntity.ok(acpClient.getLastBindings(page, state, macaddr, login, ip, vlan, buildingId, null));
+
+        return ResponseEntity.ok(acpClient.getLastBindings(page, state, macaddr, login, ip, vlan, buildingId, commutator, port));
+    }
+
+    @GetMapping("acp/dhcp/binding/{id}/ncl-history")
+    public ResponseEntity<AcpClient.NCLHistoryWrapper> getNetworkConnectionLocation(@PathVariable Integer id) {
+        return ResponseEntity.ok(acpClient.getNetworkConnectionLocationHistory(id));
     }
 
     @PostMapping("acp/dhcp/binding/auth")

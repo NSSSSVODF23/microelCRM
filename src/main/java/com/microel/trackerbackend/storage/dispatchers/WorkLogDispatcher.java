@@ -20,6 +20,7 @@ import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.WorkLogRepository;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Sort;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.telegram.telegrambots.meta.api.objects.Message;
@@ -66,27 +67,9 @@ public class WorkLogDispatcher {
 
 //        HashSet<Employee> chatMembers = new HashSet<>(employees);
 //        chatMembers.add(creator);
-        Chat chat = Chat.builder()
-                .creator(creator)
-                .title("Чат из задачи #" + task.getTaskId())
-                .created(Timestamp.from(Instant.now()))
-                .members(Stream.of(creator).collect(Collectors.toSet()))
-                .deleted(false)
-                .updated(Timestamp.from(Instant.now()))
-                .build();
+        Chat chat = Chat.builder().creator(creator).title("Чат из задачи #" + task.getTaskId()).created(Timestamp.from(Instant.now())).members(Stream.of(creator).collect(Collectors.toSet())).deleted(false).updated(Timestamp.from(Instant.now())).build();
 
-        WorkLog workLog = WorkLog.builder()
-                .chat(chat)
-                .created(Timestamp.from(Instant.now()))
-                .task(task)
-                .isForceClosed(false)
-                .targetDescription(assignBody.getDescription())
-                .employees(assignBody.getInstallers())
-                .creator(creator)
-                .workReports(new HashSet<>())
-                .acceptedEmployees(new HashSet<>())
-                .calculated(false)
-                .build();
+        WorkLog workLog = WorkLog.builder().chat(chat).created(Timestamp.from(Instant.now())).task(task).isForceClosed(false).targetDescription(assignBody.getDescription()).employees(assignBody.getInstallers()).creator(creator).workReports(new HashSet<>()).acceptedEmployees(new HashSet<>()).calculated(false).build();
 
         return workLogRepository.save(workLog);
     }
@@ -107,35 +90,11 @@ public class WorkLogDispatcher {
                 throw new IllegalFields("Сотрудник с логином " + installer.getLogin() + " не монтажник");
         }
 
-        Chat chat = Chat.builder()
-                .creator(creator)
-                .title("Чат из задачи #" + task.getTaskId())
-                .created(creatingDate)
-                .members(Stream.of(creator).collect(Collectors.toSet()))
-                .deleted(false)
-                .updated(creatingDate)
-                .build();
+        Chat chat = Chat.builder().creator(creator).title("Чат из задачи #" + task.getTaskId()).created(creatingDate).members(Stream.of(creator).collect(Collectors.toSet())).deleted(false).updated(creatingDate).build();
 
-        WorkLog workLog = WorkLog.builder()
-                .chat(chat)
-                .created(creatingDate)
-                .task(task)
-                .isForceClosed(false)
-                .employees(installersReportForm.getInstallers())
-                .creator(creator)
-                .closed(creatingDate)
-                .acceptedEmployees(installersReportForm.getInstallers().stream().map((e) -> AcceptingEntry.of(e, creatingDate)).collect(Collectors.toSet()))
-                .calculated(false)
-                .build();
+        WorkLog workLog = WorkLog.builder().chat(chat).created(creatingDate).task(task).isForceClosed(false).employees(installersReportForm.getInstallers()).creator(creator).closed(creatingDate).acceptedEmployees(installersReportForm.getInstallers().stream().map((e) -> AcceptingEntry.of(e, creatingDate)).collect(Collectors.toSet())).calculated(false).build();
 
-        workLog.setWorkReports(installersReportForm.getInstallers().stream().map((e) ->
-                WorkReport.builder()
-                        .author(e)
-                        .created(creatingDate)
-                        .description(installersReportForm.getReport())
-                        .workLog(workLog)
-                        .build()
-        ).collect(Collectors.toSet()));
+        workLog.setWorkReports(installersReportForm.getInstallers().stream().map((e) -> WorkReport.builder().author(e).created(creatingDate).description(installersReportForm.getReport()).workLog(workLog).build()).collect(Collectors.toSet()));
 
         return workLogRepository.save(workLog);
     }
@@ -177,6 +136,27 @@ public class WorkLogDispatcher {
         }).stream().map(WorkLogMapper::toDto).collect(Collectors.toList());
     }
 
+    @Nullable
+    public WorkLog getAcceptedWorkLogByTelegramId(Long chatId) {
+        return workLogRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            Subquery<WorkReport> subquery = query.subquery(WorkReport.class);
+            Root<WorkReport> workReportRoot = subquery.from(WorkReport.class);
+            subquery.select(workReportRoot).distinct(true).where(cb.equal(workReportRoot.join("author").get("telegramUserId"), String.valueOf(chatId)));
+
+            Join<String, Employee> employeeJoin = root.join("employees", JoinType.LEFT);
+            predicates.add(cb.equal(employeeJoin.get("telegramUserId"), String.valueOf(chatId)));
+
+            Join<Object, Object> workReportsJoin = root.join("workReports", JoinType.LEFT);
+            predicates.add(cb.or(workReportsJoin.isNull(), cb.in(workReportsJoin).value(subquery).not()));
+
+            predicates.add(cb.isNull(root.get("closed")));
+            query.distinct(true);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }).stream().findFirst().orElse(null);
+    }
+
     /**
      * Возвращает активный {@link WorkLog} по идентификатору чата из telegram.
      * Активным журналом задачи, считается не закрытый имеющий монтажника как исполнителя который принял эту задачу.
@@ -185,11 +165,22 @@ public class WorkLogDispatcher {
      * @return Сущность {@link WorkLog}
      * @throws EntryNotFound Если активного журнала задачи не найдено
      */
-    public WorkLogDto getAcceptedByTelegramId(Long chatId) throws EntryNotFound {
-        return getQueueByTelegramId(chatId).stream()
-                .filter(workLog -> workLog.getAcceptedEmployees() != null && workLog.getAcceptedEmployees().stream().anyMatch(e -> e.getTelegramUserId().equals(chatId.toString())))
-                .findFirst()
-                .orElseThrow(() -> new EntryNotFound("Нет активной задачи"));
+    public WorkLogDto getAcceptedByTelegramIdDTO(Long chatId) throws EntryNotFound {
+        return getQueueByTelegramId(chatId).stream().filter(workLog -> workLog.getAcceptedEmployees() != null && workLog.getAcceptedEmployees().stream().anyMatch(e -> e.getTelegramUserId().equals(chatId.toString()))).findFirst().orElseThrow(() -> new EntryNotFound("Нет активной задачи"));
+    }
+
+    /**
+     * Возвращает активный {@link WorkLog} по идентификатору чата из telegram.
+     * Активным журналом задачи, считается не закрытый имеющий монтажника как исполнителя который принял эту задачу.
+     *
+     * @param chatId Идентификатор чата из telegram
+     * @return Сущность {@link WorkLog}
+     * @throws EntryNotFound Если активного журнала задачи не найдено
+     */
+    public WorkLog getAcceptedByTelegramId(Long chatId) throws EntryNotFound {
+        WorkLog acceptedWorkLogByTelegramId = getAcceptedWorkLogByTelegramId(chatId);
+        if(acceptedWorkLogByTelegramId == null) throw new EntryNotFound("Нет активной задачи");
+        return acceptedWorkLogByTelegramId;
     }
 
     public ChatDto getChatByWorkLogId(Long workLogId) throws EntryNotFound {
@@ -224,7 +215,7 @@ public class WorkLogDispatcher {
 
     public WorkLog createReport(Long chatId, List<Message> messageList) throws EntryNotFound, IllegalFields {
         Employee employee = employeeDispatcher.getByTelegramId(chatId).orElseThrow(() -> new EntryNotFound("Сотрудник не найден"));
-        WorkLog workLog = WorkLogMapper.fromDto(getAcceptedByTelegramId(chatId));
+        WorkLog workLog = getAcceptedByTelegramId(chatId);
         if (workLog.getAcceptedEmployees().stream().noneMatch(acceptingEntry -> acceptingEntry.getTelegramUserId().equals(chatId.toString())))
             throw new IllegalFields("Невозможно закрыть не активную задачу");
         if (workLog.getWorkReports().stream().anyMatch(workReport -> workReport.getAuthor().equals(employee)))

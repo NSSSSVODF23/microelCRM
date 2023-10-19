@@ -50,6 +50,7 @@ public class TaskEvent implements TaskJournalItem {
         this.creator = creator;
         this.message = message;
         this.created = Timestamp.from(Instant.now());
+        this.task.appendEvent(this);
     }
 
     public static TaskEvent changeStage(Task task, TaskStage newStage, Employee employee) {

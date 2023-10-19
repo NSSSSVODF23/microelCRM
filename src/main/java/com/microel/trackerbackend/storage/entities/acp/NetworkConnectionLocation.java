@@ -45,6 +45,10 @@ public class NetworkConnectionLocation {
     @Transient
     private Timestamp lastPortCheck;
 
+    public String getConnectionName() {
+        return commutatorName.trim() + " - " + portName.trim() + " порт";
+    }
+
     public static NetworkConnectionLocation of(DhcpBinding session, Switch sw, PortInfo port, FdbItem fdbItem) {
         Timestamp createAndChecked = Timestamp.from(Instant.now());
         return NetworkConnectionLocation.builder()

@@ -78,9 +78,10 @@ public class BillingRequestController {
     }
 
     @Nullable
-    public List<UserItemData> getUsersByLogin(String login) {
+    public List<UserItemData> getUsersByLogin(String login, Boolean isActive) {
         prepareRequestBody("UsersByLogin");
         setRequestProp("skey", login);
+        setRequestProp("uname_live", isActive ? "1" : "0");
         calculateSign();
         try {
             return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
@@ -90,10 +91,11 @@ public class BillingRequestController {
     }
 
     @Nullable
-    public List<UserItemData> getUsersByFio(String query) {
+    public List<UserItemData> getUsersByFio(String query, Boolean isActive) {
 
         prepareRequestBody("UsersByFio");
         setRequestProp("skey", query);
+        setRequestProp("uname_live", isActive ? "1" : "0");
         calculateSign();
 
         try {
@@ -104,10 +106,11 @@ public class BillingRequestController {
     }
 
     @Nullable
-    public List<UserItemData> getUsersByAddress(String address) {
+    public List<UserItemData> getUsersByAddress(String address, Boolean isActive) {
 
         prepareRequestBody("UsersByAddr");
         setRequestProp("skey", address);
+        setRequestProp("uname_live", isActive ? "1" : "0");
         calculateSign();
 
         try {
@@ -288,6 +291,9 @@ public class BillingRequestController {
                 }
                 case 7 -> {
                     return "Нет денег";
+                }
+                case 11 -> {
+                    return "Отключен>30дн";
                 }
                 default -> {
                     return "Неактивный";
@@ -501,6 +507,9 @@ public class BillingRequestController {
                         }
                     }
                     return "Нет денег";
+                }
+                case 11 ->{
+                    return "Отключен>30дн";
                 }
                 default -> {
                     return "Неактивный";
