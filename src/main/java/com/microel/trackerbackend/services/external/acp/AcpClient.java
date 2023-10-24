@@ -526,14 +526,16 @@ public class AcpClient {
 
         Long duration = end - start;
         Long step = duration / 100;
+        if(step == 0L) step = 1L;
         AtomicLong prevPercent = new AtomicLong(-1L);
 
+        Long finalStep = step;
         Map<String, List<NCLHistoryItem>> items = nclByBinding.stream().map(ncl->{
             Long nclStart = ncl.getCreatedAt().getTime();
             Long nclEnd = ncl.getCheckedAt().getTime();
-            Long nclStartPercent = (nclStart - start) / step;
+            Long nclStartPercent = (nclStart - start) / finalStep;
             if(nclStartPercent.equals(prevPercent.get())) nclStartPercent++;
-            Long nclEndPercent = ((nclEnd - nclStart) / step)+nclStartPercent;
+            Long nclEndPercent = ((nclEnd - nclStart) / finalStep)+nclStartPercent;
             if(nclEndPercent <= nclStartPercent) nclEndPercent = nclStartPercent+1;
             if(nclEndPercent > 99L) nclEndPercent = 99L;
             prevPercent.set(nclEndPercent);

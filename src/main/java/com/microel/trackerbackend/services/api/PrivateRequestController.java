@@ -1819,6 +1819,11 @@ public class PrivateRequestController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("billing/counting-lives")
+    public ResponseEntity<Map<String,String>> getCountingLives(@RequestBody BillingRequestController.CountingLivesForm form){
+        return ResponseEntity.ok(Map.of("result",billingRequestController.getCalculateCountingLives(form)));
+    }
+
     @GetMapping("convert/billing-address-string")
     public ResponseEntity<AddressDto> convertBillingAddressString(@RequestParam @Nullable String addressString) {
         if (addressString == null) return ResponseEntity.ok(null);
@@ -1988,6 +1993,11 @@ public class PrivateRequestController {
         return ResponseEntity.ok(ConnectionType.getList());
     }
 
+    @GetMapping("types/advertising-source")
+    public ResponseEntity<List<Map<String, String>>> getAdvertisingSourceTypes() {
+        return ResponseEntity.ok(AdvertisingSource.getList());
+    }
+
     @GetMapping("types/billing-payment-type")
     public ResponseEntity<List<BillingPayType.ListItem>> getPaymentTypeTypes() {
         return ResponseEntity.ok(BillingPayType.getList());
@@ -2049,6 +2059,18 @@ public class PrivateRequestController {
     @GetMapping("client-equipments")
     public ResponseEntity<List<ClientEquipment>> getClientEquipment(@Nullable @RequestParam String query, @Nullable @RequestParam Boolean isDeleted) {
         return ResponseEntity.ok(clientEquipmentDispatcher.get(query, isDeleted));
+    }
+
+    @GetMapping("client-equipments/suggestions")
+    public ResponseEntity<List<Map<String, String>>> getClientEquipment(@Nullable @RequestParam String query) {
+        return ResponseEntity.ok(clientEquipmentDispatcher.get(query, false).stream()
+                        .map(equipment -> {
+                            return Map.of(
+                                    "label", equipment.getName(),
+                                    "value", equipment.getClientEquipmentId().toString()
+                            );
+                        })
+                .collect(Collectors.toList()));
     }
 
     @PostMapping("client-equipment")

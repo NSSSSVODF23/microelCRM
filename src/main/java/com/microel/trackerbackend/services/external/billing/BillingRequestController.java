@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.services.external.billing;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.marcospassos.phpserializer.Serializer;
 import com.marcospassos.phpserializer.SerializerBuilder;
 import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
@@ -25,6 +26,8 @@ import java.net.URL;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.CRC32;
@@ -128,6 +131,20 @@ public class BillingRequestController {
         }
     }
 
+    public String getCalculateCountingLives(CountingLivesForm form){
+        List<UserItemData> usersByAddress = getUsersByAddress(form.getAddress().getBillingAddress(), true);
+        if(usersByAddress == null || usersByAddress.isEmpty()){
+            usersByAddress = getUsersByAddress(form.getAddress().getBillingAddress(true), true);
+        }
+        if(usersByAddress == null || usersByAddress.isEmpty()){
+            return "Живых пользователей нет";
+        }
+        List<UserItemData> lives = usersByAddress.stream().filter(UserItemData::getIsActive).filter(f -> f.isApartNumberInRange(form.getStartApart(), form.getEndApart())).toList();
+        if(lives.isEmpty()) return "Живых пользователей нет";
+
+        return "Живые: " + lives.stream().sorted((o1,o2)->Comparator.nullsLast(Integer::compareTo).compare(o1.getApartNumber(), o2.getApartNumber()))
+                .map(UserItemData::getApartName).collect(Collectors.joining(", ")) + "  Кол-во: "+ lives.size();
+    }
 
     public TotalUserInfo getUserInfo(String login) {
         prepareRequestBody("getUserInfo");
@@ -240,6 +257,14 @@ public class BillingRequestController {
 
     @Getter
     @Setter
+    public static class CountingLivesForm{
+        private Address address;
+        private Integer startApart;
+        private Integer endApart;
+    }
+
+    @Getter
+    @Setter
     public static class UserItemData {
         private String tarif;
         private String uname;
@@ -278,6 +303,44 @@ public class BillingRequestController {
             u.setFio(map.get("fio"));
 
             return u;
+        }
+
+        @JsonIgnore
+        public Boolean getIsActive(){
+            return state == 1 || state == 7;
+        }
+
+        @JsonIgnore
+        @Nullable
+        public String getApartName(){
+            Pattern apartPattern = Pattern.compile("[^-]+-(.+)");
+            Matcher apartMatcher = apartPattern.matcher(addr);
+            if(apartMatcher.find()){
+                return apartMatcher.group(1).replaceAll("( \\(\\d{0,2}\\.?\\d{0,2}\\))", "");
+            }
+            return null;
+        }
+
+        @JsonIgnore
+        @Nullable
+        public Integer getApartNumber() {
+            String apartName = getApartName();
+            if(apartName == null) return null;
+            Pattern digitPattern = Pattern.compile("(\\d+)");
+            Matcher digitMatcher = digitPattern.matcher(apartName);
+            if(digitMatcher.find()) {
+                return Integer.parseInt(digitMatcher.group(1));
+            }
+            return null;
+        }
+
+        @JsonIgnore
+        public Boolean isApartNumberInRange(int start, int end){
+            Integer apartNumber = getApartNumber();
+            if(apartNumber !=null) {
+                return apartNumber >= start && apartNumber <= end;
+            }
+            return true;
         }
 
         public String getStateName() {

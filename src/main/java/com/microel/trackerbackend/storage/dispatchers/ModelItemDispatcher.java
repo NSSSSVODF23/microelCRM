@@ -1,7 +1,11 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.microel.trackerbackend.services.api.ResponseException;
+import com.microel.trackerbackend.storage.entities.templating.ConnectionService;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.CountItemsByTask;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
@@ -37,12 +41,32 @@ public class ModelItemDispatcher {
         // Действительное кол-во примененных фильтров
         AtomicLong acceptedFilters = new AtomicLong();
 
+    // todo Для добавления типа поля, нужно добавить сюда3
         // Фильтруем таблицу с данными по задачам
         Page<ModelItem> modelItems = modelItemRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             Join<Object, Object> phoneTable = root.join("phoneData", JoinType.LEFT);
             for (FilterModelItem filter : filters) {
+                if(filter.getValue().isNull()) break;
                 switch (filter.getWireframeFieldType()) {
+                    case BOOLEAN:
+                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),cb.equal(root.get("booleanData"),filter.getValue().asBoolean())));
+                        acceptedFilters.getAndIncrement();
+                        break;
+                    case INTEGER:
+                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),cb.equal(root.get("integerData"),filter.getValue().asInt())));
+                        acceptedFilters.getAndIncrement();
+                        break;
+                    case FLOAT:
+                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),cb.equal(root.get("floatData"),filter.getValue().asDouble())));
+                        acceptedFilters.getAndIncrement();
+                        break;
+                    case AD_SOURCE:
+                    case CONNECTION_TYPE:
+                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),cb.equal(root.get("stringData"),filter.getValue().asText())));
+                    case LOGIN:
+                    case IP:
+                    case REQUEST_INITIATOR:
                     case SMALL_TEXT:
                         if (filter.getValue().asText().isBlank()) break;
                         if (filter.getValue().asText().chars().filter(c -> c == ' ').findFirst().isPresent()) {
@@ -52,6 +76,7 @@ public class ModelItemDispatcher {
                         }
                         acceptedFilters.getAndIncrement();
                         break;
+                    case COUNTING_LIVES:
                     case LARGE_TEXT:
                         if (filter.getValue().asText().isBlank()) break;
                         predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()), cb.isTrue(cb.function("fts", Boolean.class, root.get("stringData"), cb.literal(filter.getValue().asText())))));
@@ -84,6 +109,34 @@ public class ModelItemDispatcher {
                                 )
                         );
                         acceptedFilters.getAndIncrement();
+                        break;
+                    case CONNECTION_SERVICES:
+                        try {
+                            ArrayNode servicesArray = (ArrayNode) filter.getValue();
+                            if(servicesArray.isEmpty()) break;
+                            List<ConnectionService> services = new ArrayList<>();
+                            servicesArray.forEach(node->{
+                                services.add(ConnectionService.getByValue(node.get("connectionService").asText()));
+                            });
+                            predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),root.join("connectionServicesData", JoinType.LEFT).get("connectionService").in(services)));
+                            acceptedFilters.getAndIncrement();
+                        }catch (Throwable e){
+                            break;
+                        }
+                        break;
+                    case EQUIPMENTS:
+                        try {
+                            ArrayNode equipmentsArray = (ArrayNode) filter.getValue();
+                            if(equipmentsArray.isEmpty()) break;
+                            List<Long> equipments = new ArrayList<>();
+                            equipmentsArray.forEach(node->{
+                                equipments.add(node.get("equipmentRealization").asLong());
+                            });
+                            predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),root.join("equipmentRealizationsData", JoinType.LEFT).join("equipment", JoinType.LEFT).get("clientEquipmentId").in(equipments)));
+                            acceptedFilters.getAndIncrement();
+                        }catch (Throwable e){
+                            break;
+                        }
                         break;
                 }
             }

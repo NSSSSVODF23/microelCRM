@@ -1,11 +1,13 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.modules.transport.IDuration;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.OffsetPageable;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
+import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskStatus;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
@@ -117,6 +119,7 @@ public class TaskDispatcher {
     public Task createTask(Task.CreationBody body, Timestamp timestamp, Employee employee) throws IllegalFields, EntryNotFound {
         // Создаем временный объект задачи
         Task createdTask = new Task();
+        createdTask.setComments(new ArrayList<>());
         // Устанавливаем время создания задачи
         createdTask.setCreated(timestamp);
         // Устанавливаем время обновления задачи
@@ -175,6 +178,21 @@ public class TaskDispatcher {
             return taskRepository.save(createdTask);
         }
 
+        if (body.getInitialComment() != null && !body.getInitialComment().trim().isBlank()) {
+            Comment initialComment = Comment.builder()
+                    .deleted(false)
+                    .edited(false)
+                    .created(Timestamp.from(Instant.now()))
+                    .creator(employee)
+                    .message(body.getInitialComment())
+                    .replyComment(null)
+                    .attachments(new ArrayList<>())
+                    .parent(null)
+                    .build();
+            createdTask.appendComment(initialComment);
+            createdTask.setLastComment(initialComment);
+        }
+
         return taskRepository.save(createdTask);
     }
 
@@ -188,8 +206,11 @@ public class TaskDispatcher {
             if (status != null && !status.isEmpty()) predicates.add(root.get("taskStatus").in(status));
             if (template != null && !template.isEmpty())
                 predicates.add(root.join("modelWireframe").get("wireframeId").in(template));
-            if (filters != null && !filters.isEmpty())
-                predicates.add(root.get("taskId").in(modelItemDispatcher.getTaskIdsByFilters(filters)));
+            if (filters != null && !filters.isEmpty()) {
+                List<FilterModelItem> filterModelItems = filters.stream().filter(f -> !f.getValue().isNull() && !(f.getValue().isArray() && ((ArrayNode) f.getValue()).isEmpty())).toList();
+                if(!filterModelItems.isEmpty())
+                    predicates.add(root.get("taskId").in(modelItemDispatcher.getTaskIdsByFilters(filterModelItems)));
+            }
             if (commonFilteringString != null && !commonFilteringString.isBlank()) {
                 CriteriaBuilder.In<Long> inCauseTaskId = cb.in(root.get("taskId"));
                 modelItemDispatcher.getTaskIdsByGlobalSearch(commonFilteringString).forEach(inCauseTaskId::value);
@@ -540,7 +561,7 @@ public class TaskDispatcher {
         if (task.getTaskStatus().equals(TaskStatus.CLOSE)) throw new IllegalFields("Задача уже закрыта");
 
         // Редактируем поля задачи и сохраняем их в БД
-        task.editFields(modelItemDispatcher.prepareModelItems(modelItems)); // FIXME: Выдает ошибку при редактировании подключаемых сервисов
+        task.editFields(modelItemDispatcher.prepareModelItems(modelItems));
         task.setUpdated(Timestamp.from(Instant.now()));
         return taskRepository.save(task);
     }

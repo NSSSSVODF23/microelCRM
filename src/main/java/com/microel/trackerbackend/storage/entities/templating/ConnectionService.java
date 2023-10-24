@@ -31,4 +31,8 @@ public enum ConnectionService {
         return Stream.of(ConnectionService.values()).map(value->Map.of("label", value.getLabel(), "value", value.getValue())).toList();
     }
 
+    public static ConnectionService getByValue(String value) {
+        return Stream.of(ConnectionService.values()).filter(service -> service.getValue().equals(value)).findFirst().orElseThrow();
+    }
+
 }

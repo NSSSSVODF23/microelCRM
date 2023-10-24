@@ -18,7 +18,8 @@ public enum WireframeFieldType {
     EQUIPMENTS("EQUIPMENTS"),
     CONNECTION_SERVICES("CONNECTION_SERVICES"),
     CONNECTION_TYPE("CONNECTION_TYPE"),
-    PHONE_ARRAY("PHONE_ARRAY");
+    PHONE_ARRAY("PHONE_ARRAY"),
+    COUNTING_LIVES("COUNTING_LIVES");
 
     private final String name;
 
@@ -30,22 +31,24 @@ public enum WireframeFieldType {
         return name;
     }
 
+    // todo Для добавления типа поля, нужно добавить сюда1
     public String getLabel() {
         return switch (name) {
             case "BOOLEAN" -> "Логическое";
             case "SMALL_TEXT" -> "Строка текста";
             case "LARGE_TEXT" -> "Текст";
-            case "INTEGER" -> "Целочисленное";
-            case "FLOAT" -> "Не целочисленное";
+            case "INTEGER" -> "Целое число";
+            case "FLOAT" -> "Дробное число";
             case "ADDRESS" -> "Адрес";
             case "LOGIN" -> "Логин";
             case "AD_SOURCE" -> "Рекламный источник";
-            case "REQUEST_INITIATOR" -> "Тип принятия задачи";
+            case "REQUEST_INITIATOR" -> "Инициатор задачи";
             case "IP" -> "IP Адрес";
             case "EQUIPMENTS" -> "Абонентское оборудование";
             case "CONNECTION_SERVICES" -> "Подключаемые услуги";
             case "CONNECTION_TYPE" -> "Тип подключения";
             case "PHONE_ARRAY" -> "Телефонные номера";
+            case "COUNTING_LIVES" -> "Количество живых";
             default -> "НЕИЗВЕСТНЫЙ ТИП";
         };
     }

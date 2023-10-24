@@ -35,6 +35,8 @@ public class ModelItemDto {
     private String textRepresentation;
     private String textRepresentationForTlg;
 
+
+    // todo Для добавления типа поля, нужно добавить сюда2
     @JsonIgnore
     public Object getValue() {
         return switch (wireframeFieldType) {
@@ -42,8 +44,7 @@ public class ModelItemDto {
             case BOOLEAN -> booleanData;
             case FLOAT -> floatData;
             case INTEGER -> integerData;
-            case LARGE_TEXT, LOGIN, SMALL_TEXT, IP, REQUEST_INITIATOR, AD_SOURCE, CONNECTION_TYPE ->
-                    stringData;
+            case COUNTING_LIVES, LARGE_TEXT, LOGIN, SMALL_TEXT, IP, REQUEST_INITIATOR, AD_SOURCE, CONNECTION_TYPE -> stringData;
             case PHONE_ARRAY -> phoneData;
             case CONNECTION_SERVICES -> connectionServicesData;
             case EQUIPMENTS -> equipmentRealizationsData;

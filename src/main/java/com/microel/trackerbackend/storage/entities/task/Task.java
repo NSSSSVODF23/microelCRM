@@ -38,7 +38,7 @@ public class Task {
 
     private Timestamp created;
     private Timestamp updated;
-    @OneToOne
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @JoinColumn(name = "f_last_comment_id")
     private Comment lastComment;
 
@@ -165,6 +165,11 @@ public class Task {
         comments = commentsAppend.stream().peek(f -> f.setParent(this)).collect(Collectors.toList());
     }
 
+    public void appendComment(Comment comment) {
+        comment.setParent(this);
+        comments.add(comment);
+    }
+
     public void setChildren(List<Task> childrenAppend) {
         children = childrenAppend.stream().peek(f -> f.setParent(taskId)).collect(Collectors.toList());
     }
@@ -206,5 +211,7 @@ public class Task {
         private Long childId;
         @Nullable
         private Long parentId;
+        @Nullable
+        private String initialComment;
     }
 }
