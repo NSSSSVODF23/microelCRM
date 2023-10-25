@@ -143,7 +143,7 @@ public class BillingRequestController {
         if(lives.isEmpty()) return "Живых пользователей нет";
 
         return "Живые: " + lives.stream().sorted((o1,o2)->Comparator.nullsLast(Integer::compareTo).compare(o1.getApartNumber(), o2.getApartNumber()))
-                .map(UserItemData::getApartName).collect(Collectors.joining(", ")) + "  Кол-во: "+ lives.size();
+                .map(UserItemData::getAddressOrName).collect(Collectors.joining(", ")) + "  Кол-во: "+ lives.size();
     }
 
     public TotalUserInfo getUserInfo(String login) {
@@ -316,9 +316,16 @@ public class BillingRequestController {
             Pattern apartPattern = Pattern.compile("[^-]+-(.+)");
             Matcher apartMatcher = apartPattern.matcher(addr);
             if(apartMatcher.find()){
-                return apartMatcher.group(1).replaceAll("( \\(\\d{0,2}\\.?\\d{0,2}\\))", "");
+                return apartMatcher.group(1).replaceAll(" \\(\\d{0,2}\\.?\\d{0,2}\\)", "");
             }
             return null;
+        }
+
+        @JsonIgnore
+        public String getAddressOrName() {
+            String apartName = getApartName();
+            if(apartName == null || apartName.isBlank()) return uname;
+            return apartName;
         }
 
         @JsonIgnore

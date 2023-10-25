@@ -77,11 +77,11 @@ public class CharacterTranslation {
         char[] chars = input.toCharArray();
         int index = 0;
         for(Character character : chars) {
-            if(character.equals('.') && index>0 && !characterMap.containsKey(chars[index-1])){
-                result.append('.');
+            if(((index > 0 && characterMap.containsKey(chars[index-1])) || (index < chars.length-1 && characterMap.containsKey(chars[index+1]))) && characterMap.containsKey(character)){
+                result.append(characterMap.getOrDefault(character, character));
                 continue;
             }
-            result.append(characterMap.getOrDefault(character, character));
+            result.append(character);
             index++;
         }
         return result.toString();

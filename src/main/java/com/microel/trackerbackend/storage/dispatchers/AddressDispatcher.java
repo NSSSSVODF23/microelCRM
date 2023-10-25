@@ -140,23 +140,23 @@ public class AddressDispatcher {
 
         List<String> cityParts = List.of("^(?<city>[а-я]{4})\\. ([а-я\\-]{2,10}\\.)?", "");
         List<String> streetParts = List.of(
-                "(?<street>\\d{1,2} [а-я]{1,5})",
-                "(?<street>[а-я].[а-я]. [а-я]+)",
-                "(?<street>[а-я]+ \\d-?[а-я]{1,3})",
-                "(?<street>[а-я]+ [а-я]+ [а-я]+)",
-                "(?<street>\\d{1,2} [а-я]{1,5} [а-я]+)",
                 "(?<street>\\d{1,2}-?[а-я]{1,2} [а-я]+)",
-                "(?<street>[а-я]+. ?[а-я]+)",
-                "(?<street>[а-я]+ [а-я]+)",
+                "(?<street>\\d{1,2} [а-я]{1,5} [а-я]+)",
+                "(?<street>[а-я]+.? ?[а-я]+.? [а-я]+)",
+                "(?<street>[а-я]+ \\d-?[а-я]{1,3})",
+                "(?<street>\\d{1,2} ?[а-я]{1,5})",
+                "(?<street>[а-я]+.? ?[а-я]+)",
                 "(?<street>[а-я]+)"
         );
         List<String> houseParts = List.of(
-                " (?<hn>\\d{1,4})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(( с\\.?| стр\\.?| строение|_)(?<hb>\\d{1,3}))?",
-                ""
+                " (?<hn>\\d{1,4})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(( с\\.?| стр\\.?| строение|_)(?<hb>\\d{1,3}))?"
         );
         List<String> apartParts = List.of(
-                "(( |-| кв.)(?<an>\\d{1,3}))?( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))?( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))?( \\((?<am>[а-я]+)\\))?",
-                "(( |-| кв.)(?<an>\\d{1,3}))?( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))?( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))?( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
                 ""
         );
 
@@ -170,6 +170,8 @@ public class AddressDispatcher {
             suggestions.addAll(collect);
         }
 
+//        System.out.println("\r\n\r\n----Query '"+query+"' ----");
+
         for (String cityPart : cityParts) {
             if(!suggestions.isEmpty()) break;
             for (String streetPart : streetParts) {
@@ -179,7 +181,10 @@ public class AddressDispatcher {
                         Pattern pattern = Pattern.compile(rexp, matchSetting);
                         Matcher matcher = pattern.matcher(query);
                         AddressLookupRequest request = AddressLookupRequest.of(matcher);
-                        if (request == null) continue;
+                        if (request == null) {
+//                            System.out.println("Regex: " + rexp + " failed");
+                            continue;
+                        }
                         if (request.houseNum != null) {
                             List<House> foundHouses = houseDispatcher.lookup(request, isAcpConnected);
                             List<Address> collect = foundHouses.stream().filter(house -> !house.isSomeDeleted())
@@ -187,14 +192,22 @@ public class AddressDispatcher {
                                         if(isHouseOnly != null && isHouseOnly){
                                             return house.getAddress();
                                         }
-                                        return house.getAddress(request.entrance, request.floor, request.apartment, request.apartmentMod);
+                                        Address address = house.getAddress(request.entrance, request.floor, request.apartment, request.apartmentMod);
+//                                        System.out.println("Regex:  " + rexp + " succeeded");
+//                                        System.out.println("Groups:  " + matcher);
+//                                        System.out.println("Address: "+ address.getAddressName());
+                                        return address;
                                     })
                                     .toList();
                             suggestions.addAll(collect);
                         } else {
                             List<Street> foundStreets = streetDispatcher.containsInName(request.streetName);
                             for (Street street : foundStreets) {
-                                suggestions.addAll(street.getAddress(isAcpConnected));
+                                List<Address> address = street.getAddress(isAcpConnected);
+//                                System.out.println("Regex:  " + rexp + " succeeded");
+//                                System.out.println("Groups:  " + matcher);
+//                                address.forEach(a-> System.out.println("Address: "+ a.getAddressName()));
+                                suggestions.addAll(address);
                             }
                         }
                         if(!suggestions.isEmpty()) break;
@@ -204,6 +217,23 @@ public class AddressDispatcher {
                 if(!suggestions.isEmpty()) break;
             }
             if(!suggestions.isEmpty()) break;
+        }
+
+        if(suggestions.isEmpty()){
+            for (String streetPattern : streetParts){
+                Pattern pattern = Pattern.compile(streetPattern, matchSetting);
+                Matcher matcher = pattern.matcher(query);
+                AddressLookupRequest request = AddressLookupRequest.of(matcher);
+                if(request == null) continue;
+                List<Street> foundStreets = streetDispatcher.containsInName(request.streetName);
+                for (Street street : foundStreets) {
+                    List<Address> address = street.getAddress(isAcpConnected);
+//                                System.out.println("Regex:  " + rexp + " succeeded");
+//                                System.out.println("Groups:  " + matcher);
+//                                address.forEach(a-> System.out.println("Address: "+ a.getAddressName()));
+                    suggestions.addAll(address);
+                }
+            }
         }
 
         String finalQuery = query;

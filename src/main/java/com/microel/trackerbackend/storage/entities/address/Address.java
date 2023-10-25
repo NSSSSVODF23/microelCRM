@@ -102,7 +102,8 @@ public class Address implements Comparable<Address> {
         if(getFraction() != null && withFraction) billingAddress.append("/").append(getFraction());
         if(getLetter() != null) billingAddress.append(getLetter());
         if(getBuild() != null) billingAddress.append("_").append(getBuild());
-        if(getApartmentNum() != null) billingAddress.append("-").append(getApartmentNum());
+        billingAddress.append("-");
+        if(getApartmentNum() != null) billingAddress.append(getApartmentNum());
         return billingAddress.toString();
     }
 
