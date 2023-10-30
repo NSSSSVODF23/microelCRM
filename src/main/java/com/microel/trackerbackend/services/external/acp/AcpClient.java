@@ -217,6 +217,21 @@ public class AcpClient {
         });
     }
 
+    public Page<Switch> getCommutatorsWithAdditionalInfo(Integer page, Integer pageSize) {
+        Map<String, String> query = new HashMap<>();
+        if (pageSize != null) query.put("pageSize", pageSize.toString());
+        RequestEntity<Void> request = RequestEntity.get(url(query, "commutators", page.toString())).build();
+        RestPage<Switch> responseBody = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<Switch>>() {
+        }).getBody();
+        if(responseBody == null) throw new ResponseException("Ошибка при обращении к ACP");
+        Map<Integer, String> commutatorModelsNames = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
+        return responseBody.map(commutator -> {
+            AcpCommutator additionalInfo = acpCommutatorDispatcher.getById(commutator.getId());
+            commutator.setAdditionalInfo(additionalInfo);
+            return commutator;
+        });
+    }
+
     public List<Switch> getCommutatorsByVlan(Integer vlan) {
         Map<String, String> query = new HashMap<>();
         query.put("vlan", vlan.toString());
@@ -420,18 +435,18 @@ public class AcpClient {
         Map<Integer, String> commutatorModels = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
 
         Integer page = 0;
-        Map<String,String> query = Map.of("pageSize", "25");
-        RequestEntity<Void> request = RequestEntity.get(url(query, "commutators", page.toString())).build();
-        RestPage<Switch> commutatorsPage = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<Switch>>() {}).getBody();
+
+        Page<Switch> commutatorsPage = getCommutatorsWithAdditionalInfo(page, 25);
         if (commutatorsPage == null) throw new ResponseException("Не удалось получить список коммутаторов из ACP");
+
         while (!commutatorsPage.getContent().isEmpty()) {
             CountDownLatch latch = new CountDownLatch(commutatorsPage.getContent().size());
             for (Switch commutator : commutatorsPage.getContent()) {
-                AcpCommutator additionalInfo = commutator.getAdditionalInfo();
-                SystemInfo systemInfo = additionalInfo == null ? null : commutator.getAdditionalInfo().getSystemInfo();
-                List<PortInfo> ports = additionalInfo == null ? null : commutator.getAdditionalInfo().getPorts();
-                Thread thread = new Thread(() -> {
+                Executors.newSingleThreadExecutor().execute(() -> {
                     try {
+                        AcpCommutator additionalInfo = commutator.getAdditionalInfo();
+                        SystemInfo systemInfo = additionalInfo == null ? null : commutator.getAdditionalInfo().getSystemInfo();
+                        List<PortInfo> ports = additionalInfo == null ? null : commutator.getAdditionalInfo().getPorts();
 //                        System.out.println("Begin update commutator " + commutator.getName());
                         connectToCommutatorAndUpdate(commutator, additionalInfo, systemInfo, ports, commutatorModels);
 //                        System.out.println("Commutator " + commutator.getName() + " updated");
@@ -440,7 +455,6 @@ public class AcpClient {
                     }
                     latch.countDown();
                 });
-                thread.start();
             }
             try {
                 latch.await(30, TimeUnit.SECONDS);
@@ -448,8 +462,7 @@ public class AcpClient {
                 throw new RuntimeException(e.getMessage());
             }
             page++;
-            request = RequestEntity.get(url(query, "commutators", page.toString())).build();
-            commutatorsPage = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<Switch>>() {}).getBody();
+            commutatorsPage = getCommutatorsWithAdditionalInfo(page, 25);
             if (commutatorsPage == null) throw new ResponseException("Не удалось получить список коммутаторов из ACP");
         }
     }
