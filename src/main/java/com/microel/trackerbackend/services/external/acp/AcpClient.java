@@ -73,7 +73,7 @@ public class AcpClient {
         this.stompController = stompController;
     }
 
-    @Scheduled(cron = "0 */2 * * * *")
+    @Scheduled(cron = "0 0 */2 * * *")
     public void scheduleCommutatorsRefresh(){
         getAllCommutatorsRemoteUpdate();
     }
