@@ -15,6 +15,7 @@ import com.microel.trackerbackend.storage.dispatchers.*;
 import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
 import com.microel.trackerbackend.storage.entities.acp.NetworkConnectionLocation;
 import com.microel.trackerbackend.storage.entities.acp.commutator.*;
+import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import lombok.AllArgsConstructor;
@@ -27,6 +28,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.data.domain.Page;
 import org.springframework.http.RequestEntity;
 import org.springframework.lang.Nullable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -41,7 +43,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Service
@@ -72,6 +73,11 @@ public class AcpClient {
         this.stompController = stompController;
     }
 
+    @Scheduled(cron = "0 */2 * * * *")
+    public void scheduleCommutatorsRefresh(){
+        getAllCommutatorsRemoteUpdate();
+    }
+
     public List<DhcpBinding> getBindingsByLogin(String login) {
         DhcpBinding[] dhcpBindings = get(DhcpBinding[].class, Map.of("login", login), "dhcp", "bindings");
         if (dhcpBindings == null) return Collections.emptyList();
@@ -90,7 +96,7 @@ public class AcpClient {
         if (location != null && location.getPortId() != null) {
             AcpCommutator foundCommutator = acpCommutatorDispatcher.getById(location.getCommutatorId());
             if(foundCommutator != null && foundCommutator.getSystemInfo() != null && foundCommutator.getPorts() != null)
-                location.setCommutatorInfo(foundCommutator.getSystemInfo().getLastUpdate(), foundCommutator.getPorts());
+                location.setCommutatorInfo(foundCommutator.getSystemInfo().getLastUpdate(), foundCommutator.getPorts(), binding.getMacaddr());
         }
         binding.setLastConnectionLocation(location);
         return binding;
@@ -188,21 +194,26 @@ public class AcpClient {
         return get(SwitchModel.class, Map.of(), "commutator", "model", id.toString());
     }
 
-    public Page<Switch> getCommutators(Integer page, @Nullable String name, @Nullable String ip, @Nullable Integer buildingId, @Nullable Integer pageSize) {
+    public Page<SwitchBaseInfo> getCommutators(Integer page, @Nullable String name, @Nullable String ip, @Nullable Integer buildingId, @Nullable Integer pageSize) {
         Map<String, String> query = new HashMap<>();
         if (name != null) query.put("name", name);
         if (ip != null) query.put("ip", ip);
         if (buildingId != null) query.put("buildingId", buildingId.toString());
         if (pageSize != null) query.put("pageSize", pageSize.toString());
         RequestEntity<Void> request = RequestEntity.get(url(query, "commutators", page.toString())).build();
-        return Objects.requireNonNull(restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<Switch>>() {
-        }).getBody()).map(commutator -> {
-            if (commutator.getBuildId() == null) return commutator;
-            House house = houseDispatcher.getByAcpBindId(commutator.getBuildId());
+        RestPage<Switch> responseBody = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<Switch>>() {
+        }).getBody();
+        if(responseBody == null) throw new ResponseException("Ошибка при обращении к ACP");
+        Map<Integer, String> commutatorModelsNames = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
+        return responseBody.map(commutator -> {
             AcpCommutator additionalInfo = acpCommutatorDispatcher.getById(commutator.getId());
-            if (additionalInfo != null) commutator.setAdditionalInfo(additionalInfo);
-            if (house != null) commutator.setAddress(house.getAddress());
-            return commutator;
+            commutator.setAdditionalInfo(additionalInfo);
+            return SwitchBaseInfo.from(commutator, commutatorModelsNames.get(commutator.getSwmodelId().intValue()));
+
+//            if (commutator.getBuildId() == null) return commutator;
+//            House house = houseDispatcher.getByAcpBindId(commutator.getBuildId());
+//            if (additionalInfo != null) commutator.setAdditionalInfo(additionalInfo);
+//            if (house != null) commutator.setAddress(house.getAddress());
         });
     }
 
@@ -300,6 +311,16 @@ public class AcpClient {
         return switchWithAddress;
     }
 
+    public SwitchEditingPreset getCommutatorEditingPreset(Integer id) {
+        SwitchWithAddress target = getCommutator(id);
+        if (target == null) throw new ResponseException("Не найден коммутатор");
+        Map<Integer, SwitchModel> commutatorModelsNames = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, s->s));
+        House house = houseDispatcher.getByAcpBindId(target.getCommutator().getBuildId());
+        Address address = null;
+        if(house != null) address = house.getAddress();
+        return SwitchEditingPreset.from(target.getCommutator(), address, commutatorModelsNames.get(target.getCommutator().getSwmodelId().intValue()), getCommutator(target.getCommutator().getPhyUplinkId()));
+    }
+
     public SwitchBaseInfo getCommutatorBaseInfo(Integer id) {
         return get(SwitchBaseInfo.class, Map.of(), "commutator", id.toString(), "base-info");
     }
@@ -318,6 +339,9 @@ public class AcpClient {
             if (additionalInfo != null) commutator.setAdditionalInfo(additionalInfo);
             if (house != null) commutator.setAddress(house.getAddress());
             stompController.createCommutator(commutator);
+            SwitchModel commutatorModel = getCommutatorModel(commutator.getSwmodelId().intValue());
+            String modelName = commutatorModel != null ? commutatorModel.getName() : "";
+            stompController.createBaseCommutator(SwitchBaseInfo.from(commutator, modelName));
             return commutator;
         } catch (Throwable e) {
             throw new ResponseException(e.getMessage());
@@ -335,6 +359,9 @@ public class AcpClient {
             if (additionalInfo != null) commutator.setAdditionalInfo(additionalInfo);
             if (house != null) commutator.setAddress(house.getAddress());
             stompController.updateCommutator(commutator);
+            SwitchModel commutatorModel = getCommutatorModel(commutator.getSwmodelId().intValue());
+            String modelName = commutatorModel != null ? commutatorModel.getName() : "";
+            stompController.createBaseCommutator(SwitchBaseInfo.from(commutator, modelName));
             return commutator;
         } catch (Throwable e) {
             throw new ResponseException(e.getMessage());
@@ -346,6 +373,7 @@ public class AcpClient {
             this.restTemplate.delete(url(Map.of(), "commutator", id.toString()));
             availabilityCheckService.synchronizeBetweenBases();
             stompController.deleteCommutator(id);
+            stompController.deleteBaseCommutator(id);
         } catch (Throwable e) {
             throw new ResponseException(e.getMessage());
         }
@@ -391,8 +419,11 @@ public class AcpClient {
 
         Map<Integer, String> commutatorModels = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
 
-        int page = 0;
-        Page<Switch> commutatorsPage = getCommutators(page, null, null, null, 25);
+        Integer page = 0;
+        Map<String,String> query = Map.of("pageSize", "25");
+        RequestEntity<Void> request = RequestEntity.get(url(query, "commutators", page.toString())).build();
+        RestPage<Switch> commutatorsPage = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<Switch>>() {}).getBody();
+        if (commutatorsPage == null) throw new ResponseException("Не удалось получить список коммутаторов из ACP");
         while (!commutatorsPage.getContent().isEmpty()) {
             CountDownLatch latch = new CountDownLatch(commutatorsPage.getContent().size());
             for (Switch commutator : commutatorsPage.getContent()) {
@@ -416,7 +447,10 @@ public class AcpClient {
             } catch (InterruptedException e) {
                 throw new RuntimeException(e.getMessage());
             }
-            commutatorsPage = getCommutators(++page, null, null, null, 25);
+            page++;
+            request = RequestEntity.get(url(query, "commutators", page.toString())).build();
+            commutatorsPage = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<Switch>>() {}).getBody();
+            if (commutatorsPage == null) throw new ResponseException("Не удалось получить список коммутаторов из ACP");
         }
     }
 
@@ -478,7 +512,7 @@ public class AcpClient {
                         if (existingSession != null) {
                             NetworkConnectionLocation location = networkConnectionLocationDispatcher.checkAndWrite(existingSession, commutator, port, fdbItem);
                             if(additionalInfo.getSystemInfo() != null && additionalInfo.getPorts() != null) {
-                                location.setCommutatorInfo(additionalInfo.getSystemInfo().getLastUpdate(), additionalInfo.getPorts());
+                                location.setCommutatorInfo(additionalInfo.getSystemInfo().getLastUpdate(), additionalInfo.getPorts(), existingSession.getMacaddr());
                                 existingSession.setLastConnectionLocation(location);
                                 stompController.updateDhcpBinding(existingSession);
                             }
@@ -487,6 +521,7 @@ public class AcpClient {
                 }
                 commutator.setAdditionalInfo(additionalInfo);
                 stompController.updateCommutator(commutator);
+                stompController.updateBaseCommutator(SwitchBaseInfo.from(commutator,modelName));
             }
         } catch (Throwable e) {
             if (additionalInfo != null) {
@@ -495,6 +530,7 @@ public class AcpClient {
                 acpCommutatorDispatcher.save(additionalInfo);
                 commutator.setAdditionalInfo(additionalInfo);
                 stompController.updateCommutator(commutator);
+                stompController.updateBaseCommutator(SwitchBaseInfo.from(commutator,modelName));
             }
             throw new ResponseException(e.getMessage());
         } finally {

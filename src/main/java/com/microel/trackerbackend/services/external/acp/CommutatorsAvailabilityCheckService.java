@@ -3,6 +3,8 @@ package com.microel.trackerbackend.services.external.acp;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.acp.types.Switch;
+import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
+import com.microel.trackerbackend.services.external.acp.types.SwitchModel;
 import com.microel.trackerbackend.storage.dispatchers.AcpCommutatorDispatcher;
 import com.microel.trackerbackend.storage.entities.acp.commutator.AcpCommutator;
 import lombok.extern.slf4j.Slf4j;
@@ -12,10 +14,13 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.stream.Collectors;
 
 import static java.lang.Thread.sleep;
 
@@ -25,6 +30,7 @@ public class CommutatorsAvailabilityCheckService {
     private final AcpCommutatorDispatcher acpCommutatorDispatcher;
     private final AcpClient acpClient;
     private final StompController stompController;
+    private Map<Integer, String> cachedModels = new HashMap<>();
     private List<Switch> cachedCommutators = new ArrayList<>();
 
     public CommutatorsAvailabilityCheckService(AcpCommutatorDispatcher acpCommutatorDispatcher, AcpClient acpClient, StompController stompController) {
@@ -39,6 +45,7 @@ public class CommutatorsAvailabilityCheckService {
     @Scheduled(cron = "0 0 */1 * * *")
     public void synchronizeBetweenBases() {
         try {
+            cachedModels = acpClient.getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
             cachedCommutators = acpClient.getAllCommutators();
             this.acpCommutatorDispatcher.synchronize(cachedCommutators);
         } catch (ResponseException e) {
@@ -69,8 +76,9 @@ public class CommutatorsAvailabilityCheckService {
                     updatedCommutator = this.acpCommutatorDispatcher.updateStatus(comm.getId(), false);
                 }
                 if (updatedCommutator != null) {
+                    comm.setAdditionalInfo(updatedCommutator);
                     stompController.updateAcpCommutator(updatedCommutator);
-                    System.out.println(updatedCommutator);
+                    stompController.updateBaseCommutator(SwitchBaseInfo.from(comm, cachedModels.get(comm.getSwmodelId().intValue())));
                 }
             });
             try {

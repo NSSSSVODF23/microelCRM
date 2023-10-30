@@ -17,10 +17,7 @@ import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.parsers.oldtracker.OldTrackerParserSettings;
 import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
-import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
-import com.microel.trackerbackend.services.external.acp.types.Switch;
-import com.microel.trackerbackend.services.external.acp.types.SwitchModel;
-import com.microel.trackerbackend.services.external.acp.types.SwitchWithAddress;
+import com.microel.trackerbackend.services.external.acp.types.*;
 import com.microel.trackerbackend.services.external.billing.BillingPayType;
 import com.microel.trackerbackend.services.external.billing.BillingRequestController;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
@@ -1392,7 +1389,7 @@ public class PrivateRequestController {
     // Получает аватар пользователя
     @GetMapping("avatar/{file}")
     public ResponseEntity<byte[]> getAvatar(@PathVariable String file) {
-        Path filePath = Path.of(".\\attachments", "avatars", file);
+        Path filePath = Path.of("./attachments", "avatars", file);
         try {
             byte[] bytes = Files.readAllBytes(filePath);
             return ResponseEntity.ok().contentType(MediaType.parseMediaType(Files.probeContentType(filePath))).contentLength(bytes.length).body(bytes);
@@ -1879,10 +1876,10 @@ public class PrivateRequestController {
     }
 
     @GetMapping("acp/commutators/{page}/page")
-    public ResponseEntity<Page<Switch>> getCommutators(@PathVariable Integer page,
-                                                       @RequestParam @Nullable String name,
-                                                       @RequestParam @Nullable String ip,
-                                                       @RequestParam @Nullable Integer buildingId) {
+    public ResponseEntity<Page<SwitchBaseInfo>> getCommutators(@PathVariable Integer page,
+                                                               @RequestParam @Nullable String name,
+                                                               @RequestParam @Nullable String ip,
+                                                               @RequestParam @Nullable Integer buildingId) {
         return ResponseEntity.ok(acpClient.getCommutators(page, name, ip, buildingId, 15));
     }
 
@@ -1899,6 +1896,11 @@ public class PrivateRequestController {
     @GetMapping("acp/commutator/{id}")
     public ResponseEntity<SwitchWithAddress> getCommutator(@PathVariable Integer id) {
         return ResponseEntity.ok(acpClient.getCommutator(id));
+    }
+
+    @GetMapping("acp/commutator/{id}/editing-preset")
+    public ResponseEntity<SwitchEditingPreset> getCommutatorEditingPreset(@PathVariable Integer id) {
+        return ResponseEntity.ok(acpClient.getCommutatorEditingPreset(id));
     }
 
     @PostMapping("acp/commutator/{id}/get-remote-update")

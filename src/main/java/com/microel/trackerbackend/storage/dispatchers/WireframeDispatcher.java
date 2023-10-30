@@ -1,8 +1,10 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.templating.DefaultObserver;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
+import com.microel.trackerbackend.storage.repositories.DefaultObserverRepository;
 import com.microel.trackerbackend.storage.repositories.TaskStageRepository;
 import com.microel.trackerbackend.storage.repositories.WireframeRepository;
 import org.springframework.context.annotation.Lazy;
@@ -13,34 +15,38 @@ import org.springframework.stereotype.Component;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 public class WireframeDispatcher {
     private final WireframeRepository wireframeRepository;
     private final TaskStageRepository taskStageRepository;
     private final TaskDispatcher taskDispatcher;
+    private final DefaultObserverRepository  defaultObserverRepository;
 
 
-    public WireframeDispatcher(WireframeRepository wireframeRepository, TaskStageRepository taskStageRepository, @Lazy TaskDispatcher taskDispatcher) {
+    public WireframeDispatcher(WireframeRepository wireframeRepository, TaskStageRepository taskStageRepository, @Lazy TaskDispatcher taskDispatcher, DefaultObserverRepository defaultObserverRepository) {
         this.wireframeRepository = wireframeRepository;
         this.taskStageRepository = taskStageRepository;
         this.taskDispatcher = taskDispatcher;
+        this.defaultObserverRepository = defaultObserverRepository;
     }
 
     public Wireframe createWireframe(Wireframe wireframe, Employee creator){
-        return wireframeRepository.save(Wireframe.builder()
-                        .creator(creator)
-                        .created(Timestamp.from(Instant.now()))
-                        .description(wireframe.getDescription())
-                        .wireframeType(wireframe.getWireframeType())
-                        .steps(wireframe.getSteps())
-                        .defaultObservers(wireframe.getDefaultObservers())
-                        .deleted(false)
-                        .listViewType(wireframe.getListViewType())
-                        .detailedViewType(wireframe.getDetailedViewType())
-                        .stages(wireframe.getStages())
-                        .name(wireframe.getName())
+        Wireframe savedWireframe = wireframeRepository.save(Wireframe.builder()
+                .creator(creator)
+                .created(Timestamp.from(Instant.now()))
+                .description(wireframe.getDescription())
+                .wireframeType(wireframe.getWireframeType())
+                .steps(wireframe.getSteps())
+                .deleted(false)
+                .listViewType(wireframe.getListViewType())
+                .detailedViewType(wireframe.getDetailedViewType())
+                .stages(wireframe.getStages())
+                .name(wireframe.getName())
                 .build());
+        savedWireframe.setDefaultObservers(wireframe.getDefaultObservers());
+        return wireframeRepository.save(savedWireframe);
     }
 
     public List<Wireframe> getAllWireframes(Boolean includingDeleted) {

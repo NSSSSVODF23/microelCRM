@@ -237,7 +237,7 @@ public class AddressDispatcher {
         }
 
         String finalQuery = query;
-        return suggestions.stream().sorted(Comparator.comparingInt(o->levenshteinDistance.apply(finalQuery, o.getAddressName()))).limit(30).map(AddressMapper::toDto).toList();
+        return suggestions.stream().distinct().sorted(Comparator.comparingInt(o->levenshteinDistance.apply(finalQuery, o.getAddressName()))).limit(30).map(AddressMapper::toDto).toList();
     }
 
     @Nullable

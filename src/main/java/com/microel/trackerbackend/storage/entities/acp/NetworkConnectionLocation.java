@@ -74,12 +74,18 @@ public class NetworkConnectionLocation {
                 && Objects.equals(fdbItem.getVid(), vid);
     }
 
-    public void setCommutatorInfo(Timestamp lastUpdate, List<PortInfo> ports) {
+    public void setCommutatorInfo(Timestamp lastUpdate, List<PortInfo> ports, String macaddr) {
         setLastPortCheck(lastUpdate);
         if (getPortId() != null) {
             ports.stream().filter(port -> port.getPortInfoId().equals(getPortId())).findFirst().ifPresent(portInfo -> {
-                setIsHasLink(Objects.equals(portInfo.getStatus(), PortInfo.Status.UP));
-                setPortSpeed(portInfo.getSpeed());
+                boolean hasMac = portInfo.getMacTable().stream().anyMatch(fdbItem -> fdbItem.getMac().equals(macaddr));
+                if(hasMac) {
+                    setIsHasLink(Objects.equals(portInfo.getStatus(), PortInfo.Status.UP));
+                    setPortSpeed(portInfo.getSpeed());
+                }else{
+                    setIsHasLink(false);
+                    setPortSpeed(null);
+                }
             });
         }
     }

@@ -695,8 +695,6 @@ public class TelegramController {
         stompController.updateMessage(chatMessageDispatcher.updateMessageFromTlg(receivedMessage, this));
     }
 
-    // TODO Исправить ошибку броадкаста сообщений пользователю который уже закрыл журнал работ
-
     /**
      * Отправляет сообщения броадкастом во все телеграм чаты
      *

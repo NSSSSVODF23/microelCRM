@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.services.api;
 
 import com.microel.trackerbackend.services.external.acp.AcpClient;
+import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
 import com.microel.trackerbackend.storage.configurations.StompConfig;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
@@ -381,5 +382,17 @@ public class StompController {
 
     public void updateCommutatorUpdatePool(Set<AcpClient.RemoteUpdatingCommutatorItem> commutators) {
         sendAll(commutators, "acp", "commutator", "remote-update-pool");
+    }
+
+    public void createBaseCommutator(SwitchBaseInfo commutator) {
+        sendAll(commutator, "acp", "commutator", "base", "create");
+    }
+
+    public void updateBaseCommutator(SwitchBaseInfo commutator) {
+        sendAll(commutator, "acp", "commutator", "base", "update");
+    }
+
+    public void deleteBaseCommutator(Integer id) {
+        sendAll(Map.of("id", id), "acp", "commutator", "base", "delete");
     }
 }
