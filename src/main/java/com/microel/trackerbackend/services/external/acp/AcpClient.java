@@ -73,11 +73,6 @@ public class AcpClient {
         this.stompController = stompController;
     }
 
-    @Scheduled(cron = "0 0 */2 * * *")
-    public void scheduleCommutatorsRefresh(){
-        getAllCommutatorsRemoteUpdate();
-    }
-
     public List<DhcpBinding> getBindingsByLogin(String login) {
         DhcpBinding[] dhcpBindings = get(DhcpBinding[].class, Map.of("login", login), "dhcp", "bindings");
         if (dhcpBindings == null) return Collections.emptyList();
@@ -411,7 +406,7 @@ public class AcpClient {
         Map<Integer, String> commutatorModels = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
         CountDownLatch latch = new CountDownLatch(commutatorsByVlan.size());
         for (Switch commutator : commutatorsByVlan) {
-            Executors.newSingleThreadExecutor().execute(() -> {
+            Thread thread = new Thread(() -> {
                 try {
                     AcpCommutator additionalInfo = commutator.getAdditionalInfo();
                     SystemInfo systemInfo = additionalInfo == null ? null : commutator.getAdditionalInfo().getSystemInfo();
@@ -422,6 +417,7 @@ public class AcpClient {
                     latch.countDown();
                 }
             });
+            thread.start();
         }
         try {
             latch.await(60, TimeUnit.SECONDS);
@@ -430,6 +426,7 @@ public class AcpClient {
         }
     }
 
+    @Scheduled(cron = "0 0 */2 * * *")
     public void getAllCommutatorsRemoteUpdate() {
 
         Map<Integer, String> commutatorModels = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
@@ -442,7 +439,7 @@ public class AcpClient {
         while (!commutatorsPage.getContent().isEmpty()) {
             CountDownLatch latch = new CountDownLatch(commutatorsPage.getContent().size());
             for (Switch commutator : commutatorsPage.getContent()) {
-                Executors.newSingleThreadExecutor().execute(() -> {
+                Thread thread = new Thread(() -> {
                     try {
                         AcpCommutator additionalInfo = commutator.getAdditionalInfo();
                         SystemInfo systemInfo = additionalInfo == null ? null : commutator.getAdditionalInfo().getSystemInfo();
@@ -455,6 +452,7 @@ public class AcpClient {
                     }
                     latch.countDown();
                 });
+                thread.start();
             }
             try {
                 latch.await(30, TimeUnit.SECONDS);
