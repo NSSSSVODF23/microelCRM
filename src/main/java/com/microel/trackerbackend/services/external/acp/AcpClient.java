@@ -413,13 +413,16 @@ public class AcpClient {
         remoteUpdateCommutators(commutatorsByVlan, 60L);
     }
 
-    @Scheduled(cron = "0 0 */2 * * *")
+    @Scheduled(cron = "0 0 */1 * * *")
+    @Async
+    @Transactional
     public void getAllCommutatorsRemoteUpdate() {
         List<Switch> commutators = getAllCommutators();
         remoteUpdateCommutators(commutators, 3600L);
     }
 
-    private void remoteUpdateCommutators(List<Switch> commutators, Long timeout){
+    @Transactional
+    public void remoteUpdateCommutators(List<Switch> commutators, Long timeout){
         Map<Integer, String> commutatorModels = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
         ExecutorService executorService = Executors.newFixedThreadPool(20);
         CountDownLatch latch = new CountDownLatch(commutators.size());
