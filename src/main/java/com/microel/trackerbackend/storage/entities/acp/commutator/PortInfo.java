@@ -43,6 +43,7 @@ public class PortInfo {
     @JsonIgnore
     private Boolean forceDownlink = false;
 
+    @JsonIgnore
     public Boolean isDownlink(){
         return (forceDownlink != null && forceDownlink) || macTable.stream().anyMatch(fdbItem -> fdbItem.getVid() == 100 || fdbItem.getVid() == 90 || fdbItem.getVid() == 101 || fdbItem.getVid() == 110);
     }
