@@ -251,7 +251,9 @@ public class AcpClient {
         if (switches == null) return new ArrayList<>();
         return Arrays.stream(switches).peek(sw->{
             AcpCommutator additionalInfo = acpCommutatorDispatcher.getById(sw.getId());
-            if (additionalInfo != null) sw.setAdditionalInfo(additionalInfo);
+            if (additionalInfo != null) {
+                sw.setAdditionalInfo(additionalInfo);
+            }
         }).collect(Collectors.toList());
     }
 
@@ -399,13 +401,15 @@ public class AcpClient {
     public void getCommutatorRemoteUpdate(Integer id) {
         SwitchWithAddress commutator = getCommutator(id);
         if (commutator == null) throw new ResponseException("Не найден коммутатор в ACP с id: " + id);
-
         Map<Integer, String> commutatorModels = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
-        AcpCommutator additionalInfo = commutator.getCommutator().getAdditionalInfo();
-        SystemInfo systemInfo = additionalInfo == null ? null : commutator.getCommutator().getAdditionalInfo().getSystemInfo();
-        List<PortInfo> ports = additionalInfo == null ? null : commutator.getCommutator().getAdditionalInfo().getPorts();
-
-        connectToCommutatorAndUpdate(commutator.getCommutator(), additionalInfo, systemInfo, ports, commutatorModels);
+        Hibernate.initialize(commutator.getCommutator().getAdditionalInfo().getPorts());
+        Hibernate.initialize(commutator.getCommutator().getAdditionalInfo().getRemoteUpdateLogs());
+        appendCommutatorInUpdatePool(commutator.getCommutator());
+        try {
+            connectToCommutatorAndUpdate(commutator.getCommutator(), commutatorModels);
+        }finally {
+            removeCommutatorFromUpdatePool(commutator.getCommutator());
+        }
     }
 
     public void getCommutatorsByVlanRemoteUpdate(Integer vlan) {
@@ -413,35 +417,37 @@ public class AcpClient {
         remoteUpdateCommutators(commutatorsByVlan, 60L);
     }
 
-    @Scheduled(cron = "0 0 */1 * * *")
-    @Async
     @Transactional
+    @Async
+    @Scheduled(cron = "0 0 */2 * * *")
     public void getAllCommutatorsRemoteUpdate() {
         List<Switch> commutators = getAllCommutators();
+        commutators.forEach(commutator -> {
+            if (commutator.getAdditionalInfo() == null) return;
+            Hibernate.initialize(commutator.getAdditionalInfo().getPorts());
+            Hibernate.initialize(commutator.getAdditionalInfo().getRemoteUpdateLogs());
+        });
         remoteUpdateCommutators(commutators, 3600L);
     }
 
-    @Transactional
     public void remoteUpdateCommutators(List<Switch> commutators, Long timeout){
         Map<Integer, String> commutatorModels = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
-        ExecutorService executorService = Executors.newFixedThreadPool(20);
-        CountDownLatch latch = new CountDownLatch(commutators.size());
+        ExecutorService executorService = Executors.newFixedThreadPool(3);
         for (Switch commutator : commutators) {
             if(commutator.getAdditionalInfo() == null) continue;
-            Hibernate.initialize(commutator.getAdditionalInfo().getPorts());
-            Hibernate.initialize(commutator.getAdditionalInfo().getRemoteUpdateLogs());
-            executorService.submit(() -> {
+            executorService.execute(() -> {
                 try {
+                    Thread.currentThread().setName("REMOTE UPDATE");
+                    appendCommutatorInUpdatePool(commutator);
                     connectToCommutatorAndUpdate(commutator, commutatorModels);
                 }catch (Throwable e){
-//                    System.out.println(e.getMessage());
-                }finally {
-                    latch.countDown();
+                    System.out.println("Ошибка в потоке: " + e.getMessage());
                 }
+                removeCommutatorFromUpdatePool(commutator);
             });
         }
+        executorService.shutdown();
         try {
-            executorService.shutdown();
             executorService.awaitTermination(timeout, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             throw new ResponseException("Таймаут обновления коммутаторов");
@@ -460,94 +466,21 @@ public class AcpClient {
         if (isRemoved) stompController.updateCommutatorUpdatePool(commutatorPoolInTheProcessOfUpdating);
     }
 
-
-    public void connectToCommutatorAndUpdate(Switch commutator, AcpCommutator additionalInfo, SystemInfo systemInfo, List<PortInfo> ports, Map<Integer, String> models) {
-
-        String modelName = models.get(commutator.getSwmodelId().intValue());
-        if (modelName == null)
-            throw new ResponseException("Не найдена модель для коммутатора: " + commutator.getName());
-
-        appendCommutatorInUpdatePool(commutator);
-
-        try {
-            if (additionalInfo != null) {
-                AbstractRemoteAccess remoteAccess = remoteAccessFactory.getRemoteAccess(modelName, commutator.getIpaddr());
-                remoteAccess.auth();
-                SystemInfo receivedSystemInfo = remoteAccess.getSystemInfo();
-                List<PortInfo> receivedPorts = remoteAccess.getPorts();
-                if (systemInfo == null) {
-                    additionalInfo.setSystemInfo(receivedSystemInfo);
-                    if (additionalInfo.getPorts() == null || additionalInfo.getPorts().isEmpty()) {
-                        additionalInfo.appendPorts(receivedPorts);
-                    } else {
-                        additionalInfo.clearPorts();
-                        additionalInfo.appendPorts(receivedPorts);
-                    }
-                } else {
-                    if (!systemInfo.equals(receivedSystemInfo) || ports.isEmpty() || ports.size() != receivedPorts.size()) {
-                        systemInfo.setDevice(receivedSystemInfo.getDevice());
-                        systemInfo.setMac(receivedSystemInfo.getMac());
-                        systemInfo.setHwVersion(receivedSystemInfo.getHwVersion());
-                    }
-                    additionalInfo.clearPorts();
-                    additionalInfo.appendPorts(receivedPorts);
-                    systemInfo.setFwVersion(receivedSystemInfo.getFwVersion());
-                    systemInfo.setUptime(receivedSystemInfo.getUptime());
-                }
-                additionalInfo.getSystemInfo().setLastUpdate(Timestamp.from(Instant.now()));
-                additionalInfo.removeOldRemoteUpdateLogs();
-                additionalInfo.appendRemoteUpdateLog(RemoteUpdateLog.success(receivedPorts.size(), additionalInfo.getMacTableSize()));
-                additionalInfo = acpCommutatorDispatcher.save(additionalInfo);
-                remoteAccess.close();
-
-                for (PortInfo port : additionalInfo.getPorts()) {
-                    if (port.isDownlink()) continue;
-                    for (FdbItem fdbItem : port.getMacTable()) {
-                        DhcpBinding existingSession = getDhcpBindingByMac(fdbItem.getMac());
-                        if (existingSession != null) {
-                            NetworkConnectionLocation location = networkConnectionLocationDispatcher.checkAndWrite(existingSession, commutator, port, fdbItem);
-                            if(additionalInfo.getSystemInfo() != null && additionalInfo.getPorts() != null) {
-                                location.setCommutatorInfo(additionalInfo.getSystemInfo().getLastUpdate(), additionalInfo.getPorts(), existingSession.getMacaddr());
-                                existingSession.setLastConnectionLocation(location);
-                                stompController.updateDhcpBinding(existingSession);
-                            }
-                        }
-                    }
-                }
-                commutator.setAdditionalInfo(additionalInfo);
-                stompController.updateCommutator(commutator);
-                stompController.updateBaseCommutator(SwitchBaseInfo.from(commutator,modelName));
-            }
-        } catch (Throwable e) {
-            if (additionalInfo != null) {
-                additionalInfo.removeOldRemoteUpdateLogs();
-                additionalInfo.appendRemoteUpdateLog(RemoteUpdateLog.error(e));
-                acpCommutatorDispatcher.save(additionalInfo);
-                commutator.setAdditionalInfo(additionalInfo);
-                stompController.updateCommutator(commutator);
-                stompController.updateBaseCommutator(SwitchBaseInfo.from(commutator,modelName));
-            }
-            throw new ResponseException(e.getMessage());
-        } finally {
-            removeCommutatorFromUpdatePool(commutator);
-        }
-    }
-
     public void connectToCommutatorAndUpdate(Switch commutator, Map<Integer, String> models) {
 
         String modelName = models.get(commutator.getSwmodelId().intValue());
         if (modelName == null)
             throw new ResponseException("Не найдена модель для коммутатора: " + commutator.getName());
 
-        appendCommutatorInUpdatePool(commutator);
-
         AcpCommutator additionalInfo = commutator.getAdditionalInfo();
         SystemInfo systemInfo = additionalInfo == null ? null : additionalInfo.getSystemInfo();
         List<PortInfo> ports = additionalInfo == null ? null : additionalInfo.getPorts();
 
+        AbstractRemoteAccess remoteAccess = null;
+
         try {
             if (additionalInfo != null) {
-                AbstractRemoteAccess remoteAccess = remoteAccessFactory.getRemoteAccess(modelName, commutator.getIpaddr());
+                remoteAccess = remoteAccessFactory.getRemoteAccess(modelName, commutator.getIpaddr());
                 remoteAccess.auth();
                 SystemInfo receivedSystemInfo = remoteAccess.getSystemInfo();
                 List<PortInfo> receivedPorts = remoteAccess.getPorts();
@@ -574,8 +507,6 @@ public class AcpClient {
                 additionalInfo.removeOldRemoteUpdateLogs();
                 additionalInfo.appendRemoteUpdateLog(RemoteUpdateLog.success(receivedPorts.size(), additionalInfo.getMacTableSize()));
                 additionalInfo = acpCommutatorDispatcher.save(additionalInfo);
-                remoteAccess.close();
-
                 for (PortInfo port : additionalInfo.getPorts()) {
                     if (port.isDownlink()) continue;
                     for (FdbItem fdbItem : port.getMacTable()) {
@@ -594,6 +525,9 @@ public class AcpClient {
                 stompController.updateCommutator(commutator);
                 stompController.updateBaseCommutator(SwitchBaseInfo.from(commutator,modelName));
             }
+            try {
+                if(remoteAccess != null) remoteAccess.close();
+            }catch (Throwable ignore){}
         } catch (Throwable e) {
             if (additionalInfo != null) {
                 additionalInfo.removeOldRemoteUpdateLogs();
@@ -603,9 +537,10 @@ public class AcpClient {
                 stompController.updateCommutator(commutator);
                 stompController.updateBaseCommutator(SwitchBaseInfo.from(commutator,modelName));
             }
+            try {
+                if(remoteAccess != null) remoteAccess.close();
+            }catch (Throwable ignore){}
             throw new ResponseException(e.getMessage());
-        } finally {
-            removeCommutatorFromUpdatePool(commutator);
         }
     }
 

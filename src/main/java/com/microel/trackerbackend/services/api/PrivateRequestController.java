@@ -30,7 +30,6 @@ import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
 import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
-import com.microel.trackerbackend.storage.entities.acp.NetworkConnectionLocation;
 import com.microel.trackerbackend.storage.entities.acp.commutator.FdbItem;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.City;
@@ -482,11 +481,22 @@ public class PrivateRequestController {
 
 
     // Получает страницу с задачами принадлежащими текущему наблюдателю
-    @GetMapping("tasks/incoming")
-    public ResponseEntity<Page<Task>> getIncomingTasks(@RequestParam Integer page, @RequestParam Integer limit,
-                                                       @RequestParam @Nullable Set<Long> template, HttpServletRequest request) {
+    @GetMapping("tasks/incoming/{page}")
+    public ResponseEntity<Page<Task>> getIncomingTasks(@PathVariable Integer page, TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
-        return ResponseEntity.ok(taskDispatcher.getIncomingTasks(page, limit, employee, template));
+        condition.clean();
+        return ResponseEntity.ok(taskDispatcher.getIncomingTasks(page, condition, employee));
+    }
+
+    @GetMapping("wireframe/{id}/stages")
+    public ResponseEntity<Set<TaskStage>> getStages(@PathVariable Long id, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        Wireframe wireframe = wireframeDispatcher.getWireframeById(id);
+        if(wireframe == null) throw new EntryNotFound("Шаблон не найден");
+        Set<TaskStage> stages = wireframe.getStages();
+        taskDispatcher.getIncomingTasksCount(employee, id);
+        if(stages == null) return ResponseEntity.ok(Set.of());
+        return ResponseEntity.ok(stages);
     }
 
     // Получает количество задач принадлежащих текущему наблюдателю
@@ -501,6 +511,28 @@ public class PrivateRequestController {
     public ResponseEntity<Long> getCountIncomingTasksWireframe(@PathVariable Long wireframeId, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         return ResponseEntity.ok(taskDispatcher.getIncomingTasksCount(employee, wireframeId));
+    }
+
+    @GetMapping("tasks/wireframe/by-tags/count")
+    public ResponseEntity<Map<Long,Long>> getCountTasksWireframeByTag(@RequestParam List<Long> wireframeIds) {
+        return ResponseEntity.ok(taskDispatcher.getTasksCountByTags(wireframeIds));
+    }
+
+    @GetMapping("tasks/incoming/wireframe/by-tags/count")
+    public ResponseEntity<Map<Long,Long>> getCountIncomingTasksWireframeByTag(@RequestParam List<Long> wireframeIds, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(taskDispatcher.getIncomingTasksCountByTags(employee, wireframeIds));
+    }
+
+    @GetMapping("tasks/incoming/wireframe/{wireframeId}/by-stages/count")
+    public ResponseEntity<Map<String,Long>> getCountIncomingTasksByStages(@PathVariable Long wireframeId, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(taskDispatcher.getIncomingTasksCountByStages(employee, wireframeId));
+    }
+
+    @GetMapping("tasks/wireframe/{wireframeId}/by-stages/count")
+    public ResponseEntity<Map<String,Long>> getCountTasksByStages(@PathVariable Long wireframeId) {
+        return ResponseEntity.ok(taskDispatcher.getTasksCountByStages(wireframeId));
     }
 
     // Получает количество всех не закрытых задач по шаблонам
@@ -700,14 +732,9 @@ public class PrivateRequestController {
 
     // Получает список доступных тегов задачи
     @GetMapping("task-tags")
-    public ResponseEntity<List<TaskTag>> getAllTaskTags(@RequestParam @Nullable Boolean includingRemote) {
-        return ResponseEntity.ok(taskTagDispatcher.getAll(includingRemote));
-    }
-
-    // Получает список доступных тегов по имени
-    @GetMapping("task-tags/{query}")
-    public ResponseEntity<List<TaskTag>> getTaskTagsByName(@PathVariable String query) {
-        return ResponseEntity.ok(taskTagDispatcher.getByName(query));
+    public ResponseEntity<List<TaskTag>> getAllTaskTags(@RequestParam @Nullable String query,
+                                                        @RequestParam @Nullable Boolean includingRemove) {
+        return ResponseEntity.ok(taskTagDispatcher.getAll(query, includingRemove));
     }
 
     // Создает комментарий к задаче

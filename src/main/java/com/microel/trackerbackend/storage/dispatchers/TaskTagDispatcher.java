@@ -9,9 +9,12 @@ import com.microel.trackerbackend.storage.repositories.TaskTagRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import org.springframework.web.bind.annotation.RequestParam;
 
+import javax.persistence.criteria.Predicate;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -68,9 +71,14 @@ public class TaskTagDispatcher {
 
         return taskTagRepository.save(existingTag);
     }
-    public List<TaskTag> getAll(@Nullable Boolean includingRemote) {
-        if(includingRemote != null && includingRemote) return taskTagRepository.findAll(Sort.by(Sort.Order.asc("deleted"), Sort.Order.asc("name")));
-        return taskTagRepository.findAllByDeletedIsFalse(Sort.by(Sort.Direction.ASC, "name"));
+    public List<TaskTag> getAll(@Nullable String queryName,
+                                @Nullable Boolean includingRemove) {
+        return taskTagRepository.findAll((root, query, cb) -> {
+                    List<Predicate> predicates = new ArrayList<>();
+                    if(queryName != null && !queryName.isBlank()) predicates.add(cb.like(cb.lower(root.get("name")), "%" + queryName.toLowerCase() + "%"));
+                    if(!(includingRemove != null && includingRemove)) predicates.add(cb.equal(root.get("deleted"), false));
+                    return cb.and(predicates.toArray(new Predicate[0]));
+        }, Sort.by(Sort.Direction.ASC, "name"));
     }
 
     public boolean valid(Set<TaskTag> taskTags) {

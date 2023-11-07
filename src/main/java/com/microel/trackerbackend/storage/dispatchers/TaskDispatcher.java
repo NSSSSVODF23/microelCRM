@@ -33,6 +33,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.util.Pair;
 import org.springframework.lang.Nullable;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,10 +42,7 @@ import javax.persistence.criteria.*;
 import java.lang.reflect.Field;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -83,6 +81,8 @@ public class TaskDispatcher {
         this.stompController = stompController;
     }
 
+    @Async
+    @Transactional
     @Scheduled(cron = "0 * * ? * *")
     public void processingScheduledTasks() {
         long currentMillis = Instant.now().toEpochMilli();
@@ -566,14 +566,24 @@ public class TaskDispatcher {
         return taskRepository.save(task);
     }
 
-    public Page<Task> getIncomingTasks(Integer page, Integer limit, Employee employee, Set<Long> template) {
+    public Page<Task> getIncomingTasks(Integer page, @Nullable FiltrationConditions conditions, Employee employee) {
         return taskRepository.findAll((root, query, cb) -> {
             ArrayList<Predicate> predicates = new ArrayList<>();
-            if (template != null && !template.isEmpty()) {
-                Join<Object, Object> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
-                CriteriaBuilder.In<Object> inModelWireframe = cb.in(joinWfrm.get("wireframeId"));
-                template.forEach(inModelWireframe::value);
-                predicates.add(inModelWireframe);
+            if(conditions != null) {
+                if (conditions.template != null && !conditions.template.isEmpty()) {
+                    Join<Object, Object> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
+                    CriteriaBuilder.In<Object> inModelWireframe = cb.in(joinWfrm.get("wireframeId"));
+                    conditions.template.forEach(inModelWireframe::value);
+                    predicates.add(inModelWireframe);
+                }
+                if (conditions.stage != null && (conditions.template != null && conditions.template.size() == 1)) {
+                    Join<Task, TaskStage> joinStage = root.join("currentStage", JoinType.LEFT);
+                    predicates.add(cb.equal(joinStage.get("stageId"), conditions.stage));
+                }
+                if (conditions.tags != null && !conditions.tags.isEmpty()) {
+                    Join<Task, TaskTag> joinTag = root.join("tags", JoinType.LEFT);
+                    predicates.add(joinTag.get("taskTagId").in(conditions.tags));
+                }
             }
             Join<Object, Object> joinDep = root.join("departmentsObservers", JoinType.LEFT);
             Join<Object, Object> joinEmp = root.join("employeesObservers", JoinType.LEFT);
@@ -585,7 +595,7 @@ public class TaskDispatcher {
             query.distinct(true);
 
             return cb.and(predicates.toArray(Predicate[]::new));
-        }, PageRequest.of(page, limit, Sort.by(Sort.Order.desc("updated").nullsLast())));
+        }, PageRequest.of(page, (conditions == null || conditions.limit == null) ? 15 : conditions.limit, Sort.by(Sort.Order.desc("updated").nullsLast())));
     }
 
     public Long getIncomingTasksCount(Employee employee) {
@@ -621,6 +631,90 @@ public class TaskDispatcher {
 
             return cb.and(predicates.toArray(Predicate[]::new));
         });
+    }
+    public Map<Long,Long> getTasksCountByTags(List<Long> wireframeIds) {
+        Map<Long, Long> tagsCounter = new HashMap<>();
+        taskRepository.findAll((root, query, cb) -> {
+            ArrayList<Predicate> predicates = new ArrayList<>();
+
+            Join<Task, Wireframe> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
+
+            predicates.add(joinWfrm.get("wireframeId").in(wireframeIds));
+            predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
+            predicates.add(cb.equal(root.get("deleted"), false));
+            query.distinct(true);
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }).forEach(task -> {
+            task.getTags().forEach(tag -> {
+                tagsCounter.compute(tag.getTaskTagId(), (key, value)->{
+                    if(value == null) return 1L;
+                    return value + 1L;
+                });
+            });
+        });
+        return tagsCounter;
+    }
+
+    public Map<Long,Long> getIncomingTasksCountByTags(Employee employee, List<Long> wireframeIds) {
+        Map<Long, Long> tagsCounter = new HashMap<>();
+        taskRepository.findAll((root, query, cb) -> {
+            ArrayList<Predicate> predicates = new ArrayList<>();
+
+            Join<Task, Wireframe> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
+            Join<Task, Department> joinDep = root.join("departmentsObservers", JoinType.LEFT);
+            Join<Task, Employee> joinEmp = root.join("employeesObservers", JoinType.LEFT);
+
+            predicates.add(cb.or(joinEmp.in(employee), joinDep.join("employees", JoinType.LEFT).in(employee)));
+
+            predicates.add(joinWfrm.get("wireframeId").in(wireframeIds));
+            predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
+            predicates.add(cb.equal(root.get("deleted"), false));
+            query.distinct(true);
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }).forEach(task -> {
+            task.getTags().forEach(tag -> {
+                tagsCounter.compute(tag.getTaskTagId(), (key, value)->{
+                    if(value == null) return 1L;
+                    return value + 1L;
+                });
+            });
+        });
+        return tagsCounter;
+    }
+
+    public Map<String, Long> getIncomingTasksCountByStages(Employee employee, Long wireframeId) {
+        return taskRepository.findAll((root, query, cb) -> {
+            ArrayList<Predicate> predicates = new ArrayList<>();
+
+            Join<Task, Wireframe> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
+            Join<Task, Department> joinDep = root.join("departmentsObservers", JoinType.LEFT);
+            Join<Task, Employee> joinEmp = root.join("employeesObservers", JoinType.LEFT);
+
+            predicates.add(cb.or(joinEmp.in(employee), joinDep.join("employees", JoinType.LEFT).in(employee)));
+
+            predicates.add(cb.equal(joinWfrm.get("wireframeId"), wireframeId));
+            predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
+            predicates.add(cb.equal(root.get("deleted"), false));
+            query.distinct(true);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }).stream().collect(Collectors.groupingBy(task -> task.getCurrentStage().getStageId(), Collectors.counting()));
+    }
+
+    public Map<String, Long> getTasksCountByStages(Long wireframeId){
+        return taskRepository.findAll((root, query, cb) -> {
+            ArrayList<Predicate> predicates = new ArrayList<>();
+
+            Join<Task, Wireframe> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
+
+            predicates.add(cb.equal(joinWfrm.get("wireframeId"), wireframeId));
+            predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
+            predicates.add(cb.equal(root.get("deleted"), false));
+            query.distinct(true);
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }).stream().collect(Collectors.groupingBy(task -> task.getCurrentStage().getStageId(), Collectors.counting()));
     }
 
     public List<Task> getScheduledTasks(Employee whose, Timestamp start, Timestamp end) {
@@ -697,6 +791,12 @@ public class TaskDispatcher {
         private Set<Long> tags;
         @Nullable
         private Boolean onlyMy;
+        @Nullable
+        private Integer limit;
+        @Nullable
+        private Integer page;
+        @Nullable
+        private String stage;
 
         public void clean() {
             Field[] fields = this.getClass().getDeclaredFields();

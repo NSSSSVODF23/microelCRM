@@ -243,7 +243,7 @@ public class WorkLogDispatcher {
         notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.reportReceived(workLog, workReport));
         if (workLog.getWorkReports().size() == workLog.getEmployees().size()) {
             workLog.setClosed(timestamp);
-            workLog.getTask().setTaskStatus(TaskStatus.ACTIVE);
+            workLog.getTask().setTaskStatus(TaskStatus.CLOSE);
             workLog.getTask().setUpdated(timestamp);
             workLog.getChat().setClosed(timestamp);
             stompController.updateTask(workLog.getTask());

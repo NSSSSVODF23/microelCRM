@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.entities.task.utils;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.storage.entities.task.Task;
+import com.microel.trackerbackend.storage.entities.task.TaskStatus;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
@@ -10,8 +11,8 @@ import org.hibernate.annotations.OnDeleteAction;
 
 import javax.persistence.*;
 import java.sql.Timestamp;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Entity
 @Getter
