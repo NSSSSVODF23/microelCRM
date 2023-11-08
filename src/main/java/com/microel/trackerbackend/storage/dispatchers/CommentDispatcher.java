@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
+import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.OffsetPageable;
@@ -9,7 +10,9 @@ import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.dto.CommentData;
 import com.microel.trackerbackend.storage.entities.task.Task;
+import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.exceptions.NotOwner;
@@ -24,7 +27,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Component
@@ -32,11 +35,19 @@ public class CommentDispatcher {
     private final CommentRepository commentRepository;
     private final AttachmentDispatcher attachmentDispatcher;
     private final TaskDispatcher taskDispatcher;
+    private final StompController stompController;
+    private final NotificationDispatcher notificationDispatcher;
+    private final WorkLogDispatcher workLogDispatcher;
 
-    public CommentDispatcher(CommentRepository commentRepository, AttachmentDispatcher attachmentDispatcher, @Lazy TaskDispatcher taskDispatcher) {
+    public CommentDispatcher(CommentRepository commentRepository, AttachmentDispatcher attachmentDispatcher,
+                             @Lazy TaskDispatcher taskDispatcher, StompController stompController,
+                             @Lazy NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher) {
         this.commentRepository = commentRepository;
         this.attachmentDispatcher = attachmentDispatcher;
         this.taskDispatcher = taskDispatcher;
+        this.stompController = stompController;
+        this.notificationDispatcher = notificationDispatcher;
+        this.workLogDispatcher = workLogDispatcher;
     }
 
     public Page<CommentDto> getComments(Long taskId, Long offset, Integer limit) {
@@ -139,5 +150,25 @@ public class CommentDispatcher {
         comment.setDeleted(true);
 
         return commentRepository.save(comment);
+    }
+
+    public void attach(Long chatId, List<Attachment> attachments, String description, Employee employee) {
+        WorkLog workLog = workLogDispatcher.getByChatId(chatId);
+        Task task = workLog.getTask();
+        Set<Employee> allEmployeesObservers = task.getAllEmployeesObservers(employee);
+        Comment comment = Comment.builder()
+                .message(description == null ? "" : description)
+                .parent(task)
+                .created(Timestamp.from(Instant.now()))
+                .attachments(attachments)
+                .creator(employee)
+                .deleted(false)
+                .edited(false)
+                .build();
+        comment = commentRepository.save(comment);
+//        comment.setAttachments(attachments.stream().map(AttachmentMapper::fromDto).collect(Collectors.toList()));
+
+        stompController.createComment(CommentMapper.toDto(comment), String.valueOf(task.getTaskId()));
+        notificationDispatcher.createNotification(allEmployeesObservers, Notification.newComment(comment));
     }
 }

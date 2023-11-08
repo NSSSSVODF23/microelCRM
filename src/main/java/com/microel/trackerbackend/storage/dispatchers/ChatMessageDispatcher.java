@@ -42,6 +42,26 @@ public class ChatMessageDispatcher {
         this.chatMessageRepository = chatMessageRepository;
     }
 
+    public SuperMessage getChatMessage(Long chatMessageId){
+        ChatMessage chatMessage = chatMessageRepository.findById(chatMessageId).orElseThrow(()->new EntryNotFound("Сообщение не найдено"));
+        if(chatMessage.isGroupMessage()){
+            List<ChatMessage> messages = chatMessageRepository.findAllByMediaGroup(chatMessage.getMediaGroup());
+            return new ChatMessageMediaGroup(messages).getSuperMessage();
+        }else {
+            return chatMessage.getSuperMessage();
+        }
+    }
+
+    public List<Attachment> getAttachments(Long chatMessageId){
+        ChatMessage chatMessage = chatMessageRepository.findById(chatMessageId).orElseThrow(()->new EntryNotFound("Сообщение не найдено"));
+        if(chatMessage.isGroupMessage()){
+            List<ChatMessage> messages = chatMessageRepository.findAllByMediaGroup(chatMessage.getMediaGroup());
+            return messages.stream().map(ChatMessage::getAttachment).filter(Objects::nonNull).collect(Collectors.toList());
+        }else {
+            return Stream.of(chatMessage.getAttachment()).collect(Collectors.toList());
+        }
+    }
+
     public Page<SuperMessage> getChatMessages(Long chatId, Long first, Integer limit) {
         Page<ChatMessage> chatMessages = chatMessageRepository.findByParentChat_ChatIdAndDeletedIsNull(chatId,
                 new OffsetPageable(first, limit, Sort.by(Sort.Direction.DESC, "sendAt", "chatMessageId")));

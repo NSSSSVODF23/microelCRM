@@ -34,9 +34,10 @@ public class Comment implements TaskJournalItem {
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JoinColumn(name = "f_employee_id")
     private Employee creator;
-    @ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    @ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @BatchSize(size = 25)
     private List<Attachment> attachments;
+
     @ManyToOne
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JoinColumn(name = "f_reply_comment_id")
@@ -72,4 +73,8 @@ public class Comment implements TaskJournalItem {
         }
         return logins;
     }
+
+//    public void setAttachments(List<Attachment> attachments) {
+//        this.attachments = attachments;
+//    }
 }

@@ -1,7 +1,9 @@
 package com.microel.trackerbackend.storage.entities.chat;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.storage.dto.comment.AttachmentDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
+import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import lombok.*;

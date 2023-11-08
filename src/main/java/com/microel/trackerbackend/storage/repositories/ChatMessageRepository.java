@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long>, JpaSpecificationExecutor<ChatMessage> {
     Page<ChatMessage> findByParentChat_ChatIdAndDeletedIsNull(Long chatId, Pageable pageable);
@@ -18,4 +19,6 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long>,
     List<ChatMessage> findAllByParentChat_ChatIdAndDeletedIsNull(Long chatId);
 
     Optional<ChatMessage> findFirstByTelegramBinds_TelegramChatIdAndTelegramBinds_TelegramMessageIdAndTelegramBinds_TelegramMediaGroupId(Long chatId, Integer messageId, String mediaGroupId);
+
+    List<ChatMessage> findAllByMediaGroup(UUID mediaGroup);
 }

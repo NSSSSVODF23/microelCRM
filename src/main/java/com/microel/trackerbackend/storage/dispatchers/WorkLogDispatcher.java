@@ -280,4 +280,8 @@ public class WorkLogDispatcher {
     public void remove(WorkLog workLog) {
         workLogRepository.delete(workLog);
     }
+
+    public WorkLog getByChatId(Long chatId) {
+        return workLogRepository.findByChat_ChatId(chatId).orElseThrow(()->new EntryNotFound("Журнал работ не найден"));
+    }
 }

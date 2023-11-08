@@ -24,6 +24,7 @@ import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dispatchers.*;
 import com.microel.trackerbackend.storage.dto.address.AddressDto;
+import com.microel.trackerbackend.storage.dto.comment.AttachmentDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
 import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
 import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
@@ -1527,6 +1528,14 @@ public class PrivateRequestController {
         } catch (EntryNotFound | NotOwner | AlreadyDeleted | TelegramApiException e) {
             throw new ResponseException(e.getMessage());
         }
+    }
+
+    @PostMapping("chat/{chatId}/message/{superMessageId}/attach-to-task")
+    public ResponseEntity<Void> attachToTask(@PathVariable Long superMessageId, @PathVariable Long chatId, @RequestBody Map<String, String> body, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        List<Attachment> attachments = chatDispatcher.getAttachments(superMessageId);
+        commentDispatcher.attach(chatId, attachments, body.get("description"), employee);
+        return ResponseEntity.ok().build();
     }
 
     // Помечает сообщения как прочитанные

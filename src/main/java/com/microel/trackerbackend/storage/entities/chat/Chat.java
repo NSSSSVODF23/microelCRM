@@ -5,10 +5,10 @@ import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
+import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import java.sql.Timestamp;
-import java.util.Objects;
 import java.util.Set;
 
 @Getter
@@ -43,10 +43,15 @@ public class Chat {
     @JoinColumn(name = "f_last_message_id")
     private ChatMessage lastMessage;
 
+    @JsonIgnore
+    public String getChatLink() {
+        return "#CHAT(" + chatId + ")";
+    }
+
     @Getter
     @Setter
     @AllArgsConstructor
-    public static class UnreadCounter{
+    public static class UnreadCounter {
         private Long chatId;
         private Long count;
     }

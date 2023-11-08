@@ -64,12 +64,12 @@ public class TaskEvent implements TaskJournalItem {
     }
 
     public static TaskEvent forceCloseWorkLog(Task task, WorkLog workLog, Employee employee) {
-        TaskEvent event = new TaskEvent(task, TaskEventType.FORCE_CLOSE_WORK_LOG, employee, "^("+workLog.getWorkLogId()+")");
+        TaskEvent event = new TaskEvent(task, TaskEventType.FORCE_CLOSE_WORK_LOG, employee, "^("+workLog.getWorkLogId()+")  Посмотреть чат: "+workLog.getChat().getChatLink());
         return event;
     }
 
     public static TaskEvent closeWorkLog(Task task, WorkLog workLog, Employee employee) {
-        TaskEvent event = new TaskEvent(task, TaskEventType.CLOSE_WORK_LOG, employee, "^("+workLog.getWorkLogId()+")");
+        TaskEvent event = new TaskEvent(task, TaskEventType.CLOSE_WORK_LOG, employee, "^("+workLog.getWorkLogId()+")  Посмотреть чат: "+workLog.getChat().getChatLink());
         return event;
     }
 

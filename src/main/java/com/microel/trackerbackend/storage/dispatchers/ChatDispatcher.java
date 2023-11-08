@@ -6,6 +6,7 @@ import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.chat.ChatMessageDto;
 import com.microel.trackerbackend.storage.dto.chat.TelegramMessageBindDto;
+import com.microel.trackerbackend.storage.dto.comment.AttachmentDto;
 import com.microel.trackerbackend.storage.dto.mapper.AttachmentMapper;
 import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
 import com.microel.trackerbackend.storage.dto.mapper.ChatMessageMapper;
@@ -575,5 +576,9 @@ public class ChatDispatcher {
 
     public List<Chat> getMyActiveChats(Employee employee) {
         return chatRepository.findAllByMembersContainingAndClosedIsNull(employee, Sort.by(Sort.Direction.DESC,"updated", "created"));
+    }
+
+    public List<Attachment> getAttachments(Long superMessageId) {
+        return chatMessageDispatcher.getAttachments(superMessageId);
     }
 }

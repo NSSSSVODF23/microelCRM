@@ -25,4 +25,6 @@ public interface WorkLogRepository extends JpaRepository<WorkLog, Long>, JpaSpec
     Long countByClosedIsNull(Sort created);
 
     Optional<WorkLog> findFirstByTask_TaskIdAndClosedIsNull(Long taskId);
+
+    Optional<WorkLog> findByChat_ChatId(Long chatId);
 }
