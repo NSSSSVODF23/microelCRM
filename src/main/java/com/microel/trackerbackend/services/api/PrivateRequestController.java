@@ -9,6 +9,7 @@ import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.misc.*;
 import com.microel.trackerbackend.misc.network.NetworkRemoteControl;
+import com.microel.trackerbackend.misc.sorting.TaskJournalSortingTypes;
 import com.microel.trackerbackend.modules.transport.ChangeTaskObserversDTO;
 import com.microel.trackerbackend.modules.transport.IDuration;
 import com.microel.trackerbackend.parsers.addresses.AddressParser;
@@ -354,6 +355,15 @@ public class PrivateRequestController {
             // Отправляем сигнал пользователям, что задача создана
             stompController.createTask(createdTask);
 
+            createdTask.getAllEmployeesObservers().forEach(observer -> {
+                WireframeTaskCounter wireframeTaskCounter = new WireframeTaskCounter();
+                Long wireframeId = createdTask.getModelWireframe().getWireframeId();
+                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
+                wireframeTaskCounter.setId(wireframeId);
+                wireframeTaskCounter.setNum(incomingTasksCount);
+                stompController.updateIncomingTaskCounter(observer.getLogin(), wireframeTaskCounter);
+            });
+
             // Если в задаче при создании были дочерние задачи, обновляем информацию в них
             if (createdTask.getChildren() != null)
                 createdTask.getChildren().forEach(child -> {
@@ -605,6 +615,23 @@ public class PrivateRequestController {
             Employee employeeFromRequest = getEmployeeFromRequest(request);
             Task task = taskDispatcher.changeTaskStage(taskId, body.get("stageId"));
             stompController.updateTask(task);
+
+            Long wireframeId = task.getModelWireframe().getWireframeId();
+
+            task.getAllEmployeesObservers().forEach(observer -> {
+                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
+                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
+                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
+                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+            });
+
+            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
+            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
+            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
+            stompController.updateTagTaskCounter(tasksCountByTags);
+
             Set<Employee> observers = task.getAllEmployeesObservers(employeeFromRequest);
             notificationDispatcher.createNotification(observers, Notification.taskStageChanged(task, employeeFromRequest));
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeStage(task, task.getCurrentStage(), employeeFromRequest));
@@ -686,6 +713,14 @@ public class PrivateRequestController {
         try {
             Task task = taskDispatcher.modifyTags(taskId, body);
             stompController.updateTask(task);
+
+            task.getAllEmployeesObservers().forEach(observer->{
+                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
+                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+            });
+            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
+            stompController.updateTagTaskCounter(tasksCountByTags);
+
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeTags(task, body, getEmployeeFromRequest(request)));
             stompController.createTaskEvent(taskId, taskEvent);
             return ResponseEntity.ok(task);
@@ -788,40 +823,72 @@ public class PrivateRequestController {
 
     // Получает страницу с комментариями и событиями в конкретной задаче
     @GetMapping("task/{id}/journal")
-    public ResponseEntity<Page<TaskJournalItem>> getTaskJournal(@PathVariable Long id, @RequestParam Long offset, @RequestParam Integer limit) {
-        Page<Comment> comments = commentDispatcher.getComments(id, offset, limit).map(CommentMapper::fromDto);
+    public ResponseEntity<Page<TaskJournalItem>> getTaskJournal(@PathVariable Long id, @RequestParam Long offset, @RequestParam @Nullable TaskJournalSortingTypes sorting, @RequestParam Integer limit) {
+        Page<Comment> comments = commentDispatcher.getComments(id, offset, limit, sorting).map(CommentMapper::fromDto);
         List<TaskJournalItem> commentItems = comments.getContent().stream().map(commentDto -> (TaskJournalItem) commentDto).collect(Collectors.toList());
         if (comments.getTotalElements() == 0L) {
-            List<TaskEvent> taskEvents = taskEventDispatcher.getTaskEvents(id);
+            List<TaskEvent> taskEvents = taskEventDispatcher.getTaskEvents(id, sorting);
             // Concat events and comments
             List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).toList();
             commentItems.addAll(taskEventsItems);
-            commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
+            if(sorting != null) {
+                switch (sorting) {
+                    case CREATE_DATE_ASC -> commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated));
+                    case CREATE_DATE_DESC ->
+                            commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
+                }
+            } else {
+                commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
+            }
         } else if (comments.isLast()) {
             Comment firstComment = comments.getContent().get(0);
             List<TaskEvent> taskEvents = new ArrayList<>();
             if (offset == 0) {
-                taskEvents = taskEventDispatcher.getTaskEvents(id);
+                taskEvents = taskEventDispatcher.getTaskEvents(id, sorting);
             } else if (offset > 0) {
-                taskEvents = taskEventDispatcher.getTaskEventsFrom(id, firstComment.getCreated());
+                if(sorting == TaskJournalSortingTypes.CREATE_DATE_ASC){
+                    taskEvents = taskEventDispatcher.getTaskEventsTo(id, firstComment.getCreated(), sorting);
+                }else{
+                    taskEvents = taskEventDispatcher.getTaskEventsFrom(id, firstComment.getCreated(), sorting);
+                }
             }
             // Concat events and comments and sort by creation date
             List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).toList();
             commentItems.addAll(taskEventsItems);
-            commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
+            if(sorting != null) {
+                switch (sorting) {
+                    case CREATE_DATE_ASC -> commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated));
+                    case CREATE_DATE_DESC ->
+                            commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
+                }
+            } else {
+                commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
+            }
         } else {
             Comment firstComment = comments.getContent().get(0);
             Comment lastComment = comments.getContent().get(comments.getContent().size() - 1);
             List<TaskEvent> taskEvents = new ArrayList<>();
             if (offset == 0) {
-                taskEvents = taskEventDispatcher.getTaskEventsTo(id, lastComment.getCreated());
+                if(sorting == TaskJournalSortingTypes.CREATE_DATE_ASC){
+                    taskEvents = taskEventDispatcher.getTaskEventsFrom(id, firstComment.getCreated(), sorting);
+                }else{
+                    taskEvents = taskEventDispatcher.getTaskEventsTo(id, lastComment.getCreated(), sorting);
+                }
             } else if (offset > 0) {
-                taskEvents = taskEventDispatcher.getTaskEvents(id, firstComment.getCreated(), lastComment.getCreated());
+                taskEvents = taskEventDispatcher.getTaskEvents(id, firstComment.getCreated(), lastComment.getCreated(), sorting);
             }
             // Concat events and comments and sort by creation date
             List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).toList();
             commentItems.addAll(taskEventsItems);
-            commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
+            if(sorting != null) {
+                switch (sorting) {
+                    case CREATE_DATE_ASC -> commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated));
+                    case CREATE_DATE_DESC ->
+                            commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
+                }
+            } else {
+                commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
+            }
         }
 
         return ResponseEntity.ok(new PageImpl<>(commentItems, Pageable.unpaged(), comments.getTotalElements()));
@@ -833,7 +900,7 @@ public class PrivateRequestController {
         try {
             Employee employeeFromRequest = getEmployeeFromRequest(request);
             Task previousTask = taskDispatcher.getTask(id);
-            Set<Employee> previousObservers = new HashSet<>(previousTask.getAllEmployeesObservers(employeeFromRequest));
+            Set<Employee> previousObservers = new HashSet<>(previousTask.getAllEmployeesObservers());
 
             Task task = taskDispatcher.changeTaskObservers(id, body.getDepartmentObservers(), body.getPersonalObservers());
             Set<Employee> newObservers = new HashSet<>(task.getAllEmployeesObservers(employeeFromRequest));
@@ -841,6 +908,7 @@ public class PrivateRequestController {
             // Получаем Set новых наблюдателей из разницы newObservers и previousObserver
             Set<Employee> employeesObservers = new HashSet<>(newObservers);
             employeesObservers.removeAll(previousObservers);
+            employeesObservers.remove(employeeFromRequest);
 
             notificationDispatcher.createNotification(employeesObservers, Notification.youObserver(task));
 
@@ -850,6 +918,25 @@ public class PrivateRequestController {
             observers.addAll(task.getEmployeesObservers());
             observers.addAll(task.getDepartmentsObservers());
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeObservers(task, observers, employeeFromRequest));
+
+            Long wireframeId = task.getModelWireframe().getWireframeId();
+
+            Set<Employee> allEmployeesObservers = task.getAllEmployeesObservers();
+            allEmployeesObservers.addAll(previousObservers);
+
+            allEmployeesObservers.forEach(observer -> {
+                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
+                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
+                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
+                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+            });
+
+            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
+            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
+            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
+            stompController.updateTagTaskCounter(tasksCountByTags);
 
             stompController.createTaskEvent(id, taskEvent);
             return ResponseEntity.ok(task);
@@ -947,8 +1034,8 @@ public class PrivateRequestController {
 
     // Получает страницу комментариев к задаче
     @GetMapping("comments")
-    public ResponseEntity<Page<CommentDto>> getComments(@RequestParam Long taskId, @RequestParam Long offset, @RequestParam Integer limit) {
-        return ResponseEntity.ok(commentDispatcher.getComments(taskId, offset, limit));
+    public ResponseEntity<Page<CommentDto>> getComments(@RequestParam Long taskId, @RequestParam Long offset, @RequestParam Integer limit, @Nullable @RequestParam TaskJournalSortingTypes sorting) {
+        return ResponseEntity.ok(commentDispatcher.getComments(taskId, offset, limit, sorting));
     }
 
     // Получает список сотрудников

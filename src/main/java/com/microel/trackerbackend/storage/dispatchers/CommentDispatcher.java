@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
+import com.microel.trackerbackend.misc.sorting.TaskJournalSortingTypes;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
@@ -21,6 +22,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.sql.Timestamp;
@@ -50,9 +52,15 @@ public class CommentDispatcher {
         this.workLogDispatcher = workLogDispatcher;
     }
 
-    public Page<CommentDto> getComments(Long taskId, Long offset, Integer limit) {
+    public Page<CommentDto> getComments(Long taskId, Long offset, Integer limit, @Nullable TaskJournalSortingTypes sortingTypes) {
+        Sort sort = Sort.by(Sort.Direction.DESC, "created");
+        if(sortingTypes != null)
+            switch (sortingTypes){
+                case CREATE_DATE_ASC -> sort = Sort.by(Sort.Direction.ASC, "created");
+                case CREATE_DATE_DESC -> sort = Sort.by(Sort.Direction.DESC, "created");
+            }
         return commentRepository.findAllByParent_TaskIdAndDeletedIsFalse(taskId,
-                new OffsetPageable(offset, limit, Sort.by(Sort.Direction.DESC, "created"))).map(CommentMapper::toDto);
+                new OffsetPageable(offset, limit, sort)).map(CommentMapper::toDto);
     }
 
     public Comment create(CommentData data, Employee currentUser) throws EmptyFile, WriteError, EntryNotFound {

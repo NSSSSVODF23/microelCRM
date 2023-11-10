@@ -1,6 +1,8 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.microel.trackerbackend.misc.TagsTaskCounter;
+import com.microel.trackerbackend.misc.WireframeTaskCounter;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.modules.transport.IDuration;
 import com.microel.trackerbackend.services.api.StompController;
@@ -151,6 +153,7 @@ public class TaskDispatcher {
 
         // Устанавливаем статус задачи как активная
         createdTask.setTaskStatus(TaskStatus.ACTIVE);
+
         // Устанавливаем шаблон задачи
         createdTask.setModelWireframe(wireframe);
 
@@ -194,7 +197,24 @@ public class TaskDispatcher {
             createdTask.setLastComment(initialComment);
         }
 
-        return taskRepository.save(createdTask);
+        Task task = taskRepository.save(createdTask);
+        Long wireframeId = task.getModelWireframe().getWireframeId();
+
+        task.getAllEmployeesObservers().forEach(observer -> {
+            Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
+            Map<String, Long> incomingTasksCountByStages = getIncomingTasksCountByStages(observer, wireframeId);
+            stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+            Map<Long, Map<Long, Long>> incomingTasksCountByTags = getIncomingTasksCountByTags(observer);
+            stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+        });
+
+        Long tasksCount = getTasksCount(task.getModelWireframe().getWireframeId());
+        Map<String, Long> tasksCountByStages = getTasksCountByStages(wireframeId);
+        stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+        Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
+        stompController.updateTagTaskCounter(tasksCountByTags);
+
+        return task;
     }
 
     @Transactional(readOnly = true)
@@ -313,6 +333,23 @@ public class TaskDispatcher {
         task.setTaskStatus(TaskStatus.PROCESSING);
         task.setUpdated(Timestamp.from(Instant.now()));
         taskRepository.save(task);
+
+        Long wireframeId = task.getModelWireframe().getWireframeId();
+
+        task.getAllEmployeesObservers().forEach(observer -> {
+            Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
+            Map<String, Long> incomingTasksCountByStages = getIncomingTasksCountByStages(observer, wireframeId);
+            stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+            Map<Long, Map<Long, Long>> incomingTasksCountByTags = getIncomingTasksCountByTags(observer);
+            stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+        });
+
+        Long tasksCount = getTasksCount(task.getModelWireframe().getWireframeId());
+        Map<String, Long> tasksCountByStages = getTasksCountByStages(wireframeId);
+        stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+        Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
+        stompController.updateTagTaskCounter(tasksCountByTags);
+
         return workLog;
     }
 
@@ -323,6 +360,21 @@ public class TaskDispatcher {
         task.setTaskStatus(TaskStatus.ACTIVE);
         task.setUpdated(Timestamp.from(Instant.now()));
         taskRepository.save(task);
+        Long wireframeId = task.getModelWireframe().getWireframeId();
+
+        task.getAllEmployeesObservers().forEach(observer -> {
+            Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
+            Map<String, Long> incomingTasksCountByStages = getIncomingTasksCountByStages(observer, wireframeId);
+            stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+            Map<Long, Map<Long, Long>> incomingTasksCountByTags = getIncomingTasksCountByTags(observer);
+            stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+        });
+
+        Long tasksCount = getTasksCount(task.getModelWireframe().getWireframeId());
+        Map<String, Long> tasksCountByStages = getTasksCountByStages(wireframeId);
+        stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+        Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
+        stompController.updateTagTaskCounter(tasksCountByTags);
     }
 
     public WorkLog forceCloseWorkLog(Long taskId, String reasonOfClosing, Employee employeeFromRequest) throws EntryNotFound {
@@ -338,13 +390,31 @@ public class TaskDispatcher {
         workLog.setForceClosedReason(reasonOfClosing);
         workLog.setClosed(timestamp);
         workLog.getChat().setClosed(timestamp);
-        workLog.getTask().setTaskStatus(TaskStatus.ACTIVE);
-        workLog.getTask().setUpdated(timestamp);
 
-//        task.setTaskStatus(TaskStatus.ACTIVE);
-//        task.setUpdated(Timestamp.from(Instant.now()));
+        Task workLogTask = workLog.getTask();
 
-        return workLogDispatcher.save(workLog);
+        workLogTask.setTaskStatus(TaskStatus.ACTIVE);
+        workLogTask.setUpdated(timestamp);
+
+        WorkLog save = workLogDispatcher.save(workLog);
+
+        Long wireframeId = task.getModelWireframe().getWireframeId();
+
+        task.getAllEmployeesObservers().forEach(observer -> {
+            Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
+            Map<String, Long> incomingTasksCountByStages = getIncomingTasksCountByStages(observer, wireframeId);
+            stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+            Map<Long, Map<Long, Long>> incomingTasksCountByTags = getIncomingTasksCountByTags(observer);
+            stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+        });
+
+        Long tasksCount = getTasksCount(task.getModelWireframe().getWireframeId());
+        Map<String, Long> tasksCountByStages = getTasksCountByStages(wireframeId);
+        stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+        Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
+        stompController.updateTagTaskCounter(tasksCountByTags);
+
+        return save;
     }
 
     public Task changeTaskObservers(Long id, Set<Long> departmentResponsibilities, Set<String> personalResponsibilities) throws EntryNotFound {
@@ -541,6 +611,23 @@ public class TaskDispatcher {
             throw new IllegalFields("Пока задача отдана монтажникам её нельзя закрыть");
         task.setTaskStatus(TaskStatus.CLOSE);
         task.setUpdated(Timestamp.from(Instant.now()));
+        // Обновляем счетчики задач на странице
+        Long wireframeId = task.getModelWireframe().getWireframeId();
+
+        task.getAllEmployeesObservers().forEach(observer -> {
+            Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
+            Map<String, Long> incomingTasksCountByStages = getIncomingTasksCountByStages(observer, wireframeId);
+            stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+            Map<Long, Map<Long, Long>> incomingTasksCountByTags = getIncomingTasksCountByTags(observer);
+            stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+        });
+
+        Long tasksCount = getTasksCount(task.getModelWireframe().getWireframeId());
+        Map<String, Long> tasksCountByStages = getTasksCountByStages(wireframeId);
+        stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+        Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
+        stompController.updateTagTaskCounter(tasksCountByTags);
+
         return taskRepository.save(task);
     }
 
@@ -552,7 +639,26 @@ public class TaskDispatcher {
             throw new IllegalFields("Невозможно активировать задачу");
         task.setTaskStatus(TaskStatus.ACTIVE);
         task.setUpdated(Timestamp.from(Instant.now()));
-        return taskRepository.save(task);
+
+        taskRepository.save(task);
+
+        Long wireframeId = task.getModelWireframe().getWireframeId();
+
+        task.getAllEmployeesObservers().forEach(observer -> {
+            Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
+            Map<String, Long> incomingTasksCountByStages = getIncomingTasksCountByStages(observer, wireframeId);
+            stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+            Map<Long, Map<Long, Long>> incomingTasksCountByTags = getIncomingTasksCountByTags(observer);
+            stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+        });
+
+        Long tasksCount = getTasksCount(task.getModelWireframe().getWireframeId());
+        Map<String, Long> tasksCountByStages = getTasksCountByStages(wireframeId);
+        stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+        Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
+        stompController.updateTagTaskCounter(tasksCountByTags);
+
+        return task;
     }
 
 
@@ -633,6 +739,7 @@ public class TaskDispatcher {
             return cb.and(predicates.toArray(Predicate[]::new));
         });
     }
+
     public Map<Long,Long> getTasksCountByTags(List<Long> wireframeIds) {
         Map<Long, Long> tagsCounter = new HashMap<>();
         taskRepository.findAll((root, query, cb) -> {
@@ -657,6 +764,37 @@ public class TaskDispatcher {
         return tagsCounter;
     }
 
+    public Map<Long, Map<Long,Long>> getTasksCountByTags() {
+        Map<Long, Map<Long,Long>> tagsCounter = new HashMap<>();
+        taskRepository.findAll((root, query, cb) -> {
+            ArrayList<Predicate> predicates = new ArrayList<>();
+
+            predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
+            predicates.add(cb.equal(root.get("deleted"), false));
+            query.distinct(true);
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }).forEach(task -> {
+            task.getTags().forEach(tag -> {
+                Long wfId = task.getModelWireframe().getWireframeId();
+                tagsCounter.compute(tag.getTaskTagId(), (key, value)->{
+                    if(value == null) {
+                        Map<Long,Long> wfMap = new HashMap<>();
+                        wfMap.put(wfId, 1L);
+                        return wfMap;
+                    };
+                    value.compute(wfId,(wireframeId, taskCount)->{
+                        if(taskCount == null)
+                            return 1L;
+
+                        return taskCount + 1L;
+                    });
+                    return value;
+                });
+            });
+        });
+        return tagsCounter;
+    }
     public Map<Long,Long> getIncomingTasksCountByTags(Employee employee, List<Long> wireframeIds) {
         Map<Long, Long> tagsCounter = new HashMap<>();
         taskRepository.findAll((root, query, cb) -> {
@@ -679,6 +817,43 @@ public class TaskDispatcher {
                 tagsCounter.compute(tag.getTaskTagId(), (key, value)->{
                     if(value == null) return 1L;
                     return value + 1L;
+                });
+            });
+        });
+        return tagsCounter;
+    }
+
+    public Map<Long, Map<Long, Long>> getIncomingTasksCountByTags(Employee employee) {
+        Map<Long, Map<Long, Long>> tagsCounter = new HashMap<>();
+        taskRepository.findAll((root, query, cb) -> {
+            ArrayList<Predicate> predicates = new ArrayList<>();
+
+            Join<Task, Department> joinDep = root.join("departmentsObservers", JoinType.LEFT);
+            Join<Task, Employee> joinEmp = root.join("employeesObservers", JoinType.LEFT);
+
+            predicates.add(cb.or(joinEmp.in(employee), joinDep.join("employees", JoinType.LEFT).in(employee)));
+
+            predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
+            predicates.add(cb.equal(root.get("deleted"), false));
+            query.distinct(true);
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }).forEach(task -> {
+            task.getTags().forEach(tag -> {
+                Long wfId = task.getModelWireframe().getWireframeId();
+                tagsCounter.compute(tag.getTaskTagId(), (key, value)->{
+                    if(value == null) {
+                        Map<Long,Long> wfMap = new HashMap<>();
+                        wfMap.put(wfId, 1L);
+                        return wfMap;
+                    };
+                    value.compute(wfId,(wireframeId, taskCount)->{
+                       if(taskCount == null)
+                           return 1L;
+
+                       return taskCount + 1L;
+                    });
+                    return value;
                 });
             });
         });

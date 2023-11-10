@@ -3,7 +3,7 @@ package com.microel.trackerbackend.controllers.telegram.handle;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 
 public class Decorator {
-    public final static String DOMEN = "http://127.0.0.1:4200/";
+    public final static String DOMEN = "http://crm.vdonsk.ru/";
 
     public static String convert(Notification notification) {
         if (notification == null || notification.getMessage() == null || notification.getMessage().isBlank()) {
@@ -39,6 +39,21 @@ public class Decorator {
                         + parsingLinks(notification.getMessage());
             case YOU_OBSERVER:
                 return "\uD83D\uDC41\u200D\uD83D\uDDE8 " +bold("Вы наблюдатель:") + "\n"
+                        + parsingLinks(notification.getMessage());
+            case TASK_EXPIRED:
+                return "\uD83D\uDCBC " +bold("Срок по задаче истек:") + "\n"
+                        + parsingLinks(notification.getMessage());
+            case REPORT_RECEIVED:
+                return "\uD83D\uDCBC " +bold("Отчет о работе получен:") + "\n"
+                        + parsingLinks(notification.getMessage());
+            case WORKS_COMPLETED:
+                return "\uD83D\uDCBC " +bold("Работы по задаче завершены:") + "\n"
+                        + parsingLinks(notification.getMessage());
+            case MENTIONED_IN_TASK:
+                return "\uD83D\uDCBC " +bold("Вас упомянули в задаче:") + "\n"
+                        + parsingLinks(notification.getMessage());
+            case TASK_HAS_BECOME_ACTUAL:
+                return "\uD83D\uDCBC " +bold("Задача стала актуальной:") + "\n"
                         + parsingLinks(notification.getMessage());
         }
         return "Неизвестный тип уведомления";

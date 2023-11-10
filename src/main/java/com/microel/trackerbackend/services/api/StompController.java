@@ -1,15 +1,12 @@
 package com.microel.trackerbackend.services.api;
 
+import com.microel.trackerbackend.misc.*;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
 import com.microel.trackerbackend.storage.configurations.StompConfig;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
-import com.microel.trackerbackend.misc.SalaryTable;
-import com.microel.trackerbackend.misc.SimpleMessage;
-import com.microel.trackerbackend.misc.TreeElementPosition;
-import com.microel.trackerbackend.misc.TreeNode;
 import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.services.MonitoringService;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
@@ -73,6 +70,14 @@ public class StompController {
     public void updateTask(Task task) {
         sendAll(task, "task", task.getTaskId().toString(), "update");
         sendAll(task, "task", "update");
+    }
+
+    public void createIncomingTask(String login, Task task){
+        sendToUser(login, task, "task", "create");
+    }
+
+    public void deleteIncomingTask(String login, Task task) {
+        sendToUser(login, task, "task", "delete");
     }
 
     public void createWorkLog(WorkLog workLog) {
@@ -394,5 +399,21 @@ public class StompController {
 
     public void deleteBaseCommutator(Integer id) {
         sendAll(Map.of("id", id), "acp", "commutator", "base", "delete");
+    }
+
+    public void updateIncomingTaskCounter(String login, WireframeTaskCounter counter){
+        sendToUser(login, counter, "task", "count", "change");
+    }
+
+    public void updateTaskCounter(WireframeTaskCounter counter){
+        sendAll(counter, "task", "count", "change");
+    }
+
+    public void updateTagTaskCounter(Map<Long,Map<Long,Long>> counter){
+        sendAll(counter, "task", "tag", "count", "change");
+    }
+
+    public void updateIncomingTagTaskCounter(String login, Map<Long,Map<Long,Long>> counter){
+        sendToUser(login, counter, "task", "tag", "count", "change");
     }
 }

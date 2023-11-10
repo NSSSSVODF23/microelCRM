@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.misc.BypassWorkCalculationForm;
+import com.microel.trackerbackend.misc.WireframeTaskCounter;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.mapper.WorkLogMapper;
@@ -38,13 +39,17 @@ public class WorkLogDispatcher {
     private final WorkLogRepository workLogRepository;
     private final EmployeeDispatcher employeeDispatcher;
     private final TaskEventDispatcher taskEventDispatcher;
+    private final TaskDispatcher taskDispatcher;
     private final StompController stompController;
     private final NotificationDispatcher notificationDispatcher;
 
-    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher, TaskEventDispatcher taskEventDispatcher, StompController stompController, @Lazy NotificationDispatcher notificationDispatcher) {
+    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher,
+                             TaskEventDispatcher taskEventDispatcher, @Lazy TaskDispatcher taskDispatcher,
+                             StompController stompController, @Lazy NotificationDispatcher notificationDispatcher) {
         this.workLogRepository = workLogRepository;
         this.employeeDispatcher = employeeDispatcher;
         this.taskEventDispatcher = taskEventDispatcher;
+        this.taskDispatcher = taskDispatcher;
         this.stompController = stompController;
         this.notificationDispatcher = notificationDispatcher;
     }
@@ -243,10 +248,29 @@ public class WorkLogDispatcher {
         notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.reportReceived(workLog, workReport));
         if (workLog.getWorkReports().size() == workLog.getEmployees().size()) {
             workLog.setClosed(timestamp);
-            workLog.getTask().setTaskStatus(TaskStatus.CLOSE);
-            workLog.getTask().setUpdated(timestamp);
+            Task task = workLog.getTask();
+            task.setTaskStatus(TaskStatus.CLOSE);
+            task.setUpdated(timestamp);
             workLog.getChat().setClosed(timestamp);
             stompController.updateTask(workLog.getTask());
+
+            // Обновляем счетчики задач на странице
+            Long wireframeId = task.getModelWireframe().getWireframeId();
+
+            task.getAllEmployeesObservers().forEach(observer -> {
+                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
+                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
+                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
+                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+            });
+
+            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
+            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
+            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
+            stompController.updateTagTaskCounter(tasksCountByTags);
+
             stompController.closeChat(workLog.getChat());
             stompController.closeWorkLog(workLog);
             stompController.createTaskEvent(workLog.getTask().getTaskId(),
