@@ -25,7 +25,6 @@ import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dispatchers.*;
 import com.microel.trackerbackend.storage.dto.address.AddressDto;
-import com.microel.trackerbackend.storage.dto.comment.AttachmentDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
 import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
 import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
@@ -449,7 +448,7 @@ public class PrivateRequestController {
     public ResponseEntity<Page<TaskDto>> getTasks(@PathVariable Integer page, @Nullable TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         if (condition == null) {
-            return ResponseEntity.ok(taskDispatcher.getTasks(page, 25, null, null, null,
+            return ResponseEntity.ok(taskDispatcher.getTasks(page, 15, null, condition.getStage(), null, null,
                     null, null, null, null, null, null).map(TaskMapper::toListObject));
         }
         condition.clean();
@@ -470,10 +469,10 @@ public class PrivateRequestController {
 
         Page<Task> tasks;
         if (condition.getOnlyMy() != null && condition.getOnlyMy()) {
-            tasks = taskDispatcher.getTasks(page, 25, null, condition.getTemplate(), filtersList,
+            tasks = taskDispatcher.getTasks(page, 15, null, condition.getStage(), condition.getTemplate(), filtersList,
                     condition.getSearchPhrase(), condition.getAuthor(), condition.getDateOfCreation(), condition.getTags(), condition.getExclusionIds(), employee);
         } else {
-            tasks = taskDispatcher.getTasks(page, 25, condition.getStatus(), condition.getTemplate(), filtersList,
+            tasks = taskDispatcher.getTasks(page, 15, condition.getStatus(), condition.getStage(), condition.getTemplate(), filtersList,
                     condition.getSearchPhrase(), condition.getAuthor(), condition.getDateOfCreation(), condition.getTags(), condition.getExclusionIds(), null);
         }
 

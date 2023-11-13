@@ -1,7 +1,6 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.microel.trackerbackend.misc.TagsTaskCounter;
 import com.microel.trackerbackend.misc.WireframeTaskCounter;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.modules.transport.IDuration;
@@ -9,7 +8,6 @@ import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.OffsetPageable;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
-import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskStatus;
@@ -218,13 +216,14 @@ public class TaskDispatcher {
     }
 
     @Transactional(readOnly = true)
-    public Page<Task> getTasks(Integer page, Integer limit, @Nullable List<TaskStatus> status, @Nullable Set<Long> template,
+    public Page<Task> getTasks(Integer page, Integer limit, @Nullable List<TaskStatus> status, @Nullable String stage, @Nullable Set<Long> template,
                                @Nullable List<FilterModelItem> filters, @Nullable String commonFilteringString, @Nullable String taskCreator,
                                @Nullable DateRange creationRange, @Nullable Set<Long> filterTags, @Nullable Set<Long> exclusionIds, @Nullable Employee employeeTask) {
         return taskRepository.findAll((root, query, cb) -> {
             ArrayList<Predicate> predicates = new ArrayList<>();
 
             if (status != null && !status.isEmpty()) predicates.add(root.get("taskStatus").in(status));
+            if (stage != null && !stage.isBlank()) predicates.add(cb.equal(root.join("currentStage").get("stageId"), stage));
             if (template != null && !template.isEmpty())
                 predicates.add(root.join("modelWireframe").get("wireframeId").in(template));
             if (filters != null && !filters.isEmpty()) {
@@ -754,6 +753,7 @@ public class TaskDispatcher {
 
             return cb.and(predicates.toArray(Predicate[]::new));
         }).forEach(task -> {
+            if(task == null || task.getTags() == null) return;
             task.getTags().forEach(tag -> {
                 tagsCounter.compute(tag.getTaskTagId(), (key, value)->{
                     if(value == null) return 1L;
@@ -775,6 +775,7 @@ public class TaskDispatcher {
 
             return cb.and(predicates.toArray(Predicate[]::new));
         }).forEach(task -> {
+            if(task == null || task.getTags() == null) return;
             task.getTags().forEach(tag -> {
                 Long wfId = task.getModelWireframe().getWireframeId();
                 tagsCounter.compute(tag.getTaskTagId(), (key, value)->{
@@ -813,6 +814,7 @@ public class TaskDispatcher {
 
             return cb.and(predicates.toArray(Predicate[]::new));
         }).forEach(task -> {
+            if(task == null || task.getTags() == null) return;
             task.getTags().forEach(tag -> {
                 tagsCounter.compute(tag.getTaskTagId(), (key, value)->{
                     if(value == null) return 1L;
@@ -839,6 +841,7 @@ public class TaskDispatcher {
 
             return cb.and(predicates.toArray(Predicate[]::new));
         }).forEach(task -> {
+            if(task == null || task.getTags() == null) return;
             task.getTags().forEach(tag -> {
                 Long wfId = task.getModelWireframe().getWireframeId();
                 tagsCounter.compute(tag.getTaskTagId(), (key, value)->{

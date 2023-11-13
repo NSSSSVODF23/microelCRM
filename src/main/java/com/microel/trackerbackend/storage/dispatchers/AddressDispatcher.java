@@ -75,7 +75,25 @@ public class AddressDispatcher {
 
     public List<Long> getAddressIds(FilterModelItem filterModelItem) throws JsonProcessingException {
         Address addressExample = AddressMapper.fromDto(new ObjectMapper().treeToValue(filterModelItem.getValue(), AddressDto.class));
-        List<Address> founded = addressRepository.findAll(MatchingFactory.standardExample(addressExample));
+        if(addressExample == null) return new ArrayList<>();
+        List<Address> founded = addressRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (addressExample.getCity() != null)
+                predicates.add(cb.equal(root.join("city", JoinType.LEFT).get("cityId"), addressExample.getCity().getCityId()));
+            if (addressExample.getStreet() != null)
+                predicates.add(cb.equal(root.join("street", JoinType.LEFT).get("streetId"), addressExample.getStreet().getStreetId()));
+            if (addressExample.getHouseNum() != null)
+                predicates.add(cb.equal(root.get("houseNum"), addressExample.getHouseNum()));
+            if (addressExample.getFraction() != null)
+                predicates.add(cb.equal(root.get("fraction"), addressExample.getFraction()));
+            if (addressExample.getLetter() != null)
+                predicates.add(cb.equal(root.get("letter"), addressExample.getLetter()));
+            if (addressExample.getBuild() != null) predicates.add(cb.equal(root.get("build"), addressExample.getBuild()));
+            if (addressExample.getApartmentNum() != null)
+                predicates.add( cb.equal(root.get("apartmentNum"), addressExample.getApartmentNum()));
+            query.distinct(true);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        });
         return founded.stream().map(Address::getAddressId).collect(Collectors.toList());
     }
 
@@ -188,6 +206,7 @@ public class AddressDispatcher {
                         if (request.houseNum != null) {
                             List<House> foundHouses = houseDispatcher.lookup(request, isAcpConnected);
                             List<Address> collect = foundHouses.stream().filter(house -> !house.isSomeDeleted())
+                                    .filter(house -> request.apartment == null | (request.apartment != null && house.getIsApartmentHouse()))
                                     .map(house -> {
                                         if(isHouseOnly != null && isHouseOnly){
                                             return house.getAddress();
