@@ -509,6 +509,11 @@ public class PrivateRequestController {
         return ResponseEntity.ok(stages);
     }
 
+    @GetMapping("wireframe/{id}/dashboard-statistic")
+    public ResponseEntity<TaskDispatcher.WireframeDashboardStatistic> getWireframeDashboardStatistic(@PathVariable Long id) {
+        return ResponseEntity.ok(taskDispatcher.getWireframeDashboardStatistic(id));
+    }
+
     // Получает количество задач принадлежащих текущему наблюдателю
     @GetMapping("tasks/incoming/count")
     public ResponseEntity<Long> getCountIncomingTasks(HttpServletRequest request) {

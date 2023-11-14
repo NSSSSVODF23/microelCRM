@@ -15,6 +15,7 @@ import com.microel.trackerbackend.storage.entities.task.WorkReport;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
+import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import com.microel.trackerbackend.storage.exceptions.AlreadyClosed;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
@@ -307,5 +308,19 @@ public class WorkLogDispatcher {
 
     public WorkLog getByChatId(Long chatId) {
         return workLogRepository.findByChat_ChatId(chatId).orElseThrow(()->new EntryNotFound("Журнал работ не найден"));
+    }
+
+    public List<WorkLog> getDoneWorks(Long wireframeId, Timestamp start, Timestamp end) {
+        return workLogRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            Join<WorkLog, Task> taskJoin = root.join("task", JoinType.LEFT);
+            Join<Task, Wireframe> modelWireframeJoin = taskJoin.join("modelWireframe", JoinType.LEFT);
+
+            predicates.add(cb.equal(modelWireframeJoin.get("wireframeId"), wireframeId));
+            predicates.add(cb.between(root.get("closed"), start, end));
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        });
     }
 }

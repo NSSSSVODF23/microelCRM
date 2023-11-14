@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.microel.trackerbackend.misc.DataPair;
 import com.microel.trackerbackend.misc.WireframeTaskCounter;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.modules.transport.IDuration;
@@ -42,7 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.persistence.criteria.*;
 import java.lang.reflect.Field;
 import java.sql.Timestamp;
-import java.time.Instant;
+import java.time.*;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -136,16 +137,18 @@ public class TaskDispatcher {
         if (wireframe == null) throw new IllegalFields("В базе данных не найден шаблон для создания задачи");
 
         // Получаем список наблюдателей задачи по-умолчанию из шаблона
-        List<DefaultObserver> defaultObservers = wireframe.getDefaultObservers();
-        // Выбираем из базы данных действующих наблюдателей задачи
-        List<Employee> employeesObservers = employeeDispatcher.getByIdSet(DefaultObserver.getSetOfEmployees(defaultObservers).stream().map(Employee::getLogin).collect(Collectors.toSet()));
-        List<Department> departmentsObservers = departmentDispatcher.getByIdSet(DefaultObserver.getSetOfDepartments(defaultObservers).stream().map(Department::getDepartmentId).collect(Collectors.toSet()));
+        List<DefaultObserver> defaultObservers = body.getObservers();
 
-        // Устанавливаем сотрудников как наблюдателей задачи
-        createdTask.setEmployeesObservers(employeesObservers);
-        // Устанавливаем отделы как наблюдателей задачи
-        createdTask.setDepartmentsObservers(departmentsObservers);
+        if(defaultObservers != null) {
+            // Выбираем из базы данных действующих наблюдателей задачи
+            List<Employee> employeesObservers = employeeDispatcher.getByIdSet(DefaultObserver.getSetOfEmployees(defaultObservers).stream().map(Employee::getLogin).collect(Collectors.toSet()));
+            List<Department> departmentsObservers = departmentDispatcher.getByIdSet(DefaultObserver.getSetOfDepartments(defaultObservers).stream().map(Department::getDepartmentId).collect(Collectors.toSet()));
 
+            // Устанавливаем сотрудников как наблюдателей задачи
+            createdTask.setEmployeesObservers(employeesObservers);
+            // Устанавливаем отделы как наблюдателей задачи
+            createdTask.setDepartmentsObservers(departmentsObservers);
+        }
 
         createdTask.setCurrentStage(wireframe.getFirstStage());
 
@@ -194,6 +197,9 @@ public class TaskDispatcher {
             createdTask.appendComment(initialComment);
             createdTask.setLastComment(initialComment);
         }
+
+        if(body.getTags() != null && taskTagDispatcher.valid(body.getTags()))
+            createdTask.setTags(body.getTags());
 
         Task task = taskRepository.save(createdTask);
         Long wireframeId = task.getModelWireframe().getWireframeId();
@@ -739,6 +745,30 @@ public class TaskDispatcher {
         });
     }
 
+    public Map<Long,Long> getTasksCountByTags(Long wireframeIds) {
+        Map<Long, Long> tagsCounter = new HashMap<>();
+        taskRepository.findAll((root, query, cb) -> {
+            ArrayList<Predicate> predicates = new ArrayList<>();
+
+            Join<Task, Wireframe> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
+
+            predicates.add(cb.equal(joinWfrm.get("wireframeId"), wireframeIds));
+            predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
+            predicates.add(cb.equal(root.get("deleted"), false));
+            query.distinct(true);
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }).forEach(task -> {
+            if(task == null || task.getTags() == null) return;
+            task.getTags().forEach(tag -> {
+                tagsCounter.compute(tag.getTaskTagId(), (key, value)->{
+                    if(value == null) return 1L;
+                    return value + 1L;
+                });
+            });
+        });
+        return tagsCounter;
+    }
     public Map<Long,Long> getTasksCountByTags(List<Long> wireframeIds) {
         Map<Long, Long> tagsCounter = new HashMap<>();
         taskRepository.findAll((root, query, cb) -> {
@@ -938,6 +968,10 @@ public class TaskDispatcher {
         return taskRepository.countByModelWireframe_WireframeIdAndDeletedFalseAndTaskStatusNot(wireframeId, TaskStatus.CLOSE);
     }
 
+    public Long getTasksCount(Long wireframeId, TaskStatus taskStatus) {
+        return taskRepository.countByModelWireframe_WireframeIdAndDeletedFalseAndTaskStatus(wireframeId, taskStatus);
+    }
+
     public Page<Task> getTasksByLogin(String login, Integer page, Integer limit) {
         return taskRepository.findAll((root, query, cb) -> {
             ArrayList<Predicate> predicates = new ArrayList<>();
@@ -947,6 +981,66 @@ public class TaskDispatcher {
             query.distinct(true);
             return cb.and(predicates.toArray(Predicate[]::new));
         }, PageRequest.of(page, limit, Sort.by(Sort.Order.desc("created").nullsLast(), Sort.Order.desc("updated").nullsLast())));
+    }
+
+    public WireframeDashboardStatistic getWireframeDashboardStatistic(Long wireframeId){
+        Wireframe targetWireframe = wireframeDispatcher.getWireframeById(wireframeId);
+        if(targetWireframe == null) throw new EntryNotFound("Не найден шаблон задач");
+
+        WireframeDashboardStatistic statistic = new WireframeDashboardStatistic();
+
+        List<DataPair> taskCount = new ArrayList<>();
+        taskCount.add(DataPair.of("Активных", getTasksCount(wireframeId, TaskStatus.ACTIVE)));
+        taskCount.add(DataPair.of("Назначенных монтажникам", getTasksCount(wireframeId, TaskStatus.PROCESSING)));
+
+        List<DataPair> taskCountByStage = new ArrayList<>();
+        Map<String, Long> mapCountByStage = getTasksCountByStages(wireframeId);
+        for(TaskStage stage: targetWireframe.getStages().stream().sorted(Comparator.comparingInt(TaskStage::getOrderIndex)).toList()){
+            Long count = mapCountByStage.get(stage.getStageId());
+            taskCountByStage.add(DataPair.of(stage.getLabel(), count));
+        }
+
+        List<DataPair> worksDone = new ArrayList<>();
+
+        YearMonth previousMonth = YearMonth.now();
+        previousMonth = previousMonth.minusMonths(1);
+        Timestamp startOfPreviousMonth = Timestamp.valueOf(previousMonth.atDay(1).atStartOfDay());
+        Timestamp endOfPreviousMonth = Timestamp.valueOf(previousMonth.atEndOfMonth().atTime(23,59,59));
+
+        LocalDate previousWeek = LocalDate.now();
+        previousWeek = previousWeek.minusWeeks(1).with(DayOfWeek.MONDAY);
+        Timestamp startOfPreviousWeek = Timestamp.valueOf(previousWeek.atStartOfDay());
+        Timestamp endOfPreviousWeek = Timestamp.valueOf(previousWeek.plusWeeks(1).atTime(23,59,59));
+
+        Timestamp todayStart = Timestamp.valueOf(LocalDate.now().atStartOfDay());
+        Timestamp todayEnd = Timestamp.valueOf(LocalDate.now().atTime(23,59,59));
+
+        worksDone.add(DataPair.of("Сегодня", workLogDispatcher.getDoneWorks(wireframeId, todayStart, todayEnd).size()));
+        worksDone.add(DataPair.of("Предыдущая неделя", workLogDispatcher.getDoneWorks(wireframeId, startOfPreviousWeek, endOfPreviousWeek).size()));
+        worksDone.add(DataPair.of("Предыдущий месяц", workLogDispatcher.getDoneWorks(wireframeId, startOfPreviousMonth, endOfPreviousMonth).size()));
+
+        List<DataPair> taskCountByTags = new ArrayList<>();
+        Map<Long, Long> mapCountByTags = getTasksCountByTags(wireframeId);
+        taskTagDispatcher.getAll(null, false).stream()
+                .filter(tag->mapCountByTags.containsKey(tag.getTaskTagId()))
+                .forEach(tag -> taskCountByTags.add(DataPair.of(tag.getName(), mapCountByTags.get(tag.getTaskTagId()), tag.getColor())));
+
+
+        statistic.setTaskCount(taskCount);
+        statistic.setTaskCountByStage(taskCountByStage);
+        statistic.setWorksDone(worksDone);
+        statistic.setTaskCountByTags(taskCountByTags);
+
+        return statistic;
+    }
+
+    @Getter
+    @Setter
+    public static class WireframeDashboardStatistic{
+        private List<DataPair> taskCount;
+        private List<DataPair> taskCountByStage;
+        private List<DataPair> worksDone;
+        private List<DataPair> taskCountByTags;
     }
 
     @Getter

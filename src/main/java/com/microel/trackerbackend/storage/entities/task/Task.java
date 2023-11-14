@@ -1,12 +1,14 @@
 package com.microel.trackerbackend.storage.entities.task;
 
 import com.fasterxml.jackson.annotation.*;
+import com.microel.trackerbackend.modules.transport.ChangeTaskObserversDTO;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskGroup;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.util.Department;
+import com.microel.trackerbackend.storage.entities.templating.DefaultObserver;
 import com.microel.trackerbackend.storage.entities.templating.TaskStage;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
@@ -207,6 +209,10 @@ public class Task {
     public static class CreationBody{
         private Long wireframeId;
         private List<ModelItem> fields;
+        @Nullable
+        private Set<TaskTag> tags;
+        @Nullable
+        private List<DefaultObserver> observers;
         @Nullable
         private Long childId;
         @Nullable
