@@ -2,11 +2,16 @@ package com.microel.trackerbackend.controllers.telegram;
 
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.services.external.RestPage;
+import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
+import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
 import com.microel.trackerbackend.storage.dto.chat.ChatMessageDto;
 import com.microel.trackerbackend.storage.dto.chat.TelegramMessageBindDto;
 import com.microel.trackerbackend.storage.dto.task.ModelItemDto;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
 import com.microel.trackerbackend.storage.dto.task.WorkLogDto;
+import com.microel.trackerbackend.storage.entities.acp.NetworkConnectionLocation;
+import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.task.Task;
@@ -15,7 +20,10 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.exceptions.IllegalMediaType;
 import lombok.AllArgsConstructor;
+import org.apache.logging.log4j.util.PropertySource;
+import org.springframework.data.domain.Page;
 import org.springframework.lang.Nullable;
+import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.send.*;
@@ -35,6 +43,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import javax.validation.constraints.NotNull;
 import java.io.Serializable;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -92,6 +101,20 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(message, context);
     }
 
+    public AbstractExecutor<Message> infoModeCancel(String info, String cancelCallback) {
+        InlineKeyboardButton cancelButton = InlineKeyboardButton.builder()
+                .text("Отменить")
+                .callbackData("#cancel_mode:" + cancelCallback)
+                .build();
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .parseMode("HTML")
+                .text(info)
+                .replyMarkup(InlineKeyboardMarkup.builder().keyboardRow(List.of(cancelButton)).build())
+                .build();
+        return new MessageExecutor<>(message, context);
+    }
+
     public AbstractExecutor<Message> currentActiveTask(TaskDto task) {
         List<ModelItemDto> fields = task.getFields();
         KeyboardRow keyboardRow = new KeyboardRow(List.of(new KeyboardButton("\uD83D\uDC4C Завершить задачу")));
@@ -138,6 +161,11 @@ public class TelegramMessageFactory {
                 .text(text)
                 .build();
         return new MessageExecutor<>(message, context);
+    }
+    
+    public CallbackAnswerExecutor answerCallback(String cbQueryId, @Nullable String text) {
+        AnswerCallbackQuery answer = AnswerCallbackQuery.builder().text(text).callbackQueryId(cbQueryId).showAlert(false).build();
+        return new CallbackAnswerExecutor(answer, context);
     }
 
     @Nullable
@@ -396,6 +424,104 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(message, context);
     }
 
+    public AbstractExecutor<Message> addressSuggestions(List<House> houseList, String callbackPrefix) {
+        List<List<InlineKeyboardButton>> buttons = houseList.stream().map(house -> {
+            return List.of(InlineKeyboardButton.builder()
+                    .text(house.getAddressName())
+                    .callbackData(CallbackData.create(callbackPrefix, house.getHouseId().toString()))
+                    .build());
+        }).toList();
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("Выберите адрес:")
+                .replyMarkup(
+                    InlineKeyboardMarkup.builder()
+                            .keyboard(buttons)
+                            .build()
+                )
+                .build();
+        return new MessageExecutor<>(message, context);
+    }
+
+    public AbstractExecutor<Message> sessionPage(RestPage<DhcpBinding> lastBindings, Integer buildingId) {
+
+        InlineKeyboardButton load_page = InlineKeyboardButton.builder()
+                .text("Ещё...")
+                .callbackData(CallbackData.create("load_page", "sessionHouse:" + buildingId + ":" + (lastBindings.getNumber() + 1)))
+                .build();
+
+        SendMessage.SendMessageBuilder message =SendMessage.builder()
+                .chatId(chatId).parseMode(ParseMode.HTML)
+                .text(lastBindings.stream().map(DhcpBinding::getTextRow).collect(Collectors.joining("\n\n")));
+
+        if(lastBindings.isEmpty()){
+            message.text("Данных по сессиям нет");
+        }
+
+        if(lastBindings.getNumber() < lastBindings.getTotalPages()-1){
+            message.replyMarkup(InlineKeyboardMarkup.builder().keyboardRow(List.of(load_page)).build());
+        }
+
+        return new MessageExecutor<>(message.build(), context);
+    }
+
+    public AbstractExecutor<Message> sessionCommutatorPage(RestPage<DhcpBinding> lastBindings, Integer commutatorId) {
+
+        InlineKeyboardButton load_page = InlineKeyboardButton.builder()
+                .text("Ещё...")
+                .callbackData(CallbackData.create("load_page", "sessionHouseCommutator:" + commutatorId + ":" + (lastBindings.getNumber() + 1)))
+                .build();
+
+        SendMessage.SendMessageBuilder message = SendMessage.builder()
+                .chatId(chatId).parseMode(ParseMode.HTML)
+                .text(lastBindings.stream().sorted((o1,o2)->{
+                    Integer port1 = null;
+                    NetworkConnectionLocation location = o1.getLastConnectionLocation();
+                    if(location != null){
+                        try {
+                            port1 = Integer.parseInt(location.getPortName());
+                        }catch (Exception ignore){}
+                    }
+                    Integer port2 = null;
+                    location = o2.getLastConnectionLocation();
+                    if(location != null){
+                        try {
+                            port2 = Integer.parseInt(location.getPortName());
+                        }catch (Exception ignore){}
+                    }
+                    return Comparator.nullsLast(Integer::compareTo).compare(port1, port2);
+                }).map(DhcpBinding::getTextRowWithOnline).collect(Collectors.joining("\n\n")));
+
+        if(lastBindings.isEmpty()){
+            message.text("Данных по сессиям нет");
+        }
+
+        if(lastBindings.getNumber() < lastBindings.getTotalPages()-1){
+            message.replyMarkup(InlineKeyboardMarkup.builder().keyboardRow(List.of(load_page)).build());
+        }
+
+        return new MessageExecutor<>(message.build(), context);
+    }
+
+    public AbstractExecutor<Message> commutatorSessions(Page<SwitchBaseInfo> commutators) {
+        List<List<InlineKeyboardButton>> buttons = commutators.stream().map(com -> {
+            return List.of(InlineKeyboardButton.builder()
+                    .text(com.getName())
+                    .callbackData(CallbackData.create("commutator_sessions_com_sel", com.getId().toString()))
+                    .build());
+        }).toList();
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("Выберите коммутатор:")
+                .replyMarkup(
+                        InlineKeyboardMarkup.builder()
+                                .keyboard(buttons)
+                                .build()
+                ).build();
+        return new MessageExecutor<>(message, context);
+    }
+
     /**
      * Позволяет отправить запрос в Telegram API и получить результат согласно заданному контексту
      *
@@ -513,6 +639,20 @@ public class TelegramMessageFactory {
         }
 
         public List<Message> execute() throws TelegramApiException {
+            return context.execute(message);
+        }
+    }
+
+    public static class CallbackAnswerExecutor implements AbstractExecutor<Serializable> {
+        private final AnswerCallbackQuery message;
+        private final MainBot context;
+
+        public CallbackAnswerExecutor(AnswerCallbackQuery message, MainBot context) {
+            this.message = message;
+            this.context = context;
+        }
+
+        public Serializable execute() throws TelegramApiException {
             return context.execute(message);
         }
     }

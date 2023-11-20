@@ -2,6 +2,9 @@ package com.microel.trackerbackend.storage.entities.address;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
 import lombok.*;
 import org.hibernate.annotations.OnDelete;
@@ -9,8 +12,10 @@ import org.hibernate.annotations.OnDeleteAction;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
 
+import javax.lang.model.type.ReferenceType;
 import javax.persistence.*;
 import java.util.Comparator;
+import java.util.Map;
 import java.util.Objects;
 
 @Entity
@@ -108,7 +113,24 @@ public class Address implements Comparable<Address> {
     }
 
     public String getBillingAddress(){
-        return getBillingAddress(true);
+        return getBillingAddress(false);
+    }
+
+    public static Address fromTelegramCallback(String callback) throws JsonProcessingException {
+        ObjectMapper mapper = new ObjectMapper();
+        Map<String, String> callbackMap = mapper.readValue(callback, new TypeReference<Map<String, String>>() {
+        });
+
+        Address address = new Address();
+        Street street = Street.builder().name(callbackMap.get("streetName")).billingAlias("streetBillingAlias").build();
+        address.setStreet(street);
+        if(callbackMap.containsKey("houseNum")) address.setHouseNum(Short.parseShort(callbackMap.get("houseNum")));
+        if(callbackMap.containsKey("fraction")) address.setFraction(Short.parseShort(callbackMap.get("fraction")));
+        if(callbackMap.containsKey("letter")) address.setLetter(callbackMap.get("letter").charAt(0));
+        if(callbackMap.containsKey("build")) address.setBuild(Short.parseShort(callbackMap.get("build")));
+        if(callbackMap.containsKey("apartmentNum")) address.setApartmentNum(Short.parseShort(callbackMap.get("apartmentNum")));
+
+        return address;
     }
 
     public void setCityByName(String cityName) {

@@ -101,6 +101,7 @@ public class AcpClient {
         return binding;
     }
 
+    @Transactional
     public RestPage<DhcpBinding> getLastBindings(Integer page, @Nullable Short state, @Nullable String macaddr,
                                                  @Nullable String login, @Nullable String ip, @Nullable Integer vlan,
                                                  @Nullable Integer buildingId, @Nullable List<Integer> targetIds) {
@@ -124,6 +125,7 @@ public class AcpClient {
         return pageResponse;
     }
 
+    @Transactional
     public RestPage<DhcpBinding> getLastBindings(Integer page, @Nullable Short state, @Nullable String macaddr,
                                                  @Nullable String login, @Nullable String ip, @Nullable Integer vlan,
                                                  @Nullable Integer buildingId, Integer commutator, @Nullable Integer port) {
@@ -193,6 +195,7 @@ public class AcpClient {
         return get(SwitchModel.class, Map.of(), "commutator", "model", id.toString());
     }
 
+    @Transactional
     public Page<SwitchBaseInfo> getCommutators(Integer page, @Nullable String name, @Nullable String ip, @Nullable Integer buildingId, @Nullable Integer pageSize) {
         Map<String, String> query = new HashMap<>();
         if (name != null) query.put("name", name);

@@ -9,6 +9,11 @@ import com.microel.trackerbackend.controllers.telegram.reactor.*;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
+import com.microel.trackerbackend.services.external.RestPage;
+import com.microel.trackerbackend.services.external.acp.AcpClient;
+import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
+import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
+import com.microel.trackerbackend.services.external.billing.BillingRequestController;
 import com.microel.trackerbackend.services.filemanager.FileData;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
@@ -17,6 +22,7 @@ import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.chat.ChatMessageDto;
 import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
 import com.microel.trackerbackend.storage.dto.task.WorkLogDto;
+import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.*;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
@@ -26,6 +32,7 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.exceptions.*;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,8 +75,13 @@ public class TelegramController {
     private final EmployeeDispatcher employeeDispatcher;
     private final StompController stompController;
     private final AttachmentDispatcher attachmentDispatcher;
+    private final BillingRequestController billingRequestController;
+    private final AddressDispatcher addressDispatcher;
+    private final HouseDispatcher houseDispatcher;
+    private final AcpClient acpClient;
     private final Map<String, List<Message>> groupedMessagesFromTelegram = new ConcurrentHashMap<>();
-    private final Map<Long, List<Message>> chatsInTaskCloseMode = new ConcurrentHashMap<>();
+    private final Map<Employee, OperatingMode> operatingModes = new ConcurrentHashMap<>();
+    private final Map<Employee, List<Message>> reportMessages = new ConcurrentHashMap<>();
     private TelegramConf telegramConf;
     @Nullable
     private TelegramBotsApi api;
@@ -80,7 +92,8 @@ public class TelegramController {
 
     public TelegramController(ConfigurationStorage configurationStorage, TaskDispatcher taskDispatcher, WorkLogDispatcher workLogDispatcher,
                               ChatDispatcher chatDispatcher, ChatMessageDispatcher chatMessageDispatcher, EmployeeDispatcher employeeDispatcher,
-                              StompController stompController, AttachmentDispatcher attachmentDispatcher) {
+                              StompController stompController, AttachmentDispatcher attachmentDispatcher, BillingRequestController billingRequestController,
+                              AddressDispatcher addressDispatcher, HouseDispatcher houseDispatcher, AcpClient acpClient) {
         this.configurationStorage = configurationStorage;
         this.taskDispatcher = taskDispatcher;
         this.workLogDispatcher = workLogDispatcher;
@@ -89,6 +102,10 @@ public class TelegramController {
         this.employeeDispatcher = employeeDispatcher;
         this.stompController = stompController;
         this.attachmentDispatcher = attachmentDispatcher;
+        this.billingRequestController = billingRequestController;
+        this.addressDispatcher = addressDispatcher;
+        this.houseDispatcher = houseDispatcher;
+        this.acpClient = acpClient;
         try {
             telegramConf = configurationStorage.load(TelegramConf.class);
             initializeMainBot();
@@ -118,7 +135,10 @@ public class TelegramController {
     private void initializeChatCommands() throws IOException, TelegramApiException {
         if (mainBot == null) throw new IOException("Telegram Bot не инициализирован");
         List<BotCommand> commands = List.of(
-                new BotCommand("menu", "Основные действия")
+                new BotCommand("menu", "Основные действия"),
+                new BotCommand("check_alive", "Проверить живых"),
+                new BotCommand("house_sessions", "Получить сессии в доме"),
+                new BotCommand("commutator_sessions", "Получить сессии коммутатора")
         );
         SetMyCommands setMyCommands = SetMyCommands.builder()
                 .commands(commands)
@@ -146,6 +166,45 @@ public class TelegramController {
                 TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Меню отсутствует").execute();
             }
             return true;
+        }));
+        
+        mainBot.subscribe(new TelegramCommandReactor("/check_alive", update -> {
+            Long chatId = update.getMessage().getChatId();
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                operatingModes.put(employee, OperatingMode.CHECK_ALIVE);
+                TelegramMessageFactory.create(chatId, mainBot).infoModeCancel("Введите адрес дома:", "check_alive").execute();
+                return true;
+            } catch (Exception e) {
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+                return false;
+            }
+        }));
+
+        mainBot.subscribe(new TelegramCommandReactor("/house_sessions", update -> {
+            Long chatId = update.getMessage().getChatId();
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                operatingModes.put(employee, OperatingMode.HOUSE_SESSIONS);
+                TelegramMessageFactory.create(chatId, mainBot).infoModeCancel("Введите адрес дома:", "house_sessions").execute();
+                return true;
+            } catch (Exception e) {
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+                return false;
+            }
+        }));
+
+        mainBot.subscribe(new TelegramCommandReactor("/commutator_sessions", update -> {
+            Long chatId = update.getMessage().getChatId();
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                operatingModes.put(employee, OperatingMode.COMMUTATOR_SESSIONS);
+                TelegramMessageFactory.create(chatId, mainBot).infoModeCancel("Введите адрес дома:", "commutator_sessions").execute();
+                return true;
+            } catch (Exception e) {
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+                return false;
+            }
         }));
 
         mainBot.subscribe(new TelegramCommandReactor("/dhcpnotificationgroup", update -> {
@@ -201,30 +260,74 @@ public class TelegramController {
 
         mainBot.subscribe(new TelegramCallbackReactor("send_report", (update, data) -> {
             Long chatId = update.getCallbackQuery().getMessage().getChatId();
-            TelegramMessageFactory factory = TelegramMessageFactory.create(chatId, mainBot);
-            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
-            if (!chatsInTaskCloseMode.containsKey(chatId)) {
-                factory.deleteMessage(messageId).execute();
-                factory.simpleMessage("\uD83D\uDEAB Вы не можете отправить отчет, так как нет активной задачи.")
-                        .execute();
-                return true;
-            } else if (chatsInTaskCloseMode.get(chatId).isEmpty()) {
-                factory.simpleMessage("Перед закрытием нужно отправить сообщение (или несколько), с отчетом. Отчет о выполненных работах не может быть пуст.")
-                        .execute();
+            try{
+                Employee employee = getEmployeeByChat(chatId);
+
+                TelegramMessageFactory factory = TelegramMessageFactory.create(chatId, mainBot);
+                Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+
+                if (operatingModes.get(employee) == null) {
+                    factory.deleteMessage(messageId).execute();
+                    factory.simpleMessage("\uD83D\uDEAB Вы не можете отправить отчет, нужно быть в режиме закрытия задачи.")
+                            .execute();
+                    return true;
+                } else if (reportMessages.get(employee).isEmpty()) {
+                    factory.simpleMessage("Перед закрытием нужно отправить сообщение (или несколько), с отчетом. Отчет о выполненных работах не может быть пуст.")
+                            .execute();
+                    return false;
+                }
+                try {
+                    List<Message> messageList = reportMessages.get(employee);
+                    WorkLog workLog = workLogDispatcher.createReport(chatId, messageList);
+                    reportMessages.remove(employee);
+                    operatingModes.remove(employee);
+                    factory.deleteMessage(messageId).execute();
+                    factory.simpleMessage("Отчет успешно отправлен").execute();
+                    sendTextBroadcastMessage(workLog.getChat(), ChatMessage.of("Написал отчет и отключился от чата задачи.", employee));
+                    return sendWorkLogQueue(chatId);
+                } catch (EntryNotFound | IllegalFields e) {
+                    factory.deleteMessage(messageId).execute();
+                    factory.simpleMessage(e.getMessage()).execute();
+                    return false;
+                }
+            }catch (Exception e){
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
                 return false;
             }
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("cancel_mode", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
             try {
-                List<Message> messageList = chatsInTaskCloseMode.get(chatId);
-                WorkLog workLog = workLogDispatcher.createReport(chatId, messageList);
-                chatsInTaskCloseMode.remove(chatId);
-                factory.deleteMessage(messageId).execute();
-                factory.simpleMessage("Отчет успешно отправлен").execute();
-                Employee employee = employeeDispatcher.getByTelegramId(chatId).orElseThrow(() -> new EntryNotFound("Сотрудник не найден"));
-                sendTextBroadcastMessage(workLog.getChat(), ChatMessage.of("Написал отчет и отключился от чата задачи.", employee));
-                return sendWorkLogQueue(chatId);
-            } catch (EntryNotFound | IllegalFields e) {
-                factory.deleteMessage(messageId).execute();
-                factory.simpleMessage(e.getMessage()).execute();
+                Employee employee = getEmployeeByChat(chatId);
+                if(data == null){
+                    messageFactory.answerCallback(callbackId, "Пустое сообщение о выходе из режима").execute();
+                    return false;
+                }
+                switch (data.getString()){
+                    case "check_alive"-> {
+                        operatingModes.remove(employee);
+                        messageFactory.answerCallback(callbackId, "Выход из режима проверки живых абонентов").execute();
+                        return true;
+                    }
+                    case "house_sessions" ->{
+                        operatingModes.remove(employee);
+                        messageFactory.answerCallback(callbackId,"Выход из режима сессий в доме").execute();
+                        return true;
+                    }
+                    case "commutator_sessions" ->{
+                        operatingModes.remove(employee);
+                        messageFactory.answerCallback(callbackId,"Выход из режима сессий в коммутаторе").execute();
+                        return true;
+                    }
+                    default -> messageFactory.answerCallback(callbackId,"Неизвестный режим").execute();
+                }
+                return false;
+            }catch (Exception e){
+                messageFactory.simpleMessage(e.getMessage()).execute();
                 return false;
             }
         }));
@@ -232,67 +335,321 @@ public class TelegramController {
         mainBot.subscribe(new TelegramCallbackReactor("cancel_close", (update, data) -> {
             Long chatId = update.getCallbackQuery().getMessage().getChatId();
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
-            mainBot.send(DeleteMessage.builder().chatId(chatId).messageId(messageId).build());
-            if (chatsInTaskCloseMode.containsKey(chatId)) {
-                chatsInTaskCloseMode.remove(chatId);
-                WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
-                TelegramMessageFactory.create(chatId, mainBot).currentActiveTask(workLog.getTask()).execute();
-                TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Вы отменили завершение задачи, она вновь активна. Вы находитесь в режиме чата задачи.").execute();
-                return true;
+            String callbackId = update.getCallbackQuery().getId();
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                mainBot.send(DeleteMessage.builder().chatId(chatId).messageId(messageId).build());
+                if (Objects.equals(operatingModes.get(employee), OperatingMode.REPORT_SENDING)) {
+                    reportMessages.remove(employee);
+                    operatingModes.remove(employee);
+                    WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
+                    TelegramMessageFactory.create(chatId, mainBot).currentActiveTask(workLog.getTask()).execute();
+                    TelegramMessageFactory.create(chatId, mainBot).answerCallback(callbackId, "Вы отменили завершение задачи, она вновь активна. Вы находитесь в режиме чата задачи.").execute();
+                    return true;
+                }
+                TelegramMessageFactory.create(chatId, mainBot).answerCallback(callbackId,"Вы не можете отменить завершение задачи так как не находитесь в режиме закрытия задачи.").execute();
+                return false;
+            }catch (Exception e){
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+                return false;
             }
-            TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Вы не можете отменить завершение задачи так как находитесь в режиме чата.").execute();
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("check_alive_address", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if(data == null) {
+                messageFactory.answerCallback(callbackId,"Неверные данные callback").execute();
+                return false;
+            }
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                try {
+                    House house = houseDispatcher.get(data.getLong());
+                    String calculateCountingLives = billingRequestController.getCalculateCountingLives(BillingRequestController.CountingLivesForm.of(house.getAddress(), 1, 500));
+                    messageFactory.answerCallback(callbackId, null).execute();
+                    messageFactory.simpleMessage(calculateCountingLives).execute();
+                    operatingModes.remove(employee);
+                }catch (Exception e){
+                    messageFactory.simpleMessage("Не удалось преобразовать адрес из callback").execute();
+                    return false;
+                }
+                return true;
+            }catch (Exception e){
+                messageFactory.simpleMessage(e.getMessage()).execute();
+                return false;
+            }
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("house_sessions_address", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if(data == null) {
+                messageFactory.answerCallback(callbackId,"Неверные данные callback").execute();
+                return false;
+            }
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                try {
+                    House house = houseDispatcher.get(data.getLong());
+                    if(house.getAcpHouseBind() == null){
+                        messageFactory.answerCallback(callbackId, "Адрес не связан с ACP").execute();
+                        return false;
+                    }
+                    Integer buildingId = house.getAcpHouseBind().getBuildingId();
+                    RestPage<DhcpBinding> lastBindings = acpClient.getLastBindings(0, (short) 1, null, null, null, null, buildingId, null);
+                    lastBindings.forEach(lb->{
+                        BillingRequestController.TotalUserInfo userInfo = billingRequestController.getUserInfo(lb.getAuthName());
+                        if(userInfo != null){
+                            lb.setBillingAddress(userInfo.getIbase().getAddr());
+                        }
+                    });
+                    messageFactory.answerCallback(callbackId, null).execute();
+                    messageFactory.sessionPage(lastBindings, buildingId).execute();
+                    operatingModes.remove(employee);
+                }catch (Exception e){
+                    messageFactory.simpleMessage("Не удалось преобразовать адрес из callback").execute();
+                    return false;
+                }
+                return true;
+            }catch (Exception e){
+                messageFactory.simpleMessage(e.getMessage()).execute();
+                return false;
+            }
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("commutator_sessions_com_sel", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if(data == null) {
+                messageFactory.answerCallback(callbackId,"Неверные данные callback").execute();
+                return false;
+            }
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                try {
+                    RestPage<DhcpBinding> lastBindings = acpClient.getLastBindings(0, (short) 1, null, null, null, null, null, data.getInt(), null);
+                    lastBindings.forEach(lb->{
+                        BillingRequestController.TotalUserInfo userInfo = billingRequestController.getUserInfo(lb.getAuthName());
+                        if(userInfo != null){
+                            lb.setBillingAddress(userInfo.getIbase().getAddr());
+                        }
+                    });
+                    messageFactory.answerCallback(callbackId, null).execute();
+                    messageFactory.sessionCommutatorPage(lastBindings, data.getInt()).execute();
+                    operatingModes.remove(employee);
+                }catch (Exception e){
+                    messageFactory.simpleMessage("Не удалось преобразовать адрес из callback").execute();
+                    return false;
+                }
+                return true;
+            }catch (Exception e){
+                messageFactory.simpleMessage(e.getMessage()).execute();
+                return false;
+            }
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("commutator_sessions_address", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if(data == null) {
+                messageFactory.answerCallback(callbackId,"Неверные данные callback").execute();
+                return false;
+            }
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                try {
+                    House house = houseDispatcher.get(data.getLong());
+                    if(house.getAcpHouseBind() == null){
+                        messageFactory.answerCallback(callbackId, "Адрес не связан с ACP").execute();
+                        return false;
+                    }
+                    Integer buildingId = house.getAcpHouseBind().getBuildingId();
+                    Page<SwitchBaseInfo> commutators = acpClient.getCommutators(0, null, null, buildingId, 15);
+                    messageFactory.answerCallback(callbackId, null).execute();
+                    messageFactory.commutatorSessions(commutators).execute();
+                    operatingModes.remove(employee);
+                }catch (Exception e){
+                    messageFactory.simpleMessage("Не удалось преобразовать адрес из callback").execute();
+                    return false;
+                }
+                return true;
+            }catch (Exception e){
+                messageFactory.simpleMessage(e.getMessage()).execute();
+                return false;
+            }
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("load_page", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if(data != null){
+                String[] split = data.getString().split(":");
+                if(split.length>=2){
+                    switch (split[0]){
+                        case "sessionHouse"-> {
+                            Integer pageHouse = Integer.parseInt(split[2]);
+                            Integer buildingId = Integer.parseInt(split[1]);
+                            RestPage<DhcpBinding> lastBindings = acpClient.getLastBindings(pageHouse, (short) 1, null, null, null, null, buildingId, null);
+                            lastBindings.forEach(lb->{
+                                BillingRequestController.TotalUserInfo userInfo = billingRequestController.getUserInfo(lb.getAuthName());
+                                if(userInfo != null){
+                                    lb.setBillingAddress(userInfo.getIbase().getAddr());
+                                }
+                            });
+                            messageFactory.answerCallback(callbackId, null).execute();
+                            messageFactory.sessionPage(lastBindings, buildingId).execute();
+                            return true;
+                        }
+                        case "sessionHouseCommutator"->{
+                            Integer pageCommutator = Integer.parseInt(split[2]);
+                            Integer commutatorId = Integer.parseInt(split[1]);
+                            RestPage<DhcpBinding> lastBindingsCommutator = acpClient.getLastBindings(pageCommutator, null, null, null, null, null, null, commutatorId, null);
+                            lastBindingsCommutator.forEach(lb->{
+                                BillingRequestController.TotalUserInfo userInfo = billingRequestController.getUserInfo(lb.getAuthName());
+                                if(userInfo != null){
+                                    lb.setBillingAddress(userInfo.getIbase().getAddr());
+                                }
+                            });
+                            messageFactory.answerCallback(callbackId, null).execute();
+                            messageFactory.sessionCommutatorPage(lastBindingsCommutator, commutatorId).execute();
+                            return true;
+                        }
+                    }
+                }else{
+                    messageFactory.answerCallback(callbackId,"Не верный формат callback");
+                }
+            }
             return false;
         }));
 
         mainBot.subscribe(new TelegramPromptReactor("\uD83D\uDC4C Завершить задачу", (update) -> {
             // Получаем активную задачу по идентификатору чата
             Long chatId = update.getMessage().getChatId();
+            TelegramMessageFactory factory = TelegramMessageFactory.create(chatId, mainBot);
             try {
-                WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
-                TelegramMessageFactory.create(chatId, mainBot).closeWorkLogMessage().execute();
-                TelegramMessageFactory.create(chatId, mainBot).clearKeyboardMenu().execute();
-                chatsInTaskCloseMode.put(chatId, new ArrayList<>());
-                return true;
-            } catch (EntryNotFound e) {
-                TelegramMessageFactory.create(chatId, mainBot).simpleMessage("В данный момент у вас нет активных задач").execute();
-                TelegramMessageFactory.create(chatId, mainBot).clearKeyboardMenu().execute();
+                Employee employee = getEmployeeByChat(chatId);
+                try {
+                    WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
+                    factory.closeWorkLogMessage().execute();
+                    factory.clearKeyboardMenu().execute();
+                    reportMessages.put(employee, new ArrayList<>());
+                    operatingModes.put(employee, OperatingMode.REPORT_SENDING);
+                    return true;
+                } catch (EntryNotFound e) {
+                    factory.simpleMessage("В данный момент у вас нет активных задач").execute();
+                    factory.clearKeyboardMenu().execute();
+                }
+                return false;
+            }catch (Exception e){
+                factory.simpleMessage(e.getMessage()).execute();
+                return false;
             }
-            return false;
         }));
 
         // Обработка простых текстовых сообщений полученных из чата
         mainBot.subscribe(new TelegramMessageReactor(update -> {
             Long chatId = update.getMessage().getChatId();
-            if (chatsInTaskCloseMode.containsKey(chatId)) {
-                chatsInTaskCloseMode.get(chatId).add(update.getMessage());
-                return true;
-            }
             try {
-                sendMessageFromTlgChat(update.getMessage());
-                return true;
-            } catch (IllegalFields | SaveEntryFailed | IllegalMediaType | ExceptionInsideThread e) {
-                log.warn(e.getMessage());
+                Employee employee = getEmployeeByChat(chatId);
+                OperatingMode operatingMode = operatingModes.get(employee);
+                if(operatingMode == null) {
+                    try {
+                        sendMessageFromTlgChat(update.getMessage());
+                        return true;
+                    } catch (IllegalFields | SaveEntryFailed | IllegalMediaType | ExceptionInsideThread e) {
+                        log.warn(e.getMessage());
+                    }
+                    return false;
+                }
+                switch (operatingMode){
+                    case REPORT_SENDING -> {
+                        reportMessages.compute(employee, (key, value)->{
+                            if (value == null) value = new ArrayList<>();
+                            value.add(update.getMessage());
+                            return value;
+                        });
+                        return true;
+                    }
+                    case CHECK_ALIVE -> {
+                        List<House> suggestions = addressDispatcher.getSuggestionsHouse(update.getMessage().getText(), true).stream().limit(5).toList();
+                        if(suggestions.isEmpty()){
+                            TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
+                            return true;
+                        }
+                        TelegramMessageFactory.create(chatId, mainBot).addressSuggestions(suggestions, "check_alive_address").execute();
+                        return true;
+                    }
+                    case HOUSE_SESSIONS -> {
+                        List<House> suggestions = addressDispatcher.getSuggestionsHouse(update.getMessage().getText(), true).stream().limit(5).toList();
+                        if(suggestions.isEmpty()){
+                            TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
+                            return true;
+                        }
+                        TelegramMessageFactory.create(chatId, mainBot).addressSuggestions(suggestions, "house_sessions_address").execute();
+                        return true;
+                    }
+                    case COMMUTATOR_SESSIONS -> {
+                        List<House> suggestions = addressDispatcher.getSuggestionsHouse(update.getMessage().getText(), true).stream().limit(5).toList();
+                        if(suggestions.isEmpty()){
+                            TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
+                            return true;
+                        }
+                        TelegramMessageFactory.create(chatId, mainBot).addressSuggestions(suggestions, "commutator_sessions_address").execute();
+                        return true;
+                    }
+                }
+                return false;
+            }catch (Exception e){
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+                return false;
             }
-            return false;
         }));
 
         mainBot.subscribe(new TelegramEditMessageReactor(update -> {
             Long chatId = update.getEditedMessage().getChatId();
-            if (chatsInTaskCloseMode.containsKey(chatId)) {
-                    Message updateMessage = update.getEditedMessage();
-                    chatsInTaskCloseMode.put(chatId,
-                            chatsInTaskCloseMode.get(chatId).stream().map(message -> {
-                                if (Objects.equals(message.getMessageId(), updateMessage.getMessageId())) {
-                                    return updateMessage;
-                                }
-                                return message;
-                            }).collect(Collectors.toList())
-                    );
-                return true;
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                OperatingMode operatingMode = operatingModes.get(employee);
+                if(operatingMode == null) {
+                    try {
+                        sendMessageFromTlgChat(update.getMessage());
+                        return true;
+                    } catch (IllegalFields | SaveEntryFailed | IllegalMediaType | ExceptionInsideThread e) {
+                        log.warn(e.getMessage());
+                    }
+                    return false;
+                }
+                switch (operatingMode){
+                    case REPORT_SENDING -> {
+                        Message updateMessage = update.getEditedMessage();
+                        reportMessages.computeIfPresent(employee, (key, value)->{
+                            value.stream().filter(msg->msg.getMessageId().equals(updateMessage.getMessageId())).findFirst().ifPresent(msg->{
+                                msg.setText(updateMessage.getText());
+                            });
+                            return value;
+                        });
+                        return true;
+                    }
+                    case CHECK_ALIVE -> {
+                        return true;
+                    }
+                }
+                return false;
+            }catch (Exception e){
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+                return false;
             }
-            Message editedMessage = update.getEditedMessage();
-            updateMessageFromTlgChat(editedMessage);
-            return true;
         }));
     }
 
@@ -827,11 +1184,32 @@ public class TelegramController {
         }
         TelegramMessageFactory.create(chatId, mainBot).dhcpIpRequestNotification(body).execute();
     }
+    
+    public Employee getEmployeeByChat(Long chatId) throws Exception {
+        return employeeDispatcher.getByTelegramId(chatId).orElseThrow(()->new Exception("Пользователь не найден"));
+    }
 
     public TelegramConf getConfiguration() {
         if(telegramConf == null){
             return new TelegramConf();
         }
         return telegramConf;
+    }
+    
+    public enum OperatingMode{
+        REPORT_SENDING("REPORT_SENDING"),
+        CHECK_ALIVE("CHECK_ALIVE"),
+        HOUSE_SESSIONS("HOUSE_SESSIONS"),
+        COMMUTATOR_SESSIONS("COMMUTATOR_SESSIONS");
+        
+        private final String value;
+        
+        OperatingMode(String value){
+            this.value = value;
+        }
+        
+        public String getValue(){
+            return value;
+        }
     }
 }

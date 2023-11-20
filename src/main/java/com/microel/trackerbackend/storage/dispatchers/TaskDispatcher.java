@@ -997,7 +997,7 @@ public class TaskDispatcher {
         Map<String, Long> mapCountByStage = getTasksCountByStages(wireframeId);
         for(TaskStage stage: targetWireframe.getStages().stream().sorted(Comparator.comparingInt(TaskStage::getOrderIndex)).toList()){
             Long count = mapCountByStage.get(stage.getStageId());
-            taskCountByStage.add(DataPair.of(stage.getLabel(), count));
+            taskCountByStage.add(DataPair.of(stage.getLabel(), count != null ? count : 0));
         }
 
         List<DataPair> worksDone = new ArrayList<>();

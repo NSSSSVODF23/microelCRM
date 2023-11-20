@@ -11,6 +11,7 @@ import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.HouseRepository;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.criteria.Join;
 import javax.persistence.criteria.JoinType;
@@ -243,5 +244,10 @@ public class HouseDispatcher {
     @Nullable
     public House getByAcpBindId(Integer buildId) {
         return houseRepository.findTopByAcpHouseBind_BuildingIdAndDeletedFalse(buildId);
+    }
+
+    @Transactional
+    public House get(Long id) {
+        return houseRepository.findById(id).orElseThrow(() -> new EntryNotFound("Дом не найден"));
     }
 }

@@ -18,6 +18,21 @@
     </properties>
     <dependencies>
         <dependency>
+            <groupId>net.time4j</groupId>
+            <artifactId>time4j-base</artifactId>
+            <version>5.9.1</version>
+        </dependency>
+        <dependency>
+            <groupId>net.time4j</groupId>
+            <artifactId>time4j-sqlxml</artifactId>
+            <version>5.9.1</version>
+        </dependency>
+        <dependency>
+            <groupId>net.time4j</groupId>
+            <artifactId>time4j-tzdata</artifactId>
+            <version>5.0-2022a</version>
+        </dependency>
+        <dependency>
             <groupId>io.reactivex.rxjava3</groupId>
             <artifactId>rxjava</artifactId>
             <version>3.1.7</version>

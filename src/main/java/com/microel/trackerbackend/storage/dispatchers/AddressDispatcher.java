@@ -17,6 +17,7 @@ import lombok.*;
 import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
@@ -147,6 +148,7 @@ public class AddressDispatcher {
         }
     }
 
+    @Transactional
     public List<AddressDto> getSuggestions(String query, @Nullable Boolean isAcpConnected, @Nullable Boolean isHouseOnly) {
         List<Address> suggestions = new ArrayList<>();
         query = CharacterTranslation.translate(query);
@@ -257,6 +259,53 @@ public class AddressDispatcher {
 
         String finalQuery = query;
         return suggestions.stream().distinct().sorted(Comparator.comparingInt(o->levenshteinDistance.apply(finalQuery, o.getAddressName()))).limit(30).map(AddressMapper::toDto).toList();
+    }
+
+    @Transactional
+    public List<House> getSuggestionsHouse(String query, @Nullable Boolean isAcpConnected) {
+        query = CharacterTranslation.translate(query);
+        LevenshteinDistance levenshteinDistance = new LevenshteinDistance();
+
+        int matchSetting = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
+
+        List<String> cityParts = List.of("^(?<city>[а-я]{4})\\. ([а-я\\-]{2,10}\\.)?", "");
+        List<String> streetParts = List.of(
+                "(?<street>\\d{1,2}-?[а-я]{1,2} [а-я]+)",
+                "(?<street>\\d{1,2} [а-я]{1,5} [а-я]+)",
+                "(?<street>[а-я]+.? ?[а-я]+.? [а-я]+)",
+                "(?<street>[а-я]+ \\d-?[а-я]{1,3})",
+                "(?<street>\\d{1,2} ?[а-я]{1,5})",
+                "(?<street>[а-я]+.? ?[а-я]+)",
+                "(?<street>[а-я]+)"
+        );
+        List<String> houseParts = List.of(
+                " (?<hn>\\d{1,4})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(( с\\.?| стр\\.?| строение|_)(?<hb>\\d{1,3}))?", ""
+        );
+
+        for (String streetPart : streetParts) {
+            for (String housePart : houseParts) {
+                String rexp = streetPart + housePart;
+                Pattern pattern = Pattern.compile(rexp, matchSetting);
+                Matcher matcher = pattern.matcher(query);
+                AddressLookupRequest request = AddressLookupRequest.of(matcher);
+                if (request == null) {
+//                            System.out.println("Regex: " + rexp + " failed");
+                    continue;
+                }
+                if (request.houseNum != null) {
+                    return houseDispatcher.lookup(request, isAcpConnected);
+                } else {
+                    List<House> houses = new ArrayList<>();
+                    List<Street> foundStreets = streetDispatcher.containsInName(request.streetName);
+                    for (Street street : foundStreets) {
+                        houses.addAll(street.getHouses().stream().filter(house->house.getAcpHouseBind() != null).toList());
+                    }
+                    return houses;
+                }
+            }
+        }
+
+        return new ArrayList<>();
     }
 
     @Nullable

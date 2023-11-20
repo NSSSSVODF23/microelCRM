@@ -80,7 +80,6 @@ public class BillingRequestController {
         rqMap.put(name, value);
     }
 
-    @Nullable
     public List<UserItemData> getUsersByLogin(String login, Boolean isActive) {
         prepareRequestBody("UsersByLogin");
         setRequestProp("skey", login);
@@ -89,11 +88,10 @@ public class BillingRequestController {
         try {
             return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
         } catch (ClassCastException e) {
-            return null;
+            return new ArrayList<>();
         }
     }
 
-    @Nullable
     public List<UserItemData> getUsersByFio(String query, Boolean isActive) {
 
         prepareRequestBody("UsersByFio");
@@ -104,11 +102,10 @@ public class BillingRequestController {
         try {
             return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
         } catch (ClassCastException e) {
-            return null;
+            return new ArrayList<>();
         }
     }
 
-    @Nullable
     public List<UserItemData> getUsersByAddress(String address, Boolean isActive) {
 
         prepareRequestBody("UsersByAddr");
@@ -119,15 +116,7 @@ public class BillingRequestController {
         try {
             return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
         } catch (ClassCastException e) {
-            return null;
-//            prepareRequestBody("UsersByAddr");
-//            setRequestProp("skey", address);
-//            calculateSign();
-//            try {
-//                return ((Map<String, Object>) execute().get("xdata")).values().stream().map(UserItemData::from).collect(Collectors.toList());
-//            } catch (ClassCastException e1) {
-//                return null;
-//            }
+            return new ArrayList<>();
         }
     }
 
@@ -261,6 +250,14 @@ public class BillingRequestController {
         private Address address;
         private Integer startApart;
         private Integer endApart;
+
+        public static CountingLivesForm of(Address address, Integer startApart, Integer endApart){
+            CountingLivesForm form = new CountingLivesForm();
+            form.setAddress(address);
+            form.setStartApart(startApart);
+            form.setEndApart(endApart);
+            return form;
+        }
     }
 
     @Getter

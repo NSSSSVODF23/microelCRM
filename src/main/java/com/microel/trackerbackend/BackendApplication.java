@@ -4,6 +4,7 @@ import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.CommutatorsAvailabilityCheckService;
 import io.metaloom.video4j.Video4j;
 import lombok.extern.slf4j.Slf4j;
+import net.time4j.tz.repo.TZDATA;
 import org.apache.xmlrpc.XmlRpcException;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -24,6 +25,7 @@ public class BackendApplication {
         } catch (RuntimeException e) {
             log.warn("Библиотека video4j не инициализирована: {}", e.getMessage());
         }
+        TZDATA.init();
 //        System.out.println(acpClient.getBindingsByLogin("16111630"));
     }
 
