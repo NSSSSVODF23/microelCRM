@@ -5,6 +5,7 @@ import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.services.external.RestPage;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
+import com.microel.trackerbackend.services.external.billing.BillingRequestController;
 import com.microel.trackerbackend.storage.dto.chat.ChatMessageDto;
 import com.microel.trackerbackend.storage.dto.chat.TelegramMessageBindDto;
 import com.microel.trackerbackend.storage.dto.task.ModelItemDto;
@@ -17,10 +18,11 @@ import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
+import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.exceptions.IllegalMediaType;
 import lombok.AllArgsConstructor;
-import org.apache.logging.log4j.util.PropertySource;
 import org.springframework.data.domain.Page;
 import org.springframework.lang.Nullable;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
@@ -43,9 +45,12 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import javax.validation.constraints.NotNull;
 import java.io.Serializable;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @AllArgsConstructor
@@ -76,15 +81,13 @@ public class TelegramMessageFactory {
     public AbstractExecutor<Message> acceptWorkLog(WorkLog workLog, Employee employee) {
         String employeeName = employee.getLastName() + " " + employee.getFirstName();
         Task task = workLog.getTask();
-        StringBuilder messageBuilder = new StringBuilder();
-        messageBuilder
-                .append("\uD83D\uDC77\u200D♂️ ")
-                .append(Decorator.bold("Задача #" + task.getTaskId())).append("\n")
-                .append("Тип: ").append(Decorator.bold(task.getModelWireframe().getName())).append("\n")
-                .append(Decorator.mention(employeeName, employee.getTelegramUserId()))
-                .append(" назначил: ")
-                .append(workLog.getEmployees().stream().map(e -> Decorator.mention(e.getFullName(), e.getTelegramUserId())).collect(Collectors.joining(", ")))
-                .append(" на выполнение задачи");
+        String messageBuilder = "\uD83D\uDC77\u200D♂️ " +
+                Decorator.bold("Задача #" + task.getTaskId()) + "\n" +
+                "Тип: " + Decorator.bold(task.getModelWireframe().getName()) + "\n" +
+                Decorator.mention(employeeName, employee.getTelegramUserId()) +
+                " назначил: " +
+                workLog.getEmployees().stream().map(e -> Decorator.mention(e.getFullName(), e.getTelegramUserId())).collect(Collectors.joining(", ")) +
+                " на выполнение задачи";
 
         InlineKeyboardButton acceptButton = InlineKeyboardButton.builder()
                 .text("Принять задачу")
@@ -93,7 +96,7 @@ public class TelegramMessageFactory {
 
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
-                .text(messageBuilder.toString())
+                .text(messageBuilder)
                 .parseMode("HTML")
                 .replyMarkup(InlineKeyboardMarkup.builder().keyboardRow(List.of(acceptButton)).build())
                 .build();
@@ -117,8 +120,9 @@ public class TelegramMessageFactory {
 
     public AbstractExecutor<Message> currentActiveTask(TaskDto task) {
         List<ModelItemDto> fields = task.getFields();
-        KeyboardRow keyboardRow = new KeyboardRow(List.of(new KeyboardButton("\uD83D\uDC4C Завершить задачу")));
-        ReplyKeyboardMarkup keyboardMarkup = ReplyKeyboardMarkup.builder().keyboardRow(keyboardRow).resizeKeyboard(true).oneTimeKeyboard(true).build();
+        KeyboardRow keyboardRowMenu = new KeyboardRow(List.of(new KeyboardButton("ℹ️ Меню задачи")));
+        KeyboardRow keyboardRowClose = new KeyboardRow(List.of(new KeyboardButton("\uD83D\uDC4C Завершить задачу")));
+        ReplyKeyboardMarkup keyboardMarkup = ReplyKeyboardMarkup.builder().keyboard(List.of(keyboardRowMenu, keyboardRowClose)).resizeKeyboard(true).build();
         StringBuilder messageBuilder = new StringBuilder();
         messageBuilder.append("Задача #").append(task.getTaskId()).append("\n\n");
         for (ModelItemDto field : fields) {
@@ -162,7 +166,7 @@ public class TelegramMessageFactory {
                 .build();
         return new MessageExecutor<>(message, context);
     }
-    
+
     public CallbackAnswerExecutor answerCallback(String cbQueryId, @Nullable String text) {
         AnswerCallbackQuery answer = AnswerCallbackQuery.builder().text(text).callbackQueryId(cbQueryId).showAlert(false).build();
         return new CallbackAnswerExecutor(answer, context);
@@ -397,13 +401,13 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> dhcpIpRequestNotification(DhcpIpRequestNotificationBody body) {
-        StringBuilder messageBuilder = new StringBuilder("\uD83D\uDCF6️")
-                .append(Decorator.bold("Обнаружено подключенное оборудование:")).append("\n")
-                .append("Хозяин: ").append(body.getOwner()).append("\n")
-                .append("Device: ").append(body.getDevice()).append("\n")
-                .append("IP: ").append(body.getIp()).append("\n")
-                .append("MAC: ").append(body.getMac()).append("\n")
-                .append("VLAN: ").append(body.getVlan()).append("\n");
+        String messageBuilder = "\uD83D\uDCF6️" +
+                Decorator.bold("Обнаружено подключенное оборудование:") + "\n" +
+                "Хозяин: " + body.getOwner() + "\n" +
+                "Device: " + body.getDevice() + "\n" +
+                "IP: " + body.getIp() + "\n" +
+                "MAC: " + body.getMac() + "\n" +
+                "VLAN: " + body.getVlan() + "\n";
 
 //        if(body.getSwitches() != null){
 //            messageBuilder.append("\n").append(Decorator.bold( "Список коммутаторов:")).append("\n");
@@ -419,7 +423,7 @@ public class TelegramMessageFactory {
 //            }
 //        }
 
-        SendMessage message = new SendMessage(chatId, messageBuilder.toString());
+        SendMessage message = new SendMessage(chatId, messageBuilder);
         message.setParseMode(ParseMode.HTML);
         return new MessageExecutor<>(message, context);
     }
@@ -436,9 +440,9 @@ public class TelegramMessageFactory {
                 .chatId(chatId)
                 .text("Выберите адрес:")
                 .replyMarkup(
-                    InlineKeyboardMarkup.builder()
-                            .keyboard(buttons)
-                            .build()
+                        InlineKeyboardMarkup.builder()
+                                .keyboard(buttons)
+                                .build()
                 )
                 .build();
         return new MessageExecutor<>(message, context);
@@ -451,16 +455,29 @@ public class TelegramMessageFactory {
                 .callbackData(CallbackData.create("load_page", "sessionHouse:" + buildingId + ":" + (lastBindings.getNumber() + 1)))
                 .build();
 
-        SendMessage.SendMessageBuilder message =SendMessage.builder()
+        SendMessage.SendMessageBuilder message = SendMessage.builder()
                 .chatId(chatId).parseMode(ParseMode.HTML)
                 .text(lastBindings.stream().map(DhcpBinding::getTextRow).collect(Collectors.joining("\n\n")));
 
-        if(lastBindings.isEmpty()){
+        if (lastBindings.isEmpty()) {
             message.text("Данных по сессиям нет");
         }
 
-        if(lastBindings.getNumber() < lastBindings.getTotalPages()-1){
+        if (lastBindings.getNumber() < lastBindings.getTotalPages() - 1) {
             message.replyMarkup(InlineKeyboardMarkup.builder().keyboardRow(List.of(load_page)).build());
+        }
+
+        return new MessageExecutor<>(message.build(), context);
+    }
+
+    public AbstractExecutor<Message> sessionPage(List<DhcpBinding> bindings) {
+
+        SendMessage.SendMessageBuilder message = SendMessage.builder()
+                .chatId(chatId).parseMode(ParseMode.HTML)
+                .text(bindings.stream().map(DhcpBinding::getTextRow).collect(Collectors.joining("\n\n")));
+
+        if (bindings.isEmpty()) {
+            message.text("Данных по сессиям нет");
         }
 
         return new MessageExecutor<>(message.build(), context);
@@ -475,29 +492,31 @@ public class TelegramMessageFactory {
 
         SendMessage.SendMessageBuilder message = SendMessage.builder()
                 .chatId(chatId).parseMode(ParseMode.HTML)
-                .text(lastBindings.stream().sorted((o1,o2)->{
+                .text(lastBindings.stream().sorted((o1, o2) -> {
                     Integer port1 = null;
                     NetworkConnectionLocation location = o1.getLastConnectionLocation();
-                    if(location != null){
+                    if (location != null) {
                         try {
                             port1 = Integer.parseInt(location.getPortName());
-                        }catch (Exception ignore){}
+                        } catch (Exception ignore) {
+                        }
                     }
                     Integer port2 = null;
                     location = o2.getLastConnectionLocation();
-                    if(location != null){
+                    if (location != null) {
                         try {
                             port2 = Integer.parseInt(location.getPortName());
-                        }catch (Exception ignore){}
+                        } catch (Exception ignore) {
+                        }
                     }
                     return Comparator.nullsLast(Integer::compareTo).compare(port1, port2);
                 }).map(DhcpBinding::getTextRowWithOnline).collect(Collectors.joining("\n\n")));
 
-        if(lastBindings.isEmpty()){
+        if (lastBindings.isEmpty()) {
             message.text("Данных по сессиям нет");
         }
 
-        if(lastBindings.getNumber() < lastBindings.getTotalPages()-1){
+        if (lastBindings.getNumber() < lastBindings.getTotalPages() - 1) {
             message.replyMarkup(InlineKeyboardMarkup.builder().keyboardRow(List.of(load_page)).build());
         }
 
@@ -520,6 +539,160 @@ public class TelegramMessageFactory {
                                 .build()
                 ).build();
         return new MessageExecutor<>(message, context);
+    }
+
+    public AbstractExecutor<Message> loginInfoMenu(List<ModelItem> fields) {
+        List<List<InlineKeyboardButton>> keyboard = new ArrayList<>();
+
+        List<ModelItem> loginsItems = fields.stream().filter(f -> f.getWireframeFieldType().equals(WireframeFieldType.LOGIN))
+                .filter(f -> f.getStringData() != null && !f.getStringData().isBlank()).toList();
+        List<ModelItem> addressItems = fields.stream().filter(f -> f.getWireframeFieldType().equals(WireframeFieldType.ADDRESS))
+                .filter(f -> f.getAddressData() != null && f.getAddressData().getHouseId() != null).toList();
+
+
+        List<InlineKeyboardButton> getBillingInfoButtons = loginsItems.stream().map(f -> InlineKeyboardButton.builder()
+                .text("Информация по логину " + f.getStringData())
+                .callbackData(CallbackData.create("get_billing_info", f.getStringData()))
+                .build()).toList();
+
+        List<InlineKeyboardButton> userHardwareButtons = loginsItems.stream().map(f -> InlineKeyboardButton.builder()
+                .text("Оборудование абонента " + f.getStringData())
+                .callbackData(CallbackData.create("get_user_hardware", f.getStringData()))
+                .build()).toList();
+
+//        List<InlineKeyboardButton> authButtons = loginsItems.stream().map(f -> InlineKeyboardButton.builder()
+//                .text("Авторизовать логин " + f.getStringData())
+//                .callbackData(CallbackData.create("get_auth_variants", f.getStringData()))
+//                .build()).toList();
+
+        List<InlineKeyboardButton> aliveCountButtons = addressItems.stream().map(f -> InlineKeyboardButton.builder()
+                .text("Живые в " + f.getAddressData().getHouseName())
+                .callbackData(CallbackData.create("check_alive_address", f.getAddressData().getHouseId().toString()))
+                .build()).toList();
+
+        List<InlineKeyboardButton> hardwareInHouseButtons = addressItems.stream().map(f -> InlineKeyboardButton.builder()
+                .text("Оборудование в " + f.getAddressData().getHouseName())
+                .callbackData(CallbackData.create("house_sessions_address", f.getAddressData().getHouseId().toString()))
+                .build()).toList();
+
+        keyboard.add(getBillingInfoButtons);
+        keyboard.add(userHardwareButtons);
+//        keyboard.add(authButtons);
+        keyboard.add(aliveCountButtons);
+        keyboard.add(hardwareInHouseButtons);
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("Выберите пункт меню:")
+                .replyMarkup(
+                        InlineKeyboardMarkup.builder()
+                                .keyboard(keyboard)
+                                .build()
+                ).build();
+        return new MessageExecutor<>(message, context);
+
+    }
+
+    public AbstractExecutor<Message> billingInfo(BillingRequestController.TotalUserInfo userInfo) {
+
+        StringBuilder stringBuilder = new StringBuilder();
+
+        stringBuilder.append(Decorator.bold("Пользователь")).append("\n\n");
+        stringBuilder.append(Decorator.underline("Адрес:")).append(" ").append(userInfo.getIbase().getAddr()).append("\n");
+        stringBuilder.append(Decorator.underline("ФИО:")).append(" ").append(userInfo.getIbase().getFio()).append("\n");
+        stringBuilder.append(Decorator.underline("Телефон:")).append(" ").append(userInfo.getIbase().getPhone()).append("\n");
+
+        stringBuilder.append("\n\n").append(Decorator.bold("Тарифы")).append("\n\n");
+
+        BillingRequestController.OldTarifItem mainTariff = userInfo.getOldTarif().get(0);
+        if (mainTariff != null) {
+            stringBuilder.append(Decorator.underline("Основной:")).append("\n");
+            stringBuilder.append("   ").append(Decorator.italic(mainTariff.getService())).append(" ").append(mainTariff.getPrice()).append("руб/период").append("\n");
+        } else {
+            stringBuilder.append(Decorator.underline("Основной:")).append(" ").append(Decorator.italic("Нет тарифа")).append("\n");
+        }
+
+        if (userInfo.getOldTarif().size() > 1) {
+            stringBuilder.append(Decorator.underline("Сервисы:\n"));
+            for (int i = 1; i < userInfo.getOldTarif().size(); i++) {
+                BillingRequestController.OldTarifItem service = userInfo.getOldTarif().get(i);
+                stringBuilder.append("   ").append(service.getService()).append(" ").append(service.getPrice()).append("руб/период").append("\n");
+            }
+        }
+
+        if (userInfo.getOldTarif() != null && userInfo.getOldTarif().size() > 0) {
+            Float totalPrice = userInfo.getOldTarif().stream().map(BillingRequestController.OldTarifItem::getPrice).reduce(0f, Float::sum);
+            stringBuilder.append(Decorator.underline("Общая стоимость:")).append(" ").append(totalPrice).append("руб/период").append("\n");
+        }
+
+        stringBuilder.append(Decorator.underline("Скорость:\n"))
+                .append("   По тарифу ").append(userInfo.getNewTarif().getTspeed()).append(" Мбит/с").append("\n");
+        stringBuilder.append("   Фактическая ").append(userInfo.getNewTarif().getSpeed()).append(" Мбит/с").append("\n");
+
+        if (userInfo.getNewTarif().getEdate() != null) {
+            SimpleDateFormat format = new SimpleDateFormat("dd.MM.yyyy HH:mm");
+            stringBuilder.append(Decorator.underline("Окончание тарифа:")).append(" ").append(format.format(userInfo.getNewTarif().getEdate())).append("\n\n");
+        }
+
+        stringBuilder.append(Decorator.bold("Баланс: "));
+        Float balance = userInfo.getIbase().getMoney();
+        if (balance != null) {
+            stringBuilder.append(balance).append(" руб").append("\n");
+        } else {
+            stringBuilder.append(Decorator.italic("0")).append("\n");
+        }
+
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(stringBuilder.toString())
+                .parseMode(ParseMode.HTML)
+                .build();
+
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> authVariants(String login) {
+        InlineKeyboardButton recentlyButton = InlineKeyboardButton.builder()
+                .text("Недавно вышедшее в сеть")
+                .callbackData(CallbackData.create("auth_recently", login))
+                .build();
+        InlineKeyboardButton byMacButton = InlineKeyboardButton.builder()
+                .text("По мак адресу")
+                .callbackData(CallbackData.create("auth_by_mac", login))
+                .build();
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text("Выберите вариант авторизации:")
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(
+                        InlineKeyboardMarkup
+                                .builder()
+                                .keyboard(List.of(
+                                        List.of(recentlyButton),
+                                        List.of(byMacButton)
+                                ))
+                                .build()
+                ).build();
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> authButtonList(DhcpBinding binding, String login) {
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text("Авторизовать")
+                .callbackData(CallbackData.create("auth_login", login + "#" + binding.getMacaddr()))
+                .build();
+
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(binding.getTextRow())
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(
+                        InlineKeyboardMarkup
+                                .builder()
+                                .keyboardRow(List.of(button))
+                                .build()
+                ).build();
+        return new MessageExecutor<>(sendMessage, context);
     }
 
     /**

@@ -111,6 +111,10 @@ public class AddressDispatcher {
                     predicates.add(cb.equal(root.join("street", JoinType.LEFT).get("streetId"), addressData.getStreet().getStreetId()));
                 else predicates.add(cb.isNull(root.join("street")));
 
+                if(addressData.getHouseId() != null)
+                    predicates.add(cb.equal(root.get("houseId"), addressData.getHouseId()));
+                else predicates.add(cb.isNull(root.get("houseId")));
+
                 if (addressData.getHouseNum() != null)
                     predicates.add(cb.equal(root.get("houseNum"), addressData.getHouseNum()));
                 else predicates.add(cb.isNull(root.get("houseNum")));

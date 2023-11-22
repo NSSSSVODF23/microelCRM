@@ -77,6 +77,7 @@ public class AcpClient {
         this.stompController = stompController;
     }
 
+    @Transactional
     public List<DhcpBinding> getBindingsByLogin(String login) {
         DhcpBinding[] dhcpBindings = get(DhcpBinding[].class, Map.of("login", login), "dhcp", "bindings");
         if (dhcpBindings == null) return Collections.emptyList();

@@ -20,6 +20,7 @@ public class AddressDto {
     private DistrictDto district;
     private StreetDto street;
 
+    private Long houseId;
     private Short houseNum;
     private Short fraction;
     private Character letter;

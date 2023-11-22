@@ -30,6 +30,7 @@ import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
+import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -62,6 +63,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.lang.Thread.sleep;
+import static java.util.Collections.reverse;
 
 @Slf4j
 @Component
@@ -158,14 +160,19 @@ public class TelegramController {
 
         mainBot.subscribe(new TelegramCommandReactor("/menu", update -> {
             Long chatId = update.getMessage().getChatId();
-            Employee employee = employeeDispatcher.getByTelegramId(chatId).orElse(null);
-            if (employee == null) return false;
-            if (employee.getOffsite()) {
-                TelegramMessageFactory.create(chatId, mainBot).offsiteMenu().execute();
-            } else {
-                TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Меню отсутствует").execute();
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                operatingModes.put(employee, OperatingMode.CHECK_ALIVE);
+                if (employee.getOffsite()) {
+                    TelegramMessageFactory.create(chatId, mainBot).offsiteMenu().execute();
+                } else {
+                    TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Меню отсутствует").execute();
+                }
+                return true;
+            } catch (Exception e) {
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+                return false;
             }
-            return true;
         }));
         
         mainBot.subscribe(new TelegramCommandReactor("/check_alive", update -> {
@@ -278,7 +285,7 @@ public class TelegramController {
                 }
                 try {
                     List<Message> messageList = reportMessages.get(employee);
-                    WorkLog workLog = workLogDispatcher.createReport(chatId, messageList);
+                    WorkLog workLog = workLogDispatcher.createReport(employee, messageList);
                     reportMessages.remove(employee);
                     operatingModes.remove(employee);
                     factory.deleteMessage(messageId).execute();
@@ -533,6 +540,153 @@ public class TelegramController {
             return false;
         }));
 
+        mainBot.subscribe(new TelegramCallbackReactor("get_billing_info", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if(data != null){
+                try {
+                    Employee employee = getEmployeeByChat(chatId);
+                    try {
+                        BillingRequestController.TotalUserInfo userInfo = billingRequestController.getUserInfo(data.getString());
+                        messageFactory.answerCallback(callbackId, null).execute();
+                        messageFactory.billingInfo(userInfo).execute();
+                        return true;
+                    }catch (EmptyResponse e){
+                        messageFactory.answerCallback(callbackId, "Не удалось найти информацию о пользователе").execute();
+                    }
+                }catch (Exception e){
+                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+                }
+            }
+            return false;
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("get_user_hardware", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if(data != null){
+                try {
+                    Employee employee = getEmployeeByChat(chatId);
+                    List<DhcpBinding> bindingsByLogin = acpClient.getBindingsByLogin(data.getString());
+                    messageFactory.answerCallback(callbackId, null).execute();
+                    messageFactory.sessionPage(bindingsByLogin).execute();
+                    return true;
+                }catch (Exception e){
+                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+                }
+            }
+            return false;
+        }));
+
+//        mainBot.subscribe(new TelegramCallbackReactor("get_auth_variants", (update, data) -> {
+//            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+//            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+//            String callbackId = update.getCallbackQuery().getId();
+//            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+//            if(data != null){
+//                try {
+//                    Employee employee = getEmployeeByChat(chatId);
+//                    messageFactory.answerCallback(callbackId, null).execute();
+//                    messageFactory.authVariants(data.getString()).execute();
+//                    return true;
+//                }catch (Exception e){
+//                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+//                }
+//            }
+//            return false;
+//        }));
+//
+//        mainBot.subscribe(new TelegramCallbackReactor("auth_recently", (update, data) -> {
+//            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+//            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+//            String callbackId = update.getCallbackQuery().getId();
+//            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+//            if(data != null){
+//                try {
+//                    Employee employee = getEmployeeByChat(chatId);
+//                    List<DhcpBinding> content = new ArrayList<>(acpClient.getLastBindings(0, (short) 1, null, null, null, null, null, null).getContent());
+//                    reverse(content);
+//                    messageFactory.answerCallback(callbackId, null).execute();
+//                    for (DhcpBinding binding : content){
+//                        messageFactory.authButtonList(binding, data.getString()).execute();
+//                    }
+//                    return true;
+//                }catch (Exception e){
+//                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+//                }
+//            }
+//            return false;
+//        }));
+//
+//        mainBot.subscribe(new TelegramCallbackReactor("auth_by_mac", (update, data) -> {
+//            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+//            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+//            String callbackId = update.getCallbackQuery().getId();
+//            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+//            if(data != null){
+//                try {
+//                    Employee employee = getEmployeeByChat(chatId);
+//                    List<DhcpBinding> content = new ArrayList<>(acpClient.getLastBindings(0, (short) 1, null, null, null, null, null, null)
+//                            .getContent());
+//                    reverse(content);
+//                    messageFactory.answerCallback(callbackId, null).execute();
+//                    for (DhcpBinding binding : content){
+//                        messageFactory.authButtonList(binding, data.getString()).execute();
+//                    }
+//                    return true;
+//                }catch (Exception e){
+//                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+//                }
+//            }
+//            return false;
+//        }));
+//
+//        mainBot.subscribe(new TelegramCallbackReactor("auth_login", (update, data) -> {
+//            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+//            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+//            String callbackId = update.getCallbackQuery().getId();
+//            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+//            if(data != null){
+//                try {
+//                    Employee employee = getEmployeeByChat(chatId);
+//                    String[] splitData = data.getString().split("#");
+//                    if(splitData.length != 2) {
+//                        messageFactory.answerCallback(callbackId, "Не верные данные авторизации").execute();
+//                        return false;
+//                    }
+//                    String login = splitData[0];
+//                    String mac = splitData[1];
+//                    DhcpBinding.AuthForm authForm = new DhcpBinding.AuthForm();
+//                    authForm.setLogin(login);
+//                    authForm.setMacaddr(mac);
+//                    acpClient.authDhcpBinding(authForm);
+//                    messageFactory.answerCallback(callbackId, "Логин " + login + " успешно авторизован под " + mac).execute();
+//                    return true;
+//                }catch (Exception e){
+//                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+//                }
+//            }
+//            return false;
+//        }));
+
+        mainBot.subscribe(new TelegramPromptReactor("ℹ️ Меню задачи", (update) -> {
+            Long chatId = update.getMessage().getChatId();
+            TelegramMessageFactory factory = TelegramMessageFactory.create(chatId, mainBot);
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                List<ModelItem> fields = workLogDispatcher.getTaskFieldsAcceptedWorkLog(employee);
+                factory.loginInfoMenu(fields).execute();
+                return true;
+            }catch (Exception e){
+                factory.simpleMessage(e.getMessage()).execute();
+                return false;
+            }
+        }));
+
         mainBot.subscribe(new TelegramPromptReactor("\uD83D\uDC4C Завершить задачу", (update) -> {
             // Получаем активную задачу по идентификатору чата
             Long chatId = update.getMessage().getChatId();
@@ -540,7 +694,7 @@ public class TelegramController {
             try {
                 Employee employee = getEmployeeByChat(chatId);
                 try {
-                    WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
+                    WorkLog workLog = workLogDispatcher.getAcceptedWorkLogByEmployee(employee);
                     factory.closeWorkLogMessage().execute();
                     factory.clearKeyboardMenu().execute();
                     reportMessages.put(employee, new ArrayList<>());

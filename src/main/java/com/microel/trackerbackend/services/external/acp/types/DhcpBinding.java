@@ -10,12 +10,19 @@ import com.microel.trackerbackend.services.external.billing.BillingRequestContro
 import com.microel.trackerbackend.storage.entities.acp.NetworkConnectionLocation;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import lombok.*;
+import net.time4j.CalendarUnit;
+import net.time4j.Duration;
 import net.time4j.Moment;
 import net.time4j.PrettyTime;
+import net.time4j.format.TemporalFormatter;
+import net.time4j.format.platform.SimpleFormatter;
+import net.time4j.tz.TZID;
+import net.time4j.tz.Timezone;
 import org.springframework.lang.Nullable;
 
 import java.time.Instant;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 @Builder
@@ -85,10 +92,21 @@ public class DhcpBinding {
     @JsonIgnore
     public String getTextRow(){
         PrettyTime prettyTime = PrettyTime.of(Locale.forLanguageTag("ru-RU"));
-        String sessionDuration = prettyTime.printRelativeInStdTimezone(Moment.from(Instant.ofEpochMilli(getLeaseStart())));
+        String sessionDuration = prettyTime.printRelativeOrDateTime(
+                Moment.from(Instant.ofEpochMilli(getLeaseStart())),
+                Timezone.ofSystem(),
+                TimeUnit.SECONDS,
+                CalendarUnit.DAYS,
+                SimpleFormatter.ofMomentPattern("dd-MM-yyyy HH:mm", Locale.forLanguageTag("ru-RU"), Timezone.ofSystem().getID())
+        );
         StringBuilder stringBuilder = new StringBuilder();
+        if(getIsAuth()){
+            stringBuilder.append(Decorator.bold("Авторизован")).append("\n");
+        }else{
+            stringBuilder.append("Не авторизован").append("\n");
+        }
         stringBuilder.append(Decorator.bold(getMacaddr()));
-        stringBuilder.append(" ").append(getAuthName());
+        if(getAuthName() != null) stringBuilder.append(" ").append(getAuthName());
         if(getBillingAddress() != null){
             stringBuilder.append("\n").append(getBillingAddress());
         }
@@ -96,7 +114,13 @@ public class DhcpBinding {
         stringBuilder.append(" ").append(getDhcpHostname());
         stringBuilder.append("\n").append(Decorator.italic(sessionDuration));
         if(getLastConnectionLocation() != null && getLastConnectionLocation().getLastPortCheck() != null){
-            String updateDuration = prettyTime.printRelativeInStdTimezone(Moment.from(getLastConnectionLocation().getLastPortCheck().toInstant()));
+            String updateDuration = prettyTime.printRelativeOrDateTime(
+                    Moment.from(getLastConnectionLocation().getLastPortCheck().toInstant()),
+                    Timezone.ofSystem(),
+                    TimeUnit.SECONDS,
+                    CalendarUnit.DAYS,
+                    SimpleFormatter.ofMomentPattern("dd-MM-yyyy HH:mm", Locale.forLanguageTag("ru-RU"), Timezone.ofSystem().getID())
+            );
             stringBuilder.append("\n").append("Был подключен к коммутатору:");
             stringBuilder.append("\n")
                     .append(getLastConnectionLocation().getCommutatorName())
@@ -108,33 +132,32 @@ public class DhcpBinding {
     }
 
     @JsonIgnore
-    public String getTextRowWithOnline(){
-        PrettyTime prettyTime = PrettyTime.of(Locale.forLanguageTag("ru-RU"));
-        String sessionDuration = prettyTime.printRelativeInStdTimezone(Moment.from(Instant.ofEpochMilli(getLeaseStart())));
+    public String getTextButton(){
         StringBuilder stringBuilder = new StringBuilder();
-        if(getOnlineStatus() == NetworkState.ONLINE){
-            stringBuilder.append(Decorator.bold("Онлайн"));
-        }else{
-            stringBuilder.append("Офлайн");
-        }
-        stringBuilder.append("\n").append(Decorator.bold(getMacaddr()));
-        stringBuilder.append(" ").append(getAuthName());
+        stringBuilder.append(getMacaddr());
+        if(getAuthName() != null) stringBuilder.append(" ").append(getAuthName());
         if(getBillingAddress() != null){
-            stringBuilder.append("\n").append(getBillingAddress());
+            stringBuilder.append(" ").append(getBillingAddress());
         }
-        stringBuilder.append("\n").append(Decorator.bold(getIpaddr()));
+        stringBuilder.append(" ").append(getIpaddr());
         stringBuilder.append(" ").append(getDhcpHostname());
-        stringBuilder.append("\n").append(Decorator.italic(sessionDuration));
-        if(getLastConnectionLocation() != null && getLastConnectionLocation().getLastPortCheck() != null){
-            String updateDuration = prettyTime.printRelativeInStdTimezone(Moment.from(getLastConnectionLocation().getLastPortCheck().toInstant()));
-            stringBuilder.append("\n").append("Был подключен к коммутатору:");
-            stringBuilder.append("\n")
-                    .append(getLastConnectionLocation().getCommutatorName())
-                    .append(" Порт ")
-                    .append(getLastConnectionLocation().getPortName())
-                    .append("\n").append(Decorator.italic(updateDuration));
+        if(getIsAuth()){
+            stringBuilder.append("Авторизован");
+        }else{
+            stringBuilder.append("Не авторизован");
         }
         return stringBuilder.toString();
+    }
+
+    @JsonIgnore
+    public String getTextRowWithOnline(){
+        String textRow = getTextRow();
+        if(getOnlineStatus() == NetworkState.ONLINE){
+            textRow = Decorator.bold("Онлайн")+"\n"+textRow;
+        }else{
+            textRow = "Офлайн"+"\n"+textRow;
+        }
+        return textRow;
     }
 
     public Long getLeaseStart() {

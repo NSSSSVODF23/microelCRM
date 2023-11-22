@@ -16,10 +16,12 @@ import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
+import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.AlreadyClosed;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.WorkLogRepository;
+import org.hibernate.Hibernate;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
@@ -142,6 +144,44 @@ public class WorkLogDispatcher {
         }).stream().map(WorkLogMapper::toDto).collect(Collectors.toList());
     }
 
+    @Transactional
+    public List<WorkLog> getQueueWorkLogByEmployee(Employee employee){
+        List<WorkLog> workLogs = workLogRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            Subquery<WorkReport> workReportSubquery = query.subquery(WorkReport.class);
+            Root<WorkReport> workReportRoot = workReportSubquery.from(WorkReport.class);
+            workReportSubquery.select(workReportRoot).distinct(true).where(cb.equal(workReportRoot.join("author"), employee));
+
+            Join<WorkLog, WorkReport> workReportsJoin = root.join("workReports", JoinType.LEFT);
+            predicates.add(cb.or(workReportsJoin.isNull(), workReportsJoin.in(workReportSubquery).not()));
+
+            Join<WorkLog, Employee> employeesJoin = root.join("employees", JoinType.LEFT);
+            predicates.add(employeesJoin.in(employee));
+            predicates.add(cb.isNull(root.get("closed")));
+
+            query.distinct(true);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        });
+
+        if(workLogs.isEmpty()) throw new EntryNotFound("Не найдено назначенных работ");
+
+        return workLogs;
+    }
+
+    @Transactional
+    public List<ModelItem> getTaskFieldsAcceptedWorkLog(Employee employee){
+        Hibernate.initialize(getAcceptedWorkLogByEmployee(employee).getTask().getFields());
+        return getAcceptedWorkLogByEmployee(employee).getTask().getFields();
+    }
+
+    @Transactional
+    public WorkLog getAcceptedWorkLogByEmployee(Employee employee){
+        return getQueueWorkLogByEmployee(employee).stream().filter(wl -> {
+            return wl.getAcceptedEmployees().stream().anyMatch(ae -> Objects.equals(ae.getLogin(), employee.getLogin()));
+        }).findFirst().orElseThrow(() -> new EntryNotFound("Не найдено активной задачи"));
+    }
+
     @Nullable
     public WorkLog getAcceptedWorkLogByTelegramId(Long chatId) {
         return workLogRepository.findAll((root, query, cb) -> {
@@ -151,10 +191,10 @@ public class WorkLogDispatcher {
             Root<WorkReport> workReportRoot = subquery.from(WorkReport.class);
             subquery.select(workReportRoot).distinct(true).where(cb.equal(workReportRoot.join("author").get("telegramUserId"), String.valueOf(chatId)));
 
-            Join<String, Employee> employeeJoin = root.join("employees", JoinType.LEFT);
+            Join<WorkLog, Employee> employeeJoin = root.join("employees", JoinType.LEFT);
             predicates.add(cb.equal(employeeJoin.get("telegramUserId"), String.valueOf(chatId)));
 
-            Join<Object, Object> workReportsJoin = root.join("workReports", JoinType.LEFT);
+            Join<WorkLog, WorkReport> workReportsJoin = root.join("workReports", JoinType.LEFT);
             predicates.add(cb.or(workReportsJoin.isNull(), cb.in(workReportsJoin).value(subquery).not()));
 
             predicates.add(cb.isNull(root.get("closed")));
@@ -219,13 +259,8 @@ public class WorkLogDispatcher {
         return workLogRepository.findAllByTask_TaskId(taskId, Sort.by(Sort.Direction.DESC, "created"));
     }
 
-    public WorkLog createReport(Long chatId, List<Message> messageList) throws EntryNotFound, IllegalFields {
-        Employee employee = employeeDispatcher.getByTelegramId(chatId).orElseThrow(() -> new EntryNotFound("Сотрудник не найден"));
-        WorkLog workLog = getAcceptedByTelegramId(chatId);
-        if (workLog.getAcceptedEmployees().stream().noneMatch(acceptingEntry -> acceptingEntry.getTelegramUserId().equals(chatId.toString())))
-            throw new IllegalFields("Невозможно закрыть не активную задачу");
-        if (workLog.getWorkReports().stream().anyMatch(workReport -> workReport.getAuthor().equals(employee)))
-            throw new IllegalFields("Вы уже создали отчет по данной задаче");
+    public WorkLog createReport(Employee employee, List<Message> messageList) throws EntryNotFound, IllegalFields {
+        WorkLog workLog = getAcceptedWorkLogByEmployee(employee);
 
         StringBuilder text = new StringBuilder();
 

@@ -43,6 +43,9 @@ public class Address implements Comparable<Address> {
     @JoinColumn(name = "f_street_id")
     private Street street;
 
+    @Nullable
+    private Long houseId;
+
     private Short houseNum;
     private Short fraction;
     private Character letter;
@@ -116,23 +119,6 @@ public class Address implements Comparable<Address> {
         return getBillingAddress(false);
     }
 
-    public static Address fromTelegramCallback(String callback) throws JsonProcessingException {
-        ObjectMapper mapper = new ObjectMapper();
-        Map<String, String> callbackMap = mapper.readValue(callback, new TypeReference<Map<String, String>>() {
-        });
-
-        Address address = new Address();
-        Street street = Street.builder().name(callbackMap.get("streetName")).billingAlias("streetBillingAlias").build();
-        address.setStreet(street);
-        if(callbackMap.containsKey("houseNum")) address.setHouseNum(Short.parseShort(callbackMap.get("houseNum")));
-        if(callbackMap.containsKey("fraction")) address.setFraction(Short.parseShort(callbackMap.get("fraction")));
-        if(callbackMap.containsKey("letter")) address.setLetter(callbackMap.get("letter").charAt(0));
-        if(callbackMap.containsKey("build")) address.setBuild(Short.parseShort(callbackMap.get("build")));
-        if(callbackMap.containsKey("apartmentNum")) address.setApartmentNum(Short.parseShort(callbackMap.get("apartmentNum")));
-
-        return address;
-    }
-
     public void setCityByName(String cityName) {
         this.city = City.builder().name(cityName).deleted(false).build();
     }
@@ -178,10 +164,40 @@ public class Address implements Comparable<Address> {
         return addressName.toString();
     }
 
+    public String getHouseName() {
+        StringBuilder addressName = new StringBuilder();
+        if(city != null) {
+            addressName.append(city.getName(), 0, 4).append(".");
+        }
+        if(street  != null) {
+            addressName.append(" ");
+            if(street.getPrefix() != null){
+                addressName.append(street.getPrefix()).append(".");
+            }
+            if(street.getName() != null){
+                addressName.append(street.getName());
+            }
+        }
+        if(houseNum != null) {
+            addressName.append(" ").append(houseNum);
+        }
+        if(fraction != null) {
+            addressName.append("/").append(fraction);
+        }
+        if(letter != null) {
+            addressName.append(letter);
+        }
+        if(build != null) {
+            addressName.append(" стр.").append(build);
+        }
+        return addressName.toString();
+    }
+
     public void setAddressName(String addressName) {
     }
 
     public void setHouse(House house){
+        this.houseId = house.getHouseId();
         this.houseNum = house.getHouseNum();
         this.fraction = house.getFraction();
         this.letter = house.getLetter();
