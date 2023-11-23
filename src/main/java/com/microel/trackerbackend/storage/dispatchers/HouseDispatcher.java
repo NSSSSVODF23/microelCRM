@@ -97,6 +97,9 @@ public class HouseDispatcher {
             if (request.getBuild() != null) {
                 predicates.add(cb.equal(root.get("build"), request.getBuild()));
             }
+            if (request.getApartment() != null){
+                predicates.add(cb.isTrue(root.get("isApartmentHouse")));
+            }
             return cb.and(cb.or(streetNamesPredicates.toArray(Predicate[]::new)), cb.and(predicates.toArray(Predicate[]::new)));
         }).stream().findFirst().orElse(null);
     }

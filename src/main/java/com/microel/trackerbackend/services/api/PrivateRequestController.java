@@ -1949,7 +1949,7 @@ public class PrivateRequestController {
     }
 
     @GetMapping("convert/billing-address-string")
-    public ResponseEntity<AddressDto> convertBillingAddressString(@RequestParam @Nullable String addressString) {
+    public ResponseEntity<Address> convertBillingAddressString(@RequestParam @Nullable String addressString) {
         if (addressString == null) return ResponseEntity.ok(null);
         return ResponseEntity.ok(addressDispatcher.convert(addressString));
     }
