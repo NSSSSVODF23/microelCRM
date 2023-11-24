@@ -184,13 +184,18 @@ public class Task {
     }
 
     public Set<Employee> getAllEmployeesObservers(Employee exclude) {
-        Set<Employee> employees = new HashSet<>(employeesObservers);
-        for(Department department : departmentsObservers) {
-            Set<Employee> departmentEmployees = department.getEmployees();
-            if(departmentEmployees != null) employees.addAll(departmentEmployees);
+        Set<Employee> allEmployeeObservers = new HashSet<>();
+        if(employeesObservers != null) {
+            allEmployeeObservers.addAll(employeesObservers);
         }
-        if(exclude != null) employees.remove(exclude);
-        return employees;
+        if(departmentsObservers != null) {
+            for (Department department : departmentsObservers) {
+                Set<Employee> departmentEmployees = department.getEmployees();
+                if (departmentEmployees != null) allEmployeeObservers.addAll(departmentEmployees);
+            }
+        }
+        if(exclude != null) allEmployeeObservers.remove(exclude);
+        return allEmployeeObservers;
     }
 
     public Set<Employee> getAllEmployeesObservers() {
