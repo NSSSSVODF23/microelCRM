@@ -15,6 +15,7 @@ import com.microel.trackerbackend.storage.entities.acp.NetworkConnectionLocation
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
+import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.team.Employee;
@@ -693,6 +694,51 @@ public class TelegramMessageFactory {
                                 .build()
                 ).build();
         return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> fileSuggestions(List<TFile> files) {
+        List<List<InlineKeyboardButton>> keyboard = files.stream().map(TFile::toTelegramButton).map(List::of).toList();
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text("Выберите нужный файл:")
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(
+                        InlineKeyboardMarkup
+                                .builder()
+                                .keyboard(keyboard)
+                                .build()
+                ).build();
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> file(TFile file) {
+        return switch (file.getType()) {
+            case PHOTO -> new PhotoMessageExecutor(SendPhoto.builder()
+                    .chatId(chatId)
+                    .caption(file.getName())
+                    .photo(file.getInputFile())
+                    .parseMode("HTML")
+                    .build(), context);
+            case VIDEO -> new VideoMessageExecutor(SendVideo.builder()
+                    .chatId(chatId)
+                    .caption(file.getName())
+                    .video(file.getInputFile())
+                    .parseMode("HTML")
+                    .build(), context);
+            case AUDIO -> new AudioMessageExecutor(SendAudio.builder()
+                    .chatId(chatId)
+                    .caption(file.getName())
+                    .audio(file.getInputFile())
+                    .parseMode("HTML")
+                    .build(), context);
+            case DOCUMENT, FILE -> new DocumentMessageExecutor(SendDocument.builder()
+                    .chatId(chatId)
+                    .caption(file.getName())
+                    .document(file.getInputFile())
+                    .parseMode("HTML")
+                    .build(), context);
+            default -> throw new IllegalMediaType("Не известный тип медиа вложения");
+        };
     }
 
     /**

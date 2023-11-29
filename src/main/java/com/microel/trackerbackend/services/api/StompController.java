@@ -35,6 +35,7 @@ import com.microel.trackerbackend.storage.entities.team.notification.Notificatio
 import com.microel.trackerbackend.storage.entities.team.util.Department;
 import com.microel.trackerbackend.storage.entities.team.util.Position;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
+import org.springframework.lang.Nullable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
@@ -415,5 +416,9 @@ public class StompController {
 
     public void updateIncomingTagTaskCounter(String login, Map<Long,Map<Long,Long>> counter){
         sendToUser(login, counter, "task", "tag", "count", "change");
+    }
+
+    public void updateFilesDirectory(Long id){
+        sendAll(id, "files", "directory", "update");
     }
 }

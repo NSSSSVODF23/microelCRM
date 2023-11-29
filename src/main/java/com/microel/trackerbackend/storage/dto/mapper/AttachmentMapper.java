@@ -13,9 +13,9 @@ public class AttachmentMapper {
     public static AttachmentDto toDto(@Nullable Attachment attachment) {
         if(attachment == null) return null;
         return AttachmentDto.builder()
-                .created(attachment.getCreated())
+                .createdAt(attachment.getCreatedAt())
                 .mimeType(attachment.getMimeType())
-                .modified(attachment.getModified())
+                .modifiedAt(attachment.getModifiedAt())
                 .name(attachment.getName())
                 .path(attachment.getPath())
                 .size(attachment.getSize())
@@ -27,9 +27,9 @@ public class AttachmentMapper {
     public static Attachment fromDto(@Nullable AttachmentDto attachment) {
         if(attachment == null) return null;
         return Attachment.builder()
-                .created(attachment.getCreated())
+                .createdAt(attachment.getCreatedAt())
                 .mimeType(attachment.getMimeType())
-                .modified(attachment.getModified())
+                .modifiedAt(attachment.getModifiedAt())
                 .name(attachment.getName())
                 .path(attachment.getPath())
                 .size(attachment.getSize())

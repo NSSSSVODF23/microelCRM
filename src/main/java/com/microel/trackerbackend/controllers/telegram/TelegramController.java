@@ -7,6 +7,7 @@ import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.services.FilesWatchService;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.RestPage;
@@ -27,6 +28,8 @@ import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.*;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
+import com.microel.trackerbackend.storage.entities.filesys.FileSystemItem;
+import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
@@ -63,7 +66,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.lang.Thread.sleep;
-import static java.util.Collections.reverse;
 
 @Slf4j
 @Component
@@ -81,6 +83,7 @@ public class TelegramController {
     private final AddressDispatcher addressDispatcher;
     private final HouseDispatcher houseDispatcher;
     private final AcpClient acpClient;
+    private final FilesWatchService filesWatchService;
     private final Map<String, List<Message>> groupedMessagesFromTelegram = new ConcurrentHashMap<>();
     private final Map<Employee, OperatingMode> operatingModes = new ConcurrentHashMap<>();
     private final Map<Employee, List<Message>> reportMessages = new ConcurrentHashMap<>();
@@ -95,7 +98,7 @@ public class TelegramController {
     public TelegramController(ConfigurationStorage configurationStorage, TaskDispatcher taskDispatcher, WorkLogDispatcher workLogDispatcher,
                               ChatDispatcher chatDispatcher, ChatMessageDispatcher chatMessageDispatcher, EmployeeDispatcher employeeDispatcher,
                               StompController stompController, AttachmentDispatcher attachmentDispatcher, BillingRequestController billingRequestController,
-                              AddressDispatcher addressDispatcher, HouseDispatcher houseDispatcher, AcpClient acpClient) {
+                              AddressDispatcher addressDispatcher, HouseDispatcher houseDispatcher, AcpClient acpClient, FilesWatchService filesWatchService) {
         this.configurationStorage = configurationStorage;
         this.taskDispatcher = taskDispatcher;
         this.workLogDispatcher = workLogDispatcher;
@@ -108,6 +111,7 @@ public class TelegramController {
         this.addressDispatcher = addressDispatcher;
         this.houseDispatcher = houseDispatcher;
         this.acpClient = acpClient;
+        this.filesWatchService = filesWatchService;
         try {
             telegramConf = configurationStorage.load(TelegramConf.class);
             initializeMainBot();
@@ -140,7 +144,8 @@ public class TelegramController {
                 new BotCommand("menu", "Основные действия"),
                 new BotCommand("check_alive", "Проверить живых"),
                 new BotCommand("house_sessions", "Получить сессии в доме"),
-                new BotCommand("commutator_sessions", "Получить сессии коммутатора")
+                new BotCommand("commutator_sessions", "Получить сессии коммутатора"),
+                new BotCommand("search_schemes", "Найти схему")
         );
         SetMyCommands setMyCommands = SetMyCommands.builder()
                 .commands(commands)
@@ -207,6 +212,19 @@ public class TelegramController {
                 Employee employee = getEmployeeByChat(chatId);
                 operatingModes.put(employee, OperatingMode.COMMUTATOR_SESSIONS);
                 TelegramMessageFactory.create(chatId, mainBot).infoModeCancel("Введите адрес дома:", "commutator_sessions").execute();
+                return true;
+            } catch (Exception e) {
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+                return false;
+            }
+        }));
+
+        mainBot.subscribe(new TelegramCommandReactor("/search_schemes", update -> {
+            Long chatId = update.getMessage().getChatId();
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                operatingModes.put(employee, OperatingMode.SEARCH_FILES);
+                TelegramMessageFactory.create(chatId, mainBot).infoModeCancel("Введите название схемы:", "search_schemes").execute();
                 return true;
             } catch (Exception e) {
                 TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
@@ -328,6 +346,11 @@ public class TelegramController {
                     case "commutator_sessions" ->{
                         operatingModes.remove(employee);
                         messageFactory.answerCallback(callbackId,"Выход из режима сессий в коммутаторе").execute();
+                        return true;
+                    }
+                    case "search_schemes" -> {
+                        operatingModes.remove(employee);
+                        messageFactory.answerCallback(callbackId,"Выход из режима поиска схем").execute();
                         return true;
                     }
                     default -> messageFactory.answerCallback(callbackId,"Неизвестный режим").execute();
@@ -582,6 +605,26 @@ public class TelegramController {
             return false;
         }));
 
+        mainBot.subscribe(new TelegramCallbackReactor("get_file", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if(data != null){
+                try {
+                    Employee employee = getEmployeeByChat(chatId);
+                    TFile file = filesWatchService.getFileById(data.getLong());
+                    messageFactory.answerCallback(callbackId, null).execute();
+                    messageFactory.file(file).execute();
+                    operatingModes.remove(employee);
+                    return true;
+                }catch (Exception e){
+                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+                }
+            }
+            return false;
+        }));
+
 //        mainBot.subscribe(new TelegramCallbackReactor("get_auth_variants", (update, data) -> {
 //            Long chatId = update.getCallbackQuery().getMessage().getChatId();
 //            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
@@ -714,6 +757,7 @@ public class TelegramController {
         // Обработка простых текстовых сообщений полученных из чата
         mainBot.subscribe(new TelegramMessageReactor(update -> {
             Long chatId = update.getMessage().getChatId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
             try {
                 Employee employee = getEmployeeByChat(chatId);
                 OperatingMode operatingMode = operatingModes.get(employee);
@@ -738,34 +782,43 @@ public class TelegramController {
                     case CHECK_ALIVE -> {
                         List<House> suggestions = addressDispatcher.getSuggestionsHouse(update.getMessage().getText(), true).stream().limit(5).toList();
                         if(suggestions.isEmpty()){
-                            TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
+                            messageFactory.simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
                             return true;
                         }
-                        TelegramMessageFactory.create(chatId, mainBot).addressSuggestions(suggestions, "check_alive_address").execute();
+                        messageFactory.addressSuggestions(suggestions, "check_alive_address").execute();
                         return true;
                     }
                     case HOUSE_SESSIONS -> {
                         List<House> suggestions = addressDispatcher.getSuggestionsHouse(update.getMessage().getText(), true).stream().limit(5).toList();
                         if(suggestions.isEmpty()){
-                            TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
+                            messageFactory.simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
                             return true;
                         }
-                        TelegramMessageFactory.create(chatId, mainBot).addressSuggestions(suggestions, "house_sessions_address").execute();
+                        messageFactory.addressSuggestions(suggestions, "house_sessions_address").execute();
                         return true;
                     }
                     case COMMUTATOR_SESSIONS -> {
                         List<House> suggestions = addressDispatcher.getSuggestionsHouse(update.getMessage().getText(), true).stream().limit(5).toList();
                         if(suggestions.isEmpty()){
-                            TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
+                            messageFactory.simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
                             return true;
                         }
-                        TelegramMessageFactory.create(chatId, mainBot).addressSuggestions(suggestions, "commutator_sessions_address").execute();
+                        messageFactory.addressSuggestions(suggestions, "commutator_sessions_address").execute();
                         return true;
+                    }
+                    case SEARCH_FILES -> {
+                        List<TFile> foundFiles = filesWatchService.searchFiles(update.getMessage().getText(), null)
+                                .stream().filter(tFile -> tFile.getType().equals(AttachmentType.PHOTO)).limit(10).toList();
+                        if(foundFiles.isEmpty()){
+                            messageFactory.simpleMessage("Схем по запросу не найдено. Попробуйте еще раз.").execute();
+                            return true;
+                        }
+                        messageFactory.fileSuggestions(foundFiles).execute();
                     }
                 }
                 return false;
             }catch (Exception e){
-                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+                messageFactory.simpleMessage(e.getMessage()).execute();
                 return false;
             }
         }));
@@ -1354,6 +1407,7 @@ public class TelegramController {
         REPORT_SENDING("REPORT_SENDING"),
         CHECK_ALIVE("CHECK_ALIVE"),
         HOUSE_SESSIONS("HOUSE_SESSIONS"),
+        SEARCH_FILES("SEARCH_FILES"),
         COMMUTATOR_SESSIONS("COMMUTATOR_SESSIONS");
         
         private final String value;

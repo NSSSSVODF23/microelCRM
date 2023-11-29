@@ -17,6 +17,7 @@ import com.microel.trackerbackend.parsers.oldtracker.AddressCorrectingPool;
 import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.parsers.oldtracker.OldTrackerParserSettings;
 import com.microel.trackerbackend.security.AuthorizationProvider;
+import com.microel.trackerbackend.services.FilesWatchService;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.*;
 import com.microel.trackerbackend.services.external.billing.BillingPayType;
@@ -46,6 +47,8 @@ import com.microel.trackerbackend.storage.entities.comments.TaskJournalItem;
 import com.microel.trackerbackend.storage.entities.comments.dto.CommentData;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.equipment.ClientEquipment;
+import com.microel.trackerbackend.storage.entities.filesys.FileSystemItem;
+import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.salary.PaidAction;
 import com.microel.trackerbackend.storage.entities.salary.PaidWork;
 import com.microel.trackerbackend.storage.entities.salary.PaidWorkGroup;
@@ -131,6 +134,7 @@ public class PrivateRequestController {
     private final BillingRequestController billingRequestController;
     private final AcpClient acpClient;
     private final ClientEquipmentDispatcher clientEquipmentDispatcher;
+    private final FilesWatchService filesWatchService;
 
     public PrivateRequestController(WireframeDispatcher wireframeDispatcher, TaskDispatcher taskDispatcher,
                                     StreetDispatcher streetDispatcher, HouseDispatcher houseDispatcher, CityDispatcher cityDispatcher,
@@ -141,7 +145,7 @@ public class PrivateRequestController {
                                     TaskTagDispatcher taskTagDispatcher, TaskFieldsSnapshotDispatcher taskFieldsSnapshotDispatcher,
                                     NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher,
                                     ChatDispatcher chatDispatcher, TelegramController telegramController,
-                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, BillingRequestController billingRequestController, AcpClient acpClient, ClientEquipmentDispatcher clientEquipmentDispatcher) {
+                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, BillingRequestController billingRequestController, AcpClient acpClient, ClientEquipmentDispatcher clientEquipmentDispatcher, FilesWatchService filesWatchService) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.streetDispatcher = streetDispatcher;
@@ -172,6 +176,7 @@ public class PrivateRequestController {
         this.billingRequestController = billingRequestController;
         this.acpClient = acpClient;
         this.clientEquipmentDispatcher = clientEquipmentDispatcher;
+        this.filesWatchService = filesWatchService;
     }
 
     // Получает список доступных наблюдателей из базы данных
@@ -2132,6 +2137,11 @@ public class PrivateRequestController {
         return ResponseEntity.ok(BillingPayType.getList());
     }
 
+    @GetMapping("types/files-sorting")
+    public ResponseEntity<List<Map<String,String>>> getFilesSortingTypes() {
+        return ResponseEntity.ok(FilesWatchService.FileSortingTypes.getList());
+    }
+
     @GetMapping("types/connection-service/suggestions")
     public ResponseEntity<List<Map<String, String>>> getSuggestionForConnectionService(@Nullable @RequestParam String query) {
         return ResponseEntity.ok(
@@ -2221,6 +2231,129 @@ public class PrivateRequestController {
         Employee employee = getEmployeeFromRequest(request);
         clientEquipmentDispatcher.delete(id, employee);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("files/root")
+    public ResponseEntity<List<FileSystemItem>> getRootFiles(@Nullable @RequestParam FilesWatchService.FileSortingTypes sortingType) {
+        return ResponseEntity.ok(filesWatchService.getRoot(sortingType));
+    }
+
+    @GetMapping("files/directory/{id}")
+    public ResponseEntity<FilesWatchService.LoadingDirectoryWrapper> getDirectory(@PathVariable Long id, @Nullable @RequestParam FilesWatchService.FileSortingTypes sortingType) {
+        return ResponseEntity.ok(filesWatchService.getDirectory(id, sortingType));
+    }
+
+    @PatchMapping("files/move-to")
+    public ResponseEntity<Void> filesMoveToDirectory(@RequestBody FilesWatchService.TransferEvent event, HttpServletRequest request) {
+        filesWatchService.moveFiles(event.getSource(), event.getTarget());
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("files/copy-to")
+    public ResponseEntity<Void> filesCopyToDirectory(@RequestBody FilesWatchService.TransferEvent event, HttpServletRequest request) {
+        filesWatchService.copyFiles(event.getSource(), event.getTarget());
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("files/delete/{id}")
+    public ResponseEntity<Void> filesDelete(@PathVariable Long id, HttpServletRequest request) {
+        filesWatchService.deleteFile(id);
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("files/rename")
+    public ResponseEntity<Void> filesRename(@RequestBody FilesWatchService.RenameEvent event, HttpServletRequest request) {
+        filesWatchService.renameFile(event.getId(), event.getName());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("files/create-directory")
+    public ResponseEntity<Void> filesCreateDirectory(@RequestBody FilesWatchService.CreateDirectoryEvent event, HttpServletRequest request) {
+        filesWatchService.createDirectory(event.getParentDirectoryId(), event.getName());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("files/load")
+    public ResponseEntity<Void> filesLoad(@RequestBody List<FilesWatchService.LoadFileEvent> events, HttpServletRequest request) {
+        for(FilesWatchService.LoadFileEvent event : events) {
+            filesWatchService.loadFile(event.getName(), event.getData(), event.getTargetDirectoryId());
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("files/search")
+    public ResponseEntity<List<FileSystemItem>> searchFiles(@RequestParam String query, @Nullable @RequestParam FilesWatchService.FileSortingTypes sortingType) {
+        return ResponseEntity.ok(filesWatchService.search(query, sortingType));
+    }
+
+    @GetMapping("file/{id}")
+    public void getTFile(@PathVariable Long id,
+                                  @RequestHeader(value = "Range", required = false) String rangeHeader,
+                                  HttpServletResponse response) {
+        TFile tFile = filesWatchService.getFileById(id);
+
+        try {
+            OutputStream os = response.getOutputStream();
+
+            // Получаем размер фала
+            long fileSize = Files.size(Path.of(tFile.getPath()));
+
+            byte[] buffer = new byte[1024];
+
+            try (RandomAccessFile file = new RandomAccessFile(tFile.getPath(), "r")) {
+                if (rangeHeader == null) {
+                    response.setHeader("Content-Type", tFile.getMimeType());
+                    response.setHeader("Content-Length", String.valueOf(fileSize));
+                    response.setHeader("Content-Disposition", "inline;filename="+tFile.getName());
+
+                    response.setStatus(HttpStatus.OK.value());
+                    long pos = 0;
+                    file.seek(pos);
+                    while (pos < fileSize - 1) {
+                        file.read(buffer);
+                        os.write(buffer);
+                        pos += buffer.length;
+                    }
+                    os.flush();
+                    return;
+                }
+
+                String[] ranges = rangeHeader.split("-");
+                long rangeStart = Long.parseLong(ranges[0].substring(6));
+                long rangeEnd;
+                if (ranges.length > 1) {
+                    rangeEnd = Long.parseLong(ranges[1]);
+                } else {
+                    rangeEnd = fileSize - 1;
+                }
+                if (fileSize < rangeEnd) {
+                    rangeEnd = fileSize - 1;
+                }
+
+                String contentLength = String.valueOf((rangeEnd - rangeStart) + 1);
+                response.setHeader("Content-Type", tFile.getMimeType());
+                response.setHeader("Content-Length", contentLength);
+                response.setHeader("Accept-Ranges", "bytes");
+                response.setHeader("Content-Range", "bytes" + " " + rangeStart + "-" + rangeEnd + "/" + fileSize);
+                response.setHeader("Content-Disposition", "inline;filename="+tFile.getName());
+                response.setStatus(HttpStatus.PARTIAL_CONTENT.value());
+                long pos = rangeStart;
+                file.seek(pos);
+                while (pos < rangeEnd) {
+                    file.read(buffer);
+                    os.write(buffer);
+                    pos += buffer.length;
+                }
+                os.flush();
+
+
+            } catch (FileNotFoundException e) {
+                response.setStatus(HttpStatus.NOT_FOUND.value());
+            }
+
+        } catch (IOException e) {
+            response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        }
     }
 
     private Employee getEmployeeFromRequest(HttpServletRequest request) {

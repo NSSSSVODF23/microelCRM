@@ -35,8 +35,10 @@ public class Attachment {
     @JsonIgnore
     private String path;
     private Long size;
-    private Timestamp created;
-    private Timestamp modified;
+    @Column(name = "created")
+    private Timestamp createdAt;
+    @Column(name = "modified")
+    private Timestamp modifiedAt;
     @Nullable
     @Column(length = 2048)
     private String thumbnail;

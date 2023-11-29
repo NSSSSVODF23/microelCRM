@@ -52,14 +52,14 @@ public class AttachmentDispatcher {
             Attachment.AttachmentBuilder attachBuilder = Attachment.builder()
                     .type(attachmentType)
                     .mimeType(file.getType())
-                    .created(Timestamp.from(Instant.now()))
-                    .modified(modifiedTimestamp)
+                    .createdAt(Timestamp.from(Instant.now()))
+                    .modifiedAt(modifiedTimestamp)
                     .size((long) file.getData().length);
 
             Attachment foundAttachment = attachmentRepository.findById(file.getName()).orElse(null);
 
             if (foundAttachment != null) {
-                if (foundAttachment.getModified().equals(modifiedTimestamp) && foundAttachment.getSize() == file.getData().length) {
+                if (foundAttachment.getModifiedAt().equals(modifiedTimestamp) && foundAttachment.getSize() == file.getData().length) {
                     result.add(foundAttachment);
                 } else {
                     String newFileName = UUID.randomUUID() + "_" + file.getName();
@@ -94,14 +94,14 @@ public class AttachmentDispatcher {
         Attachment.AttachmentBuilder attachBuilder = Attachment.builder()
                 .type(FileSaver.getAttachmentType(fileData))
                 .mimeType(fileData.getType())
-                .created(Timestamp.from(Instant.now()))
-                .modified(modifiedTimestamp)
+                .createdAt(Timestamp.from(Instant.now()))
+                .modifiedAt(modifiedTimestamp)
                 .size((long) fileData.getData().length);
 
         Attachment foundAttachment = attachmentRepository.findById(fileData.getName()).orElse(null);
 
         if (foundAttachment != null) {
-            if (foundAttachment.getModified().equals(modifiedTimestamp) && foundAttachment.getSize() == fileData.getData().length) {
+            if (foundAttachment.getModifiedAt().equals(modifiedTimestamp) && foundAttachment.getSize() == fileData.getData().length) {
                 return foundAttachment;
             } else {
                 String newFileName = UUID.randomUUID() + "_" + fileData.getName();

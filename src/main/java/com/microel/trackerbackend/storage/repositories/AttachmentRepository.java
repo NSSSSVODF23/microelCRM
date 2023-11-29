@@ -11,9 +11,4 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface AttachmentRepository extends JpaRepository<Attachment, String>, JpaSpecificationExecutor<Attachment> {
-    List<Attachment> findAllByNameAndModified(String name, Timestamp from);
-
-    List<Attachment> findAllByName(String name);
-
-    Optional<Attachment> findTopByNameAndType(String fileName, AttachmentType attachmentType);
 }

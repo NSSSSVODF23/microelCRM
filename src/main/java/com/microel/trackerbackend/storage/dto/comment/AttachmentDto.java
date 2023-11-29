@@ -25,8 +25,8 @@ public class AttachmentDto {
     private AttachmentType type;
     private String path;
     private Long size;
-    private Timestamp created;
-    private Timestamp modified;
+    private Timestamp createdAt;
+    private Timestamp modifiedAt;
     private String thumbnail;
 
     @JsonIgnore

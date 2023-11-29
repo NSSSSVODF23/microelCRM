@@ -50,7 +50,7 @@ import java.util.stream.Stream;
 
 
 @Component
-@Transactional
+@Transactional(readOnly = true)
 public class TaskDispatcher {
     private final TaskRepository taskRepository;
     private final ModelItemDispatcher modelItemDispatcher;
@@ -114,10 +114,12 @@ public class TaskDispatcher {
         }
     }
 
+    @Transactional
     public Task createTask(Task.CreationBody body, Employee employee) throws IllegalFields, EntryNotFound {
         return createTask(body, Timestamp.from(Instant.now()), employee);
     }
 
+    @Transactional
     public Task createTask(Task.CreationBody body, Timestamp timestamp, Employee employee) throws IllegalFields, EntryNotFound {
         // Создаем временный объект задачи
         Task createdTask = new Task();
@@ -221,7 +223,6 @@ public class TaskDispatcher {
         return task;
     }
 
-    @Transactional(readOnly = true)
     public Page<Task> getTasks(Integer page, Integer limit, @Nullable List<TaskStatus> status, @Nullable String stage, @Nullable Set<Long> template,
                                @Nullable List<FilterModelItem> filters, @Nullable String commonFilteringString, @Nullable String taskCreator,
                                @Nullable DateRange creationRange, @Nullable Set<Long> filterTags, @Nullable Set<Long> exclusionIds, @Nullable Employee employeeTask) {
@@ -276,14 +277,17 @@ public class TaskDispatcher {
         return task;
     }
 
+    @Transactional
     public Task unsafeSave(TaskDto task) {
         return taskRepository.save(TaskMapper.fromDto(task));
     }
 
+    @Transactional
     public Task unsafeSave(Task task) {
         return taskRepository.save(task);
     }
 
+    @Transactional
     public Task deleteTask(Long id) throws EntryNotFound {
         Task foundTask = taskRepository.findByTaskId(id).orElse(null);
         if (foundTask == null) throw new EntryNotFound();
@@ -305,6 +309,7 @@ public class TaskDispatcher {
         }), new OffsetPageable(offset, limit, Sort.by(Sort.Direction.DESC, "created")));
     }
 
+    @Transactional
     public Task changeTaskStage(Long taskId, String stageId) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
@@ -329,6 +334,7 @@ public class TaskDispatcher {
         return tasks.stream().map(Task::getTaskId).collect(Collectors.toList());
     }
 
+    @Transactional
     public WorkLog assignInstallers(Long taskId, WorkLog.AssignBody body, Employee creator) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
@@ -358,6 +364,7 @@ public class TaskDispatcher {
         return workLog;
     }
 
+    @Transactional
     public void abortAssignation(Long taskId) {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
@@ -382,6 +389,7 @@ public class TaskDispatcher {
         stompController.updateTagTaskCounter(tasksCountByTags);
     }
 
+    @Transactional
     public WorkLog forceCloseWorkLog(Long taskId, String reasonOfClosing, Employee employeeFromRequest) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
@@ -422,6 +430,7 @@ public class TaskDispatcher {
         return save;
     }
 
+    @Transactional
     public Task changeTaskObservers(Long id, Set<Long> departmentResponsibilities, Set<String> personalResponsibilities) throws EntryNotFound {
         Task task = taskRepository.findById(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
@@ -440,6 +449,7 @@ public class TaskDispatcher {
         return taskRepository.save(task);
     }
 
+    @Transactional
     public Pair<Task, Task> unlinkFromParent(Long taskId) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
@@ -453,6 +463,7 @@ public class TaskDispatcher {
         return Pair.of(taskRepository.save(task), taskRepository.save(parentTask));
     }
 
+    @Transactional
     public Triplet<Task, Task, Task> changeLinkToParentTask(Long taskId, Long parentTaskId) throws EntryNotFound, IllegalFields {
         // Find target task in db
         Task targetTask = taskRepository.findByTaskId(taskId).orElse(null);
@@ -494,6 +505,7 @@ public class TaskDispatcher {
         return Triplet.with(taskRepository.save(targetTask), taskRepository.save(parentTask), null);
     }
 
+    @Transactional
     public Triplet<Task, List<Task>, List<Pair<Task, Task>>> appendLinksToChildrenTask(Long taskId, Set<Long> childIds) throws EntryNotFound {
         Task targetTask = taskRepository.findByTaskId(taskId).orElse(null);
         if (targetTask == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
@@ -541,6 +553,7 @@ public class TaskDispatcher {
         return false;
     }
 
+    @Transactional
     public Task modifyTags(Long taskId, Set<TaskTag> tags) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
@@ -551,6 +564,7 @@ public class TaskDispatcher {
         return taskRepository.save(task);
     }
 
+    @Transactional
     public Task changeTaskResponsible(Long id, Employee responsible) throws EntryNotFound, IllegalFields {
         if (responsible.getLogin() == null) throw new EntryNotFound("Не найден логин пользователя");
         Task task = taskRepository.findByTaskId(id).orElse(null);
@@ -565,6 +579,7 @@ public class TaskDispatcher {
         return taskRepository.save(task);
     }
 
+    @Transactional
     public Task unbindTaskResponsible(Long id) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
@@ -573,6 +588,7 @@ public class TaskDispatcher {
         return taskRepository.save(task);
     }
 
+    @Transactional
     public Task changeTaskActualFrom(Long id, Instant datetime) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
@@ -582,6 +598,7 @@ public class TaskDispatcher {
         return taskRepository.save(task);
     }
 
+    @Transactional
     public Task changeTaskActualTo(Long id, Instant datetime) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
@@ -592,6 +609,7 @@ public class TaskDispatcher {
         return taskRepository.save(task);
     }
 
+    @Transactional
     public Task clearTaskActualFrom(Long id) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
@@ -600,6 +618,7 @@ public class TaskDispatcher {
         return taskRepository.save(task);
     }
 
+    @Transactional
     public Task clearTaskActualTo(Long id) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
@@ -608,6 +627,7 @@ public class TaskDispatcher {
         return taskRepository.save(task);
     }
 
+    @Transactional
     public Task close(Long id) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
@@ -636,6 +656,7 @@ public class TaskDispatcher {
         return taskRepository.save(task);
     }
 
+    @Transactional
     public Task reopen(Long taskId) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
@@ -666,7 +687,7 @@ public class TaskDispatcher {
         return task;
     }
 
-
+    @Transactional
     public Task edit(Long taskId, List<ModelItem> modelItems) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
@@ -951,6 +972,7 @@ public class TaskDispatcher {
         });
     }
 
+    @Transactional
     public Task moveTaskScheduled(Long taskId, IDuration delta) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);

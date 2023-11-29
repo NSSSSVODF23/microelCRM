@@ -414,7 +414,7 @@ public class AddressDispatcher {
     @Transactional
     public Address convert(String addressString) {
         int matchSetting = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
-        String regex = "^(?<street>[а-я\\.\\-\\d]+) (?<hn>\\d{1,4})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(_(?<hb>\\d{1,3}))?-?(?<an>\\d{1,3})?";
+        String regex = "^(?<street>[а-я\\.\\-\\d]+)( пер\\.)? (?<hn>\\d{1,4})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(_(?<hb>\\d{1,3}))?-?(?<an>\\d{1,3})?";
         Pattern pattern = Pattern.compile(regex, matchSetting);
         Matcher matcher = pattern.matcher(addressString);
         AddressLookupRequest lookupRequest = AddressLookupRequest.of(matcher);

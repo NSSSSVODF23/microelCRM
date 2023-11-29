@@ -37,7 +37,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Component
-@Transactional
+@Transactional(readOnly = true)
 public class WorkLogDispatcher {
     private final WorkLogRepository workLogRepository;
     private final EmployeeDispatcher employeeDispatcher;
@@ -57,6 +57,7 @@ public class WorkLogDispatcher {
         this.notificationDispatcher = notificationDispatcher;
     }
 
+    @Transactional
     public WorkLog createWorkLog(Task task, WorkLog.AssignBody assignBody, Employee creator) throws EntryNotFound, IllegalFields {
         if (task == null) throw new EntryNotFound("Не найдена задача");
         if (task.getTaskStatus() != TaskStatus.ACTIVE)
@@ -82,6 +83,7 @@ public class WorkLogDispatcher {
         return workLogRepository.save(workLog);
     }
 
+    @Transactional
     public WorkLog createWorkLog(Task task, BypassWorkCalculationForm.InstallersReportForm installersReportForm, Timestamp creatingDate, Employee creator) throws EntryNotFound, IllegalFields {
         if (task == null) throw new EntryNotFound("Не найдена задача");
         if (task.getTaskStatus() != TaskStatus.ACTIVE)
@@ -119,6 +121,7 @@ public class WorkLogDispatcher {
         return workLogRepository.findById(id).orElseThrow(() -> new EntryNotFound("Отчет не найден"));
     }
 
+    @Transactional
     public WorkLog save(WorkLog workLog) {
         return workLogRepository.save(workLog);
     }
@@ -144,7 +147,6 @@ public class WorkLogDispatcher {
         }).stream().map(WorkLogMapper::toDto).collect(Collectors.toList());
     }
 
-    @Transactional
     public List<WorkLog> getQueueWorkLogByEmployee(Employee employee){
         List<WorkLog> workLogs = workLogRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -169,13 +171,11 @@ public class WorkLogDispatcher {
         return workLogs;
     }
 
-    @Transactional
     public List<ModelItem> getTaskFieldsAcceptedWorkLog(Employee employee){
         Hibernate.initialize(getAcceptedWorkLogByEmployee(employee).getTask().getFields());
         return getAcceptedWorkLogByEmployee(employee).getTask().getFields();
     }
 
-    @Transactional
     public WorkLog getAcceptedWorkLogByEmployee(Employee employee){
         return getQueueWorkLogByEmployee(employee).stream().filter(wl -> {
             return wl.getAcceptedEmployees().stream().anyMatch(ae -> Objects.equals(ae.getLogin(), employee.getLogin()));
@@ -233,6 +233,7 @@ public class WorkLogDispatcher {
         return workLogRepository.findById(workLogId).map(WorkLogMapper::toDto).map(WorkLogDto::getChat).orElseThrow(() -> new EntryNotFound("Чат не найден"));
     }
 
+    @Transactional
     public WorkLogDto acceptWorkLog(Long workLogId, Long chatId) throws EntryNotFound, AlreadyClosed, IllegalFields {
         List<WorkLog> workLogs = workLogRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -259,6 +260,7 @@ public class WorkLogDispatcher {
         return workLogRepository.findAllByTask_TaskId(taskId, Sort.by(Sort.Direction.DESC, "created"));
     }
 
+    @Transactional
     public WorkLog createReport(Employee employee, List<Message> messageList) throws EntryNotFound, IllegalFields {
         WorkLog workLog = getAcceptedWorkLogByEmployee(employee);
 
@@ -337,6 +339,7 @@ public class WorkLogDispatcher {
         }, Sort.by(Sort.Direction.DESC, "created"));
     }
 
+    @Transactional
     public void remove(WorkLog workLog) {
         workLogRepository.delete(workLog);
     }
