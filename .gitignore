@@ -1,7 +1,10 @@
 HELP.md
 target/
+files/
 attachments/
 configurations/!.mvn/wrapper/maven-wrapper.jar
+*.service
+*.cmd
 !**/src/main/**/target/
 !**/src/test/**/target/
 
