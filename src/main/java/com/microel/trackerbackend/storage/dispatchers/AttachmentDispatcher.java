@@ -81,7 +81,7 @@ public class AttachmentDispatcher {
         return attachmentRepository.findAll(
                 (root, query, cb) ->
                         cb.and(cb.equal(root.join("comments").join("parent").get("taskId"), taskId)),
-                Sort.by(Sort.Direction.DESC, "created"));
+                Sort.by(Sort.Direction.DESC, "createdAt"));
     }
 
     public Integer getCountByTask(Long taskId) {
