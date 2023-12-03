@@ -18,6 +18,7 @@ import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.parsers.oldtracker.OldTrackerParserSettings;
 import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.services.FilesWatchService;
+import com.microel.trackerbackend.services.PhyPhoneService;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.*;
 import com.microel.trackerbackend.services.external.billing.BillingPayType;
@@ -135,6 +136,7 @@ public class PrivateRequestController {
     private final AcpClient acpClient;
     private final ClientEquipmentDispatcher clientEquipmentDispatcher;
     private final FilesWatchService filesWatchService;
+    private final PhyPhoneService phyPhoneService;
 
     public PrivateRequestController(WireframeDispatcher wireframeDispatcher, TaskDispatcher taskDispatcher,
                                     StreetDispatcher streetDispatcher, HouseDispatcher houseDispatcher, CityDispatcher cityDispatcher,
@@ -145,7 +147,7 @@ public class PrivateRequestController {
                                     TaskTagDispatcher taskTagDispatcher, TaskFieldsSnapshotDispatcher taskFieldsSnapshotDispatcher,
                                     NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher,
                                     ChatDispatcher chatDispatcher, TelegramController telegramController,
-                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, BillingRequestController billingRequestController, AcpClient acpClient, ClientEquipmentDispatcher clientEquipmentDispatcher, FilesWatchService filesWatchService) {
+                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, BillingRequestController billingRequestController, AcpClient acpClient, ClientEquipmentDispatcher clientEquipmentDispatcher, FilesWatchService filesWatchService, PhyPhoneService phyPhoneService) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.streetDispatcher = streetDispatcher;
@@ -177,6 +179,7 @@ public class PrivateRequestController {
         this.acpClient = acpClient;
         this.clientEquipmentDispatcher = clientEquipmentDispatcher;
         this.filesWatchService = filesWatchService;
+        this.phyPhoneService = phyPhoneService;
     }
 
     // Получает список доступных наблюдателей из базы данных
@@ -793,7 +796,6 @@ public class PrivateRequestController {
             Set<Employee> referredEmployees = employeeDispatcher.getValidEmployees(comment.getReferredLogins());
             notificationDispatcher.createNotification(referredEmployees, Notification.mentionedInTask(comment.getParent()));
             notificationDispatcher.createNotification(taskObservers, Notification.newComment(comment));
-            stompController.createComment(Objects.requireNonNull(CommentMapper.toDto(comment), "Созданные комментарий равен null"), body.getTaskId().toString());
             return ResponseEntity.ok(comment);
         } catch (EmptyFile e) {
             throw new ResponseException("Нельзя сохранить пустой файл");
@@ -1478,6 +1480,28 @@ public class PrivateRequestController {
         }
     }
 
+    @PatchMapping("employee/phy-phone-bind/create")
+    public ResponseEntity<Void> createPhyPhoneBind(@RequestBody PhyPhoneInfo.Form phoneInfo, HttpServletRequest request) {
+        Employee currentUser = getEmployeeFromRequest(request);
+        employeeDispatcher.createPhyPhoneBind(phoneInfo);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("employee/{login}/phy-phone-bind/remove")
+    public ResponseEntity<Void> removePhyPhoneBind(@PathVariable String login, HttpServletRequest request) {
+        Employee currentUser = getEmployeeFromRequest(request);
+        employeeDispatcher.removePhyPhoneBind(login);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("call-to-phone")
+    public ResponseEntity<Void> callUp(@RequestBody PhyPhoneService.CallUpRequest callUpRequest, HttpServletRequest request) {
+        Employee currentUser = getEmployeeFromRequest(request);
+        if(currentUser.getPhyPhoneInfo() == null) throw new ResponseException("К аккаунту не привязан телефон");
+        phyPhoneService.callUp(currentUser.getPhyPhoneInfo(), callUpRequest);
+        return ResponseEntity.ok().build();
+    }
+
     // Изменить статус сотрудника
     @PatchMapping("employee/status")
     public ResponseEntity<Employee> changeEmployeeStatus(@RequestBody String status, HttpServletRequest request) {
@@ -2140,6 +2164,11 @@ public class PrivateRequestController {
     @GetMapping("types/files-sorting")
     public ResponseEntity<List<Map<String,String>>> getFilesSortingTypes() {
         return ResponseEntity.ok(FilesWatchService.FileSortingTypes.getList());
+    }
+
+    @GetMapping("types/phy-phone-models")
+    public ResponseEntity<List<Map<String,String>>> getPhyPhoneModelsTypes() {
+        return ResponseEntity.ok(PhyPhoneInfo.PhyPhoneModel.getList());
     }
 
     @GetMapping("types/connection-service/suggestions")

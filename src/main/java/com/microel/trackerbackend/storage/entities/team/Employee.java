@@ -4,11 +4,13 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.microel.trackerbackend.storage.entities.team.util.Department;
 import com.microel.trackerbackend.storage.entities.team.util.EmployeeStatus;
+import com.microel.trackerbackend.storage.entities.team.util.PhyPhoneInfo;
 import com.microel.trackerbackend.storage.entities.team.util.Position;
 import com.microel.trackerbackend.storage.entities.templating.DefaultObserver;
 import lombok.*;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
+import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import java.sql.Timestamp;
@@ -54,6 +56,11 @@ public class Employee implements Observer{
     @Enumerated(EnumType.STRING)
     private EmployeeStatus status;
     private Timestamp lastSeen;
+    @Nullable
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.REFRESH, CascadeType.MERGE}, orphanRemoval = true)
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    @JoinColumn(name = "f_employee_id")
+    private PhyPhoneInfo phyPhoneInfo;
 
     public static Employee getSystem() {
         return Employee.builder()

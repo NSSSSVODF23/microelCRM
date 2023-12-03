@@ -3,9 +3,11 @@ package com.microel.trackerbackend.storage.dispatchers;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.security.PasswordService;
 import com.microel.trackerbackend.services.api.ResponseException;
+import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.util.Department;
 import com.microel.trackerbackend.storage.entities.team.util.EmployeeStatus;
+import com.microel.trackerbackend.storage.entities.team.util.PhyPhoneInfo;
 import com.microel.trackerbackend.storage.entities.team.util.Position;
 import com.microel.trackerbackend.storage.exceptions.AlreadyExists;
 import com.microel.trackerbackend.storage.exceptions.EditingNotPossible;
@@ -31,14 +33,18 @@ public class EmployeeDispatcher {
     private final PositionDispatcher positionDispatcher;
     private final PasswordService passwordService;
     private final TelegramController telegramController;
+    private final StompController stompController;
 
     public EmployeeDispatcher(EmployeeRepository employeeRepository,
-                              DepartmentDispatcher departmentDispatcher, PositionDispatcher positionDispatcher, PasswordService passwordService, @Lazy TelegramController telegramController) {
+                              DepartmentDispatcher departmentDispatcher, PositionDispatcher positionDispatcher,
+                              PasswordService passwordService, @Lazy TelegramController telegramController,
+                              @Lazy StompController stompController) {
         this.employeeRepository = employeeRepository;
         this.departmentDispatcher = departmentDispatcher;
         this.positionDispatcher = positionDispatcher;
         this.passwordService = passwordService;
         this.telegramController = telegramController;
+        this.stompController = stompController;
 
         if (employeeRepository.count() == 0) {
             try {
@@ -253,5 +259,19 @@ public class EmployeeDispatcher {
             predicates.add(cb.isFalse(root.get("deleted")));
             return cb.and(predicates.toArray(Predicate[]::new));
         });
+    }
+
+    public void createPhyPhoneBind(PhyPhoneInfo.Form form) {
+        Employee employee = employeeRepository.findById(form.getEmployeeLogin()).orElseThrow(()->new ResponseException("Пользователь не найден"));
+        PhyPhoneInfo phoneInfo = PhyPhoneInfo.from(form);
+        phoneInfo.throwIfIncomplete();
+        employee.setPhyPhoneInfo(phoneInfo);
+        stompController.updateEmployee(employeeRepository.save(employee));
+    }
+
+    public void removePhyPhoneBind(String employeeLogin) {
+        Employee employee = employeeRepository.findById(employeeLogin).orElseThrow(()->new ResponseException("Пользователь не найден"));
+        employee.setPhyPhoneInfo(null);
+        stompController.updateEmployee(employeeRepository.save(employee));
     }
 }

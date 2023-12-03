@@ -29,6 +29,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -93,6 +94,9 @@ public class CommentDispatcher {
         targetTask.setLastComment(comment);
 
         taskDispatcher.unsafeSave(targetTask);
+
+        stompController.createComment(Objects.requireNonNull(CommentMapper.toDto(comment), "Созданные комментарий равен null"), targetTask.getTaskId().toString());
+        stompController.updateTask(targetTask);
 
         return comment;
     }

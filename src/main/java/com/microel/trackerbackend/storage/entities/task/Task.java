@@ -116,6 +116,15 @@ public class Task {
                 .filter(f->f.getListViewIndex()!=null)
                 .sorted(Comparator.comparing(FieldItem::getListViewIndex))
                 .map(fieldItem -> fields.stream().filter(f->f.getId().equals(fieldItem.getId())).findFirst().orElse(null))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    public List<ModelItem> getFields(){
+        return modelWireframe.getAllFields().stream()
+                .sorted(Comparator.nullsLast(Comparator.comparing(FieldItem::getOrderPosition))).filter(Objects::nonNull)
+                .map(fieldItem -> fields.stream().filter(f->Objects.equals(f.getId(), fieldItem.getId())).findFirst().orElse(null))
+                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
     }
 
