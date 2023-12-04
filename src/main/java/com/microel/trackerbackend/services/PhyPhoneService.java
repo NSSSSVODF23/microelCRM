@@ -1,32 +1,25 @@
 package com.microel.trackerbackend.services;
 
+import com.microel.trackerbackend.misc.ListItem;
 import com.microel.trackerbackend.services.api.ResponseException;
-import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.storage.entities.team.util.PhyPhoneInfo;
+import com.microel.trackerbackend.storage.repositories.PhyPhoneInfoRepository;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.tomcat.util.security.MD5Encoder;
 import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
-import org.springframework.boot.web.client.RestTemplateBuilder;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.RequestEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 
 import static java.lang.Thread.sleep;
@@ -34,44 +27,11 @@ import static java.lang.Thread.sleep;
 @Service
 public class PhyPhoneService {
 
-    //            if(PHONEOPTION && PHONEOPTION.type === 'old'){
-    //                console.log("CallToTelephone");
-    //                fetch(`http://${PHONEOPTION.ip}/hlPhone_ActionURL`, {
-    //                    method: 'POST',
-    //                    headers: {
-    //                      'Content-Type': 'application/octet-stream',
-    //                      'Authorization': 'Basic YWRtaW46Z2pramNmbnNx'
-    //                    },
-    //                    body: `/hlPhone_ActionURL&Command=0&admin:admin&Number=${request.telephone}&Account=microel.mangosip.ru`
-    //                });
-    //                sendResponse('telephone');
-    //            }else if(PHONEOPTION && PHONEOPTION.type === 'new'){
-    //                console.log("CallToTelephone");
-    //                let details = {
-    //                    'PHB_AutoDialNumber': request.telephone,
-    //                    'ReturnPage': '/information.htm',
-    //                    'AutoDialSubmit': 'submit',
-    //                    'PHB_AutoDialLine': 1
-    //                };
-    //
-    //                let formBody = [];
-    //                for (let property in details) {
-    //                    let encodedKey = encodeURIComponent(property);
-    //                    let encodedValue = encodeURIComponent(details[property]);
-    //                    formBody.push(encodedKey + "=" + encodedValue);
-    //                }
-    //                formBody = formBody.join("&");
-    //                fetch(`http://${PHONEOPTION.ip}/information.htm`, {
-    //                    method: 'POST',
-    //                    headers: {
-    //                      'Content-Type': 'application/x-www-form-urlencoded'
-    //                    },
-    //                    body: formBody
-    //                });
-    //                sendResponse('telephone');
-    //            }
+    private final PhyPhoneInfoRepository phyPhoneInfoRepository;
 
-    RestTemplate restTemplate = new RestTemplateBuilder().build();
+    public PhyPhoneService(PhyPhoneInfoRepository phyPhoneInfoRepository) {
+        this.phyPhoneInfoRepository = phyPhoneInfoRepository;
+    }
 
     public void callUp(PhyPhoneInfo phoneInfo, CallUpRequest callUpRequest){
         String phoneNumber = callUpRequest.getPhoneNumber();
@@ -159,6 +119,14 @@ public class PhyPhoneService {
                 }
             }
         }
+    }
+
+    public PhyPhoneInfo get(Long phyPhoneInfoId) {
+        return phyPhoneInfoRepository.findById(phyPhoneInfoId).orElseThrow(()->new ResponseException("Не удалось найти телефон"));
+    }
+
+    public List<ListItem> getPhyPhoneList() {
+        return phyPhoneInfoRepository.findAll().stream().map(PhyPhoneInfo::toListItem).toList();
     }
 
     @Getter

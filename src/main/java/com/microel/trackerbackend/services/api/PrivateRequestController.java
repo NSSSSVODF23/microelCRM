@@ -67,6 +67,7 @@ import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
 import com.microel.trackerbackend.storage.exceptions.*;
+import com.microel.trackerbackend.storage.repositories.PhyPhoneInfoRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.imgscalr.Scalr;
 import org.javatuples.Triplet;
@@ -104,6 +105,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @RequestMapping("api/private")
 public class PrivateRequestController {
+    private final PhyPhoneInfoRepository phyPhoneInfoRepository;
 
     private final WireframeDispatcher wireframeDispatcher;
     private final TaskDispatcher taskDispatcher;
@@ -147,7 +149,8 @@ public class PrivateRequestController {
                                     TaskTagDispatcher taskTagDispatcher, TaskFieldsSnapshotDispatcher taskFieldsSnapshotDispatcher,
                                     NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher,
                                     ChatDispatcher chatDispatcher, TelegramController telegramController,
-                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, BillingRequestController billingRequestController, AcpClient acpClient, ClientEquipmentDispatcher clientEquipmentDispatcher, FilesWatchService filesWatchService, PhyPhoneService phyPhoneService) {
+                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, BillingRequestController billingRequestController, AcpClient acpClient, ClientEquipmentDispatcher clientEquipmentDispatcher, FilesWatchService filesWatchService, PhyPhoneService phyPhoneService,
+                                    PhyPhoneInfoRepository phyPhoneInfoRepository) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.streetDispatcher = streetDispatcher;
@@ -180,6 +183,7 @@ public class PrivateRequestController {
         this.clientEquipmentDispatcher = clientEquipmentDispatcher;
         this.filesWatchService = filesWatchService;
         this.phyPhoneService = phyPhoneService;
+        this.phyPhoneInfoRepository = phyPhoneInfoRepository;
     }
 
     // Получает список доступных наблюдателей из базы данных
@@ -1480,19 +1484,39 @@ public class PrivateRequestController {
         }
     }
 
-    @PatchMapping("employee/phy-phone-bind/create")
-    public ResponseEntity<Void> createPhyPhoneBind(@RequestBody PhyPhoneInfo.Form phoneInfo, HttpServletRequest request) {
+    @PatchMapping("employee/phy-phone/null/bind")
+    public ResponseEntity<Void> setPhyPhoneBind(HttpServletRequest request) {
         Employee currentUser = getEmployeeFromRequest(request);
-        employeeDispatcher.createPhyPhoneBind(phoneInfo);
+        employeeDispatcher.setPhyPhoneBind(null, currentUser);
         return ResponseEntity.ok().build();
     }
 
-    @DeleteMapping("employee/{login}/phy-phone-bind/remove")
-    public ResponseEntity<Void> removePhyPhoneBind(@PathVariable String login, HttpServletRequest request) {
+    @PatchMapping("employee/phy-phone/{phoneId}/bind")
+    public ResponseEntity<Void> setPhyPhoneBind(@PathVariable Long phoneId, HttpServletRequest request) {
         Employee currentUser = getEmployeeFromRequest(request);
-        employeeDispatcher.removePhyPhoneBind(login);
+        employeeDispatcher.setPhyPhoneBind(phyPhoneService.get(phoneId), currentUser);
         return ResponseEntity.ok().build();
     }
+
+    @GetMapping("phy-phone-list")
+    public ResponseEntity<List<ListItem>> getPhyPhoneBind(HttpServletRequest request) {
+        Employee currentUser = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(phyPhoneService.getPhyPhoneList());
+    }
+
+//    @PatchMapping("employee/phy-phone-bind/create")
+//    public ResponseEntity<Void> createPhyPhoneBind(@RequestBody PhyPhoneInfo.Form phoneInfo, HttpServletRequest request) {
+//        Employee currentUser = getEmployeeFromRequest(request);
+//        employeeDispatcher.createPhyPhoneBind(phoneInfo);
+//        return ResponseEntity.ok().build();
+//    }
+//
+//    @DeleteMapping("employee/{login}/phy-phone-bind/remove")
+//    public ResponseEntity<Void> removePhyPhoneBind(@PathVariable String login, HttpServletRequest request) {
+//        Employee currentUser = getEmployeeFromRequest(request);
+//        employeeDispatcher.removePhyPhoneBind(login);
+//        return ResponseEntity.ok().build();
+//    }
 
     @PostMapping("call-to-phone")
     public ResponseEntity<Void> callUp(@RequestBody PhyPhoneService.CallUpRequest callUpRequest, HttpServletRequest request) {
@@ -2157,7 +2181,7 @@ public class PrivateRequestController {
     }
 
     @GetMapping("types/billing-payment-type")
-    public ResponseEntity<List<BillingPayType.ListItem>> getPaymentTypeTypes() {
+    public ResponseEntity<List<ListItem>> getPaymentTypeTypes() {
         return ResponseEntity.ok(BillingPayType.getList());
     }
 

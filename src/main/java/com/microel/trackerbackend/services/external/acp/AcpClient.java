@@ -423,7 +423,7 @@ public class AcpClient {
 
     @Transactional
     @Async
-    @Scheduled(cron = "0 0 */2 * * *")
+    @Scheduled(cron = "0 0 */3 * * *")
     public void getAllCommutatorsRemoteUpdate() {
         List<Switch> commutators = getAllCommutators();
         commutators.forEach(commutator -> {
@@ -431,7 +431,7 @@ public class AcpClient {
             Hibernate.initialize(commutator.getAdditionalInfo().getPorts());
             Hibernate.initialize(commutator.getAdditionalInfo().getRemoteUpdateLogs());
         });
-        remoteUpdateCommutators(commutators, 3600L);
+        remoteUpdateCommutators(commutators, 7200L);
     }
 
     public void remoteUpdateCommutators(List<Switch> commutators, Long timeout){

@@ -1,5 +1,7 @@
 package com.microel.trackerbackend.services.external.billing;
 
+import com.microel.trackerbackend.misc.ListItem;
+
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -31,13 +33,13 @@ public enum BillingPayType {
         return Stream.of(BillingPayType.values()).map(value->new ListItem(value.getLabel(), value.ordinal())).toList();
     }
 
-    public static class ListItem{
-        public String label;
-        public Integer value;
-
-        public ListItem(String label, Integer value){
-            this.label = label;
-            this.value = value;
-        }
-    }
+//    public static class ListItem{
+//        public String label;
+//        public Integer value;
+//
+//        public ListItem(String label, Integer value){
+//            this.label = label;
+//            this.value = value;
+//        }
+//    }
 }

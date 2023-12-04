@@ -57,7 +57,7 @@ public class Employee implements Observer{
     private EmployeeStatus status;
     private Timestamp lastSeen;
     @Nullable
-    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.REFRESH, CascadeType.MERGE}, orphanRemoval = true)
+    @ManyToOne
     @OnDelete(action = OnDeleteAction.CASCADE)
     @JoinColumn(name = "f_employee_id")
     private PhyPhoneInfo phyPhoneInfo;

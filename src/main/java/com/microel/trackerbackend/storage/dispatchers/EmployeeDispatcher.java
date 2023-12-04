@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
+import com.microel.trackerbackend.misc.ListItem;
 import com.microel.trackerbackend.security.PasswordService;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
@@ -272,6 +273,11 @@ public class EmployeeDispatcher {
     public void removePhyPhoneBind(String employeeLogin) {
         Employee employee = employeeRepository.findById(employeeLogin).orElseThrow(()->new ResponseException("Пользователь не найден"));
         employee.setPhyPhoneInfo(null);
+        stompController.updateEmployee(employeeRepository.save(employee));
+    }
+
+    public void setPhyPhoneBind(@Nullable PhyPhoneInfo phone, Employee employee) {
+        employee.setPhyPhoneInfo(phone);
         stompController.updateEmployee(employeeRepository.save(employee));
     }
 }

@@ -1,9 +1,11 @@
 package com.microel.trackerbackend.storage.entities.team.util;
 
+import com.microel.trackerbackend.misc.ListItem;
 import com.microel.trackerbackend.services.FilesWatchService;
 import com.microel.trackerbackend.services.api.ResponseException;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.PatchMapping;
 
 import javax.persistence.*;
@@ -26,6 +28,12 @@ public class PhyPhoneInfo {
     private String password;
     @Enumerated(EnumType.STRING)
     private PhyPhoneModel model;
+
+    private String description;
+
+    public ListItem toListItem(){
+        return new ListItem(getDescription(), getPhyPhoneInfoId());
+    }
 
     public static PhyPhoneInfo from(Form form) {
         PhyPhoneInfo info = new PhyPhoneInfo();
@@ -80,5 +88,12 @@ public class PhyPhoneInfo {
         public String getValue() {
             return model;
         }
+    }
+
+    @Getter
+    @Setter
+    public class BindToEmployeeForm {
+        @Nullable
+        private Long phyPhoneInfoId;
     }
 }

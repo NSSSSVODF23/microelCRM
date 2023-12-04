@@ -248,7 +248,9 @@ public class WorkLogDispatcher {
         if (!workLog.getEmployees().contains(employee)) throw new IllegalFields("Эта задача вам не назначена");
         if (workLog.getAcceptedEmployees().contains(acceptingEntry))
             throw new IllegalFields("Вы уже приняли эту задачу");
-        if (workLogs.stream().anyMatch(w -> w.getAcceptedEmployees().contains(acceptingEntry)))
+        List<WorkLog> acceptedWorkLogs = workLogs.stream().filter(wl -> wl.getAcceptedEmployees().contains(acceptingEntry)).toList();
+        boolean allReportsHaveBeenWritten = acceptedWorkLogs.stream().allMatch(wl -> wl.getWorkReports().stream().anyMatch(wr->Objects.equals(wr.getAuthor(), employee)));
+        if (!allReportsHaveBeenWritten)
             throw new IllegalFields("Чтобы принять задачу, нужно завершить текущую активную");
         workLog.getAcceptedEmployees().add(acceptingEntry);
         workLog.getChat().getMembers().add(employee);
