@@ -7,7 +7,10 @@ import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
+import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.misc.*;
+import com.microel.trackerbackend.misc.accounting.MonthlySalaryReportTable;
+import com.microel.trackerbackend.misc.accounting.TDocumentFactory;
 import com.microel.trackerbackend.misc.network.NetworkRemoteControl;
 import com.microel.trackerbackend.misc.sorting.TaskJournalSortingTypes;
 import com.microel.trackerbackend.modules.transport.ChangeTaskObserversDTO;
@@ -2407,6 +2410,13 @@ public class PrivateRequestController {
         } catch (IOException e) {
             response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
         }
+    }
+    @GetMapping("accounting/monthly-salary-report-table")
+    public void getMonthlySalaryReportTable(@RequestParam Long date, HttpServletResponse response) {
+        org.javatuples.Pair<Date,Date> monthBoundaries = Utils.getMonthBoundaries(new Date(date));
+        Map<Date, List<WorkingDay>> workingDaysByOffsiteEmployees = workingDayDispatcher.getWorkingDaysByOffsiteEmployees(monthBoundaries.getValue0(), monthBoundaries.getValue1());
+        MonthlySalaryReportTable document = TDocumentFactory.createMonthlySalaryReportTable(workingDaysByOffsiteEmployees, monthBoundaries.getValue0(), monthBoundaries.getValue1());
+        document.sendByResponse(response);
     }
 
     private Employee getEmployeeFromRequest(HttpServletRequest request) {

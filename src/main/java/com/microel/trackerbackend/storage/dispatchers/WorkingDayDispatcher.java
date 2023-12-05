@@ -8,6 +8,7 @@ import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.repositories.WorkingDayRepository;
 import org.javatuples.Pair;
+import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
@@ -172,5 +173,16 @@ public class WorkingDayDispatcher {
             predicates.add(cb.equal(root.get("date"), date));
             return cb.and(predicates.toArray(Predicate[]::new));
         }).stream().findFirst().orElse(null);
+    }
+
+    public Map<Date, List<WorkingDay>> getWorkingDaysByOffsiteEmployees(Date startDate, Date endDate){
+        List<Employee> offsiteEmployee = employeeDispatcher.getInstallersList();
+        List<WorkingDay> workingDays = workingDayRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(root.get("employee").in(offsiteEmployee));
+            predicates.add(cb.between(root.get("date"), startDate, endDate));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }, Sort.by(Sort.Direction.ASC, "employee"));
+        return workingDays.stream().collect(Collectors.groupingBy(WorkingDay::getDate));
     }
 }

@@ -208,7 +208,7 @@ public class EmployeeDispatcher {
     }
 
     public List<Employee> getInstallersList() {
-        return employeeRepository.findAllByOffsiteIsTrue();
+        return employeeRepository.findAllByOffsiteIsTrueAndDeletedIsFalse();
     }
 
     public List<Employee> getByIdSet(Set<String> personalResponsibilities) {

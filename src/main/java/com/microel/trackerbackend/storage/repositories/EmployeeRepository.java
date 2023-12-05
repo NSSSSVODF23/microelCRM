@@ -20,4 +20,6 @@ public interface EmployeeRepository extends JpaRepository<Employee, String>, Jpa
     Optional<Employee> findByTelegramUserId(String chatId);
 
     Optional<Employee> findTopByTelegramUserId(String chatId);
+
+    List<Employee> findAllByOffsiteIsTrueAndDeletedIsFalse();
 }

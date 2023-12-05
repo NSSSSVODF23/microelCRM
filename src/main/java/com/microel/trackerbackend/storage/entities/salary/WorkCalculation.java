@@ -137,4 +137,12 @@ public class WorkCalculation {
         }
         return Math.max(originalSum, 0f);
     }
+
+    public boolean isNotEmpty(){
+        return !(actions == null || actions.size()==0);
+    }
+
+    public boolean isNotZero(){
+        return getSum() > 0;
+    }
 }
