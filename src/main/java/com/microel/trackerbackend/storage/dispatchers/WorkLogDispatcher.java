@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.misc.BypassWorkCalculationForm;
 import com.microel.trackerbackend.misc.WireframeTaskCounter;
+import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.mapper.WorkLogMapper;
@@ -46,9 +47,7 @@ public class WorkLogDispatcher {
     private final StompController stompController;
     private final NotificationDispatcher notificationDispatcher;
 
-    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher,
-                             TaskEventDispatcher taskEventDispatcher, @Lazy TaskDispatcher taskDispatcher,
-                             StompController stompController, @Lazy NotificationDispatcher notificationDispatcher) {
+    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher, TaskEventDispatcher taskEventDispatcher, @Lazy TaskDispatcher taskDispatcher, StompController stompController, @Lazy NotificationDispatcher notificationDispatcher) {
         this.workLogRepository = workLogRepository;
         this.employeeDispatcher = employeeDispatcher;
         this.taskEventDispatcher = taskEventDispatcher;
@@ -127,8 +126,8 @@ public class WorkLogDispatcher {
     }
 
 
-    public List<WorkLogDto> getQueueByTelegramId(Long chatId) {
-        return workLogRepository.findAll((root, query, cb) -> {
+    public List<WorkLog> getQueueByTelegramId(Long chatId) {
+        List<WorkLog> workLogs = workLogRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
             Subquery<WorkReport> subquery = query.subquery(WorkReport.class);
@@ -144,10 +143,12 @@ public class WorkLogDispatcher {
             predicates.add(cb.isNull(root.get("closed")));
             query.distinct(true);
             return cb.and(predicates.toArray(Predicate[]::new));
-        }).stream().map(WorkLogMapper::toDto).collect(Collectors.toList());
+        });
+        workLogs.forEach(workLog -> Hibernate.initialize(workLog.getTask().getFields()));
+        return workLogs;
     }
 
-    public List<WorkLog> getQueueWorkLogByEmployee(Employee employee){
+    public List<WorkLog> getQueueWorkLogByEmployee(Employee employee) {
         List<WorkLog> workLogs = workLogRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
@@ -166,17 +167,17 @@ public class WorkLogDispatcher {
             return cb.and(predicates.toArray(Predicate[]::new));
         });
 
-        if(workLogs.isEmpty()) throw new EntryNotFound("Не найдено назначенных работ");
+        if (workLogs.isEmpty()) throw new EntryNotFound("Не найдено назначенных работ");
 
         return workLogs;
     }
 
-    public List<ModelItem> getTaskFieldsAcceptedWorkLog(Employee employee){
+    public List<ModelItem> getTaskFieldsAcceptedWorkLog(Employee employee) {
         Hibernate.initialize(getAcceptedWorkLogByEmployee(employee).getTask().getFields());
         return getAcceptedWorkLogByEmployee(employee).getTask().getFields();
     }
 
-    public WorkLog getAcceptedWorkLogByEmployee(Employee employee){
+    public WorkLog getAcceptedWorkLogByEmployee(Employee employee) {
         return getQueueWorkLogByEmployee(employee).stream().filter(wl -> {
             return wl.getAcceptedEmployees().stream().anyMatch(ae -> Objects.equals(ae.getLogin(), employee.getLogin()));
         }).findFirst().orElseThrow(() -> new EntryNotFound("Не найдено активной задачи"));
@@ -211,8 +212,36 @@ public class WorkLogDispatcher {
      * @return Сущность {@link WorkLog}
      * @throws EntryNotFound Если активного журнала задачи не найдено
      */
-    public WorkLogDto getAcceptedByTelegramIdDTO(Long chatId) throws EntryNotFound {
+    public WorkLog getAcceptedByTelegramIdDTO(Long chatId) throws EntryNotFound {
         return getQueueByTelegramId(chatId).stream().filter(workLog -> workLog.getAcceptedEmployees() != null && workLog.getAcceptedEmployees().stream().anyMatch(e -> e.getTelegramUserId().equals(chatId.toString()))).findFirst().orElseThrow(() -> new EntryNotFound("Нет активной задачи"));
+    }
+
+    /**
+     * Возвращает активный чат задачи монтажника
+     *
+     * @param employee
+     * @return
+     */
+    public Chat getActiveChatByEmployee(Employee employee) {
+        Chat chat = workLogRepository.findAll((root, query, cb) -> {
+                    List<Predicate> predicates = new ArrayList<>();
+                    predicates.add(cb.isNull(root.get("closed")));
+                    Join<WorkLog, WorkReport> reportJoin = root.join("workReports", JoinType.LEFT);
+                    Join<WorkLog, Employee> employeeJoin = root.join("employees", JoinType.LEFT);
+                    predicates.add(employeeJoin.in(employee));
+                    predicates.add(cb.or(reportJoin.isNull(), reportJoin.get("author").in(employee).not()));
+                    query.distinct(true);
+
+                    return cb.and(predicates.toArray(Predicate[]::new));
+                })
+                .stream()
+                .filter(workLog -> workLog.getAcceptedEmployees().stream().map(AcceptingEntry::getLogin)
+                        .anyMatch(login -> Objects.equals(employee.getLogin(), login)))
+                .findFirst()
+                .orElseThrow(() -> new ResponseException("У монтажника " + employee.getFullName() + " нет активного чата"))
+                .getChat();
+        Hibernate.initialize(chat.getMembers());
+        return chat;
     }
 
     /**
@@ -225,7 +254,7 @@ public class WorkLogDispatcher {
      */
     public WorkLog getAcceptedByTelegramId(Long chatId) throws EntryNotFound {
         WorkLog acceptedWorkLogByTelegramId = getAcceptedWorkLogByTelegramId(chatId);
-        if(acceptedWorkLogByTelegramId == null) throw new EntryNotFound("Нет активной задачи");
+        if (acceptedWorkLogByTelegramId == null) throw new EntryNotFound("Нет активной задачи");
         return acceptedWorkLogByTelegramId;
     }
 
@@ -234,7 +263,7 @@ public class WorkLogDispatcher {
     }
 
     @Transactional
-    public WorkLogDto acceptWorkLog(Long workLogId, Long chatId) throws EntryNotFound, AlreadyClosed, IllegalFields {
+    public WorkLog acceptWorkLog(Long workLogId, Long chatId) throws EntryNotFound, AlreadyClosed, IllegalFields {
         List<WorkLog> workLogs = workLogRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             Join<String, Employee> employeeJoin = root.join("employees", JoinType.LEFT);
@@ -249,13 +278,13 @@ public class WorkLogDispatcher {
         if (workLog.getAcceptedEmployees().contains(acceptingEntry))
             throw new IllegalFields("Вы уже приняли эту задачу");
         List<WorkLog> acceptedWorkLogs = workLogs.stream().filter(wl -> wl.getAcceptedEmployees().contains(acceptingEntry)).toList();
-        boolean allReportsHaveBeenWritten = acceptedWorkLogs.stream().allMatch(wl -> wl.getWorkReports().stream().anyMatch(wr->Objects.equals(wr.getAuthor(), employee)));
+        boolean allReportsHaveBeenWritten = acceptedWorkLogs.stream().allMatch(wl -> wl.getWorkReports().stream().anyMatch(wr -> Objects.equals(wr.getAuthor(), employee)));
         if (!allReportsHaveBeenWritten)
             throw new IllegalFields("Чтобы принять задачу, нужно завершить текущую активную");
         workLog.getAcceptedEmployees().add(acceptingEntry);
         workLog.getChat().getMembers().add(employee);
         stompController.updateWorkLog(workLog);
-        return WorkLogMapper.toDto(workLogRepository.save(workLog));
+        return workLogRepository.save(workLog);
     }
 
     public List<WorkLog> getAllByTaskId(Long taskId) {
@@ -283,8 +312,7 @@ public class WorkLogDispatcher {
         workLog.getChat().getMembers().removeIf(member -> member.getLogin().equals(employee.getLogin()));
         stompController.updateWorkLog(workLog);
         stompController.updateChat(workLog.getChat());
-        stompController.createTaskEvent(workLog.getTask().getTaskId(),
-                taskEventDispatcher.appendEvent(TaskEvent.reportCreated(workLog.getTask(), text.toString(), employee)));
+        stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.reportCreated(workLog.getTask(), text.toString(), employee)));
         notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.reportReceived(workLog, workReport));
         if (workLog.getWorkReports().size() == workLog.getEmployees().size()) {
             workLog.setClosed(timestamp);
@@ -313,8 +341,7 @@ public class WorkLogDispatcher {
 
             stompController.closeChat(workLog.getChat());
             stompController.closeWorkLog(workLog);
-            stompController.createTaskEvent(workLog.getTask().getTaskId(),
-                    taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
+            stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
             notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.worksCompleted(workLog));
         }
         return workLogRepository.save(workLog);
@@ -347,7 +374,7 @@ public class WorkLogDispatcher {
     }
 
     public WorkLog getByChatId(Long chatId) {
-        return workLogRepository.findByChat_ChatId(chatId).orElseThrow(()->new EntryNotFound("Журнал работ не найден"));
+        return workLogRepository.findByChat_ChatId(chatId).orElseThrow(() -> new EntryNotFound("Журнал работ не найден"));
     }
 
     public List<WorkLog> getDoneWorks(Long wireframeId, Timestamp start, Timestamp end) {

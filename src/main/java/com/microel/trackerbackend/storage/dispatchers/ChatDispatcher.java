@@ -226,7 +226,7 @@ public class ChatDispatcher {
      * @throws IllegalMediaType Если задан не верный тип данных для вложения
      * @throws TelegramApiException Если ошибка отправки сообщения в tg api
      */
-    public SuperMessage createMessage(Long chatId, Message tlgMessage, Employee author, TelegramController context) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
+    public SuperMessage createMessage(Long chatId, Message tlgMessage, Employee author, TelegramController context, Boolean isSentFromGroup) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
         Chat chat = getChat(chatId);
         ChatMessage replyToMessage = null;
         if (Objects.nonNull(tlgMessage.getReplyToMessage())) {
@@ -259,16 +259,19 @@ public class ChatDispatcher {
         ChatMessage savedMessage = chatMessageDispatcher.unsafeSave(message);
         // Транслируем во все чаты
         List<Message> responseMessages = null;
-        if (Utils.getTlgMsgType(tlgMessage) == TlgMessageType.MEDIA) {
-            responseMessages = context.sendMediaBroadcastMessage(chat, ChatMessageMapper.toDto(savedMessage));
-        } else if (Utils.getTlgMsgType(tlgMessage) == TlgMessageType.TEXT) {
-            responseMessages = context.sendTextBroadcastMessage(chat, ChatMessageMapper.toDto(savedMessage));
+        if(!isSentFromGroup){
+            if (Utils.getTlgMsgType(tlgMessage) == TlgMessageType.MEDIA) {
+                responseMessages = context.sendMediaBroadcastMessage(chat, ChatMessageMapper.toDto(savedMessage));
+            } else if (Utils.getTlgMsgType(tlgMessage) == TlgMessageType.TEXT) {
+                responseMessages = context.sendTextBroadcastMessage(chat, ChatMessageMapper.toDto(savedMessage));
+            }
+            if (responseMessages == null) {
+                throw new IllegalFields("По какой то причине сообщение не было транслировано в Telegram Api");
+            }
+            // Добавляем связи
+            return appendBindToMessage(savedMessage.getChatMessageId(), responseMessages);
         }
-        if (responseMessages == null) {
-            throw new IllegalFields("По какой то причине сообщение не было транслировано в Telegram Api");
-        }
-        // Добавляем связи
-        return appendBindToMessage(savedMessage.getChatMessageId(), responseMessages);
+        return collectSuperMessage(List.of(message));
     }
 
     /**
@@ -284,7 +287,7 @@ public class ChatDispatcher {
      * @throws IllegalMediaType Если задан не верный тип данных для вложения
      * @throws TelegramApiException Если ошибка отправки сообщения в tg api
      */
-    public SuperMessage createMessage(Long chatId, List<Message> tlgMessages, Employee author, TelegramController context) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
+    public SuperMessage createMessage(Long chatId, List<Message> tlgMessages, Employee author, TelegramController context, Boolean isSentFromGroup) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
         Chat chat = getChat(chatId);
 
         List<ChatMessage> createdMessages = new ArrayList<>();
@@ -317,10 +320,14 @@ public class ChatDispatcher {
         chat.setLastMessage(createdMessages.get(0));
         unsafeSave(chat);
         List<ChatMessage> savedMessages = chatMessageDispatcher.unsafeSaveAll(createdMessages);
-        // Транслируем во все чаты
-        List<List<Message>> responseMessages = context.sendMediaGroupBroadcastMessage(chat,savedMessages.stream().map(ChatMessageMapper::toDto).collect(Collectors.toList()));
-        // Добавляем связи
-        return appendBindToMessage(savedMessages.stream().map(ChatMessage::getChatMessageId).collect(Collectors.toList()), responseMessages);
+        if(!isSentFromGroup) {
+            // Транслируем во все чаты
+            List<List<Message>> responseMessages = context.sendMediaGroupBroadcastMessage(chat, savedMessages.stream().map(ChatMessageMapper::toDto).collect(Collectors.toList()));
+            // Добавляем связи
+            return appendBindToMessage(savedMessages.stream().map(ChatMessage::getChatMessageId).collect(Collectors.toList()), responseMessages);
+        }
+
+        return collectSuperMessage(createdMessages);
     }
 
     public SuperMessage createSystemMessage(Long chatId, String message, TelegramController context) throws EntryNotFound, TelegramApiException {

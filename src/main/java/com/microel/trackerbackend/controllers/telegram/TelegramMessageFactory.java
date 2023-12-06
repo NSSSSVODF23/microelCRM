@@ -73,10 +73,21 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> userIdResponse() {
-        return new MessageExecutor<>(
-                new SendMessage(chatId, "Ваш TelegramId: " + chatId + "\n Введите его в настройках приложения, чтобы получать сообщения."),
-                context
-        );
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("Ваш TelegramId: " + Decorator.code(chatId) + "\n Введите его в настройках приложения, чтобы получать сообщения.")
+                .parseMode("HTML")
+                .build();
+        return new MessageExecutor<>(message, context);
+    }
+
+    public AbstractExecutor<Message> groupIdResponse() {
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text("Id группового чата: " + Decorator.code(chatId) + "\n Назначьте его всем монтажникам из данной группы в настройках сотрудников.")
+                .parseMode("HTML")
+                .build();
+        return new MessageExecutor<>(message, context);
     }
 
     public AbstractExecutor<Message> acceptWorkLog(WorkLog workLog, Employee employee) {
@@ -119,14 +130,14 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(message, context);
     }
 
-    public AbstractExecutor<Message> currentActiveTask(TaskDto task) {
-        List<ModelItemDto> fields = task.getFields();
+    public AbstractExecutor<Message> currentActiveTask(Task task) {
+        List<ModelItem> fields = task.getFields();
         KeyboardRow keyboardRowMenu = new KeyboardRow(List.of(new KeyboardButton("ℹ️ Меню задачи")));
         KeyboardRow keyboardRowClose = new KeyboardRow(List.of(new KeyboardButton("\uD83D\uDC4C Завершить задачу")));
         ReplyKeyboardMarkup keyboardMarkup = ReplyKeyboardMarkup.builder().keyboard(List.of(keyboardRowMenu, keyboardRowClose)).resizeKeyboard(true).build();
         StringBuilder messageBuilder = new StringBuilder();
         messageBuilder.append("Задача #").append(task.getTaskId()).append("\n\n");
-        for (ModelItemDto field : fields) {
+        for (ModelItem field : fields) {
             messageBuilder.append(Decorator.italic(field.getName())).append(": ").append(field.getTextRepresentationForTlg()).append("\n\n");
         }
         SendMessage message = SendMessage.builder()
@@ -134,6 +145,21 @@ public class TelegramMessageFactory {
                 .text(messageBuilder.toString())
                 .parseMode("HTML")
                 .replyMarkup(keyboardMarkup)
+                .build();
+        return new MessageExecutor<>(message, context);
+    }
+
+    public AbstractExecutor<Message> currentActiveTaskForGroupChat(Task task) {
+        List<ModelItem> fields = task.getFields();
+        StringBuilder messageBuilder = new StringBuilder();
+        messageBuilder.append("Назначена задача #").append(task.getTaskId()).append("\n\n");
+        for (ModelItem field : fields) {
+            messageBuilder.append(Decorator.italic(field.getName())).append(": ").append(field.getTextRepresentationForTlg()).append("\n\n");
+        }
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(messageBuilder.toString())
+                .parseMode("HTML")
                 .build();
         return new MessageExecutor<>(message, context);
     }
@@ -217,8 +243,8 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(message, context);
     }
 
-    public AbstractExecutor<Message> workLogListItem(WorkLogDto workLog, Boolean isActive, Boolean isAccepting, @Nullable Integer index) {
-        TaskDto task = workLog.getTask();
+    public AbstractExecutor<Message> workLogListItem(WorkLog workLog, Boolean isActive, Boolean isAccepting, @Nullable Integer index) {
+        Task task = workLog.getTask();
         StringBuilder messageBuilder = new StringBuilder();
         if (index != null) {
             messageBuilder.append(Decorator.italic("№" + index + " ")).append("\n");

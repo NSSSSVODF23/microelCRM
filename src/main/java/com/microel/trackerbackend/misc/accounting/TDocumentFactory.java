@@ -123,7 +123,7 @@ public class TDocumentFactory {
                         sumCell.setCellValue(calculation.getSum());
                     }
                     Float allSum = workingDay.getCalculations().stream().map(WorkCalculation::getSum).reduce(Float::sum).orElse(null);
-                    if (allSum != null) {
+                    if (allSum != null && allSum > 0) {
                         CellRangeAddress region = new CellRangeAddress(globalRowIndex, globalRowIndex, 1, 7);
                         sheet.addMergedRegion(region);
                         contentRow = sheet.getRow(globalRowIndex);

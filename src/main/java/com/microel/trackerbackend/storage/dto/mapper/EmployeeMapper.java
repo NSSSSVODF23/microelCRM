@@ -24,6 +24,7 @@ public class EmployeeMapper {
                 .secondName(employee.getSecondName())
                 .status(employee.getStatus())
                 .telegramUserId(employee.getTelegramUserId())
+                .telegramGroupChatId(employee.getTelegramGroupChatId())
                 .build();
     }
 
@@ -46,6 +47,7 @@ public class EmployeeMapper {
                 .secondName(employee.getSecondName())
                 .status(employee.getStatus())
                 .telegramUserId(employee.getTelegramUserId())
+                .telegramGroupChatId(employee.getTelegramGroupChatId())
                 .build();
     }
 }

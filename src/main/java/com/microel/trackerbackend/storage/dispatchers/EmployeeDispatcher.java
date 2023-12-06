@@ -151,6 +151,7 @@ public class EmployeeDispatcher {
             Integer access,
             String internalPhoneNumber,
             String telegramUserId,
+            @Nullable String telegramGroupChatId,
             Long department,
             Long position,
             Boolean offsite
@@ -172,6 +173,14 @@ public class EmployeeDispatcher {
             }
         }
 
+        if(telegramGroupChatId != null && !telegramGroupChatId.isBlank() && !Objects.equals(foundEmployee.getTelegramGroupChatId(), telegramGroupChatId)){
+            try {
+                telegramController.sendMessageToTlgId(telegramGroupChatId, foundEmployee.getFullName() + " назначена рабочая группа");
+            } catch (Throwable e) {
+                throw new ResponseException("Не корректный id группового рабочего чата");
+            }
+        }
+
         Department foundDepartment = departmentDispatcher.getById(department);
         Position foundPosition = positionDispatcher.getById(position);
 
@@ -185,6 +194,7 @@ public class EmployeeDispatcher {
         foundEmployee.setDepartment(foundDepartment);
         foundEmployee.setPosition(foundPosition);
         foundEmployee.setOffsite(offsite);
+        foundEmployee.setTelegramGroupChatId(telegramGroupChatId);
 
         return employeeRepository.save(foundEmployee);
     }
@@ -251,6 +261,15 @@ public class EmployeeDispatcher {
 
     public Optional<Employee> getByTelegramId(Long chatId) {
         return employeeRepository.findTopByTelegramUserId(chatId.toString());
+    }
+
+    /**
+     * Возвращает список сотрудников (монтажников) из группового чата
+     * @param chatId
+     * @return
+     */
+    public List<Employee> getByGroupTelegramId(Long chatId) {
+        return employeeRepository.findAll((root,query,cb)->cb.and(cb.equal(root.get("telegramGroupChatId"), chatId.toString()), cb.isTrue(root.get("offsite"))));
     }
 
     public List<Employee> getByPosition(Long position) {

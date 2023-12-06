@@ -159,6 +159,16 @@ public class CommentDispatcher {
             throw new NotOwner("Вы не являетесь владельцем этого комментария");
         }
 
+        List<Comment> taskComments = commentRepository.findAll((root, query, cb) -> {
+            return cb.and(cb.equal(root.get("parent"), comment.getParent()), cb.isFalse(root.get("deleted")));
+        }, Sort.by(Sort.Direction.DESC, "created"));
+        if (taskComments.size() > 1) {
+            Comment previousComment = taskComments.get(1);
+            previousComment.getParent().setLastComment(previousComment);
+            Task task = taskDispatcher.unsafeSave(previousComment.getParent());
+            stompController.updateTask(task);
+        }
+
         comment.setDeleted(true);
 
         return commentRepository.save(comment);

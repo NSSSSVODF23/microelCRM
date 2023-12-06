@@ -1477,7 +1477,7 @@ public class PrivateRequestController {
         if (body.getPosition() == null) throw new ResponseException("Сотруднику не присвоена должность");
         try {
             Employee employee = employeeDispatcher.edit(body.getFirstName(), body.getLastName(), body.getSecondName(), login, body.getPassword(),
-                    body.getAccess(), body.getInternalPhoneNumber(), body.getTelegramUserId(), body.getDepartment(), body.getPosition(), body.getOffsite());
+                    body.getAccess(), body.getInternalPhoneNumber(), body.getTelegramUserId(), body.getTelegramGroupChatId(), body.getDepartment(), body.getPosition(), body.getOffsite());
             stompController.updateEmployee(employee);
             return ResponseEntity.ok(employee);
         } catch (EntryNotFound e) {
@@ -1506,20 +1506,6 @@ public class PrivateRequestController {
         Employee currentUser = getEmployeeFromRequest(request);
         return ResponseEntity.ok(phyPhoneService.getPhyPhoneList());
     }
-
-//    @PatchMapping("employee/phy-phone-bind/create")
-//    public ResponseEntity<Void> createPhyPhoneBind(@RequestBody PhyPhoneInfo.Form phoneInfo, HttpServletRequest request) {
-//        Employee currentUser = getEmployeeFromRequest(request);
-//        employeeDispatcher.createPhyPhoneBind(phoneInfo);
-//        return ResponseEntity.ok().build();
-//    }
-//
-//    @DeleteMapping("employee/{login}/phy-phone-bind/remove")
-//    public ResponseEntity<Void> removePhyPhoneBind(@PathVariable String login, HttpServletRequest request) {
-//        Employee currentUser = getEmployeeFromRequest(request);
-//        employeeDispatcher.removePhyPhoneBind(login);
-//        return ResponseEntity.ok().build();
-//    }
 
     @PostMapping("call-to-phone")
     public ResponseEntity<Void> callUp(@RequestBody PhyPhoneService.CallUpRequest callUpRequest, HttpServletRequest request) {

@@ -50,6 +50,8 @@ public class Employee implements Observer{
     private String password;
     private Timestamp created;
     private String telegramUserId;
+    @Nullable
+    private String telegramGroupChatId;
     @Column(columnDefinition = "boolean default false")
     private Boolean offsite;
     private Boolean deleted;
@@ -76,6 +78,14 @@ public class Employee implements Observer{
         if(firstName != null)
             return firstName;
         return login;
+    }
+
+    public boolean isHasNotGroup(){
+        return telegramGroupChatId == null || telegramGroupChatId.isBlank();
+    }
+
+    public boolean isHasGroup(){
+        return !isHasNotGroup();
     }
 
     @Override

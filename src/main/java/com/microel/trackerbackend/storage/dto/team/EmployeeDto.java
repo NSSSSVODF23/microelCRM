@@ -25,6 +25,7 @@ public class EmployeeDto {
     private Integer access;
     private Timestamp created;
     private String telegramUserId;
+    private String telegramGroupChatId;
     private Boolean offsite;
     private Boolean deleted;
     private EmployeeStatus status;

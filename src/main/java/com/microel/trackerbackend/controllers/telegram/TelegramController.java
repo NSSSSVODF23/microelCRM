@@ -31,6 +31,7 @@ import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
 import com.microel.trackerbackend.storage.entities.filesys.FileSystemItem;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
+import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
@@ -59,6 +60,7 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -151,6 +153,17 @@ public class TelegramController {
                 .commands(commands)
                 .build();
         mainBot.execute(setMyCommands);
+
+        mainBot.subscribe(new TelegramChatJoinReactor(update -> {
+            System.out.println(update);
+            return true;
+        }));
+
+        mainBot.subscribe(new TelegramCommandReactor("/groupid", update -> {
+            Message message = update.getMessage();
+            TelegramMessageFactory.create(message.getChatId(), mainBot).groupIdResponse().execute();
+            return true;
+        }));
 
         mainBot.subscribe(new TelegramCommandReactor("/start", update -> {
             Message message = update.getMessage();
@@ -253,7 +266,7 @@ public class TelegramController {
             Integer messageId = u.getCallbackQuery().getMessage().getMessageId();
             if (data.isData("active_task")) {
                 mainBot.send(DeleteMessage.builder().chatId(chatId).messageId(messageId).build());
-                WorkLogDto acceptedByTelegramId = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
+                WorkLog acceptedByTelegramId = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
                 TelegramMessageFactory.create(chatId, mainBot).currentActiveTask(acceptedByTelegramId.getTask()).execute();
                 return true;
             } else if (data.isData("tasks_queue")) {
@@ -273,11 +286,25 @@ public class TelegramController {
             ChatDto chatFromWorkLog = workLogDispatcher.getChatByWorkLogId(data.getLong());
             Employee employee = employeeDispatcher.getByTelegramId(chatId).orElseThrow(() -> new EntryNotFound("Пользователь не найден по идентификатору Telegram Api"));
             SuperMessage systemMessage = chatDispatcher.createSystemMessage(chatFromWorkLog.getChatId(), "\uD83D\uDC77\uD83C\uDFFB\u200D♂️" + employee.getFullName() + " принял задачу и подключился к чату", this);
-            WorkLogDto workLog = workLogDispatcher.acceptWorkLog(data.getLong(), chatId);
+            WorkLog workLog = workLogDispatcher.acceptWorkLog(data.getLong(), chatId);
             // Отправляем обновления в интерфейс пользователя
             broadcastUpdatesToWeb(systemMessage);
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
             messageFactory.currentActiveTask(workLog.getTask()).execute();
+            if(employee.isHasGroup()){
+                Set<String> employeesWithEqualGroups = workLog.getEmployees().stream()
+                        .filter(Employee::isHasGroup)
+                        .filter(emp->Objects.equals(employee.getTelegramGroupChatId(), emp.getTelegramGroupChatId()))
+                        .map(Employee::getLogin)
+                        .collect(Collectors.toSet());
+                boolean alreadySentTaskInfoToGroup = workLog.getAcceptedEmployees().stream()
+                        .map(AcceptingEntry::getLogin)
+                        .filter(login -> !Objects.equals(login, employee.getLogin()))
+                        .anyMatch(employeesWithEqualGroups::contains);
+                if(!alreadySentTaskInfoToGroup) {
+                    TelegramMessageFactory.create(employee.getTelegramGroupChatId(), mainBot).currentActiveTaskForGroupChat(workLog.getTask()).execute();
+                }
+            }
             if (workLog.getTargetDescription() != null && !workLog.getTargetDescription().isBlank())
                 messageFactory.simpleMessage("Текущая цель:\n" + workLog.getTargetDescription()).execute();
             return true;
@@ -304,6 +331,13 @@ public class TelegramController {
                 try {
                     List<Message> messageList = reportMessages.get(employee);
                     WorkLog workLog = workLogDispatcher.createReport(employee, messageList);
+                    if(employee.isHasGroup()){
+                        String title = Decorator.underline(Decorator.bold("Отчет "+employee.getFullName()+" по задаче #"+workLog.getTask().getTaskId()));
+                        String reportText = messageList.stream().map(Message::getText).collect(Collectors.joining("\n"));
+                        TelegramMessageFactory.create(employee.getTelegramGroupChatId(), mainBot)
+                                .simpleMessage(title+"\n"+reportText)
+                                .execute();
+                    }
                     reportMessages.remove(employee);
                     operatingModes.remove(employee);
                     factory.deleteMessage(messageId).execute();
@@ -372,7 +406,7 @@ public class TelegramController {
                 if (Objects.equals(operatingModes.get(employee), OperatingMode.REPORT_SENDING)) {
                     reportMessages.remove(employee);
                     operatingModes.remove(employee);
-                    WorkLogDto workLog = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
+                    WorkLog workLog = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
                     TelegramMessageFactory.create(chatId, mainBot).currentActiveTask(workLog.getTask()).execute();
                     TelegramMessageFactory.create(chatId, mainBot).answerCallback(callbackId, "Вы отменили завершение задачи, она вновь активна. Вы находитесь в режиме чата задачи.").execute();
                     return true;
@@ -858,13 +892,31 @@ public class TelegramController {
                 return false;
             }
         }));
+
+        mainBot.subscribe(new TelegramGroupMessageReactor(update -> {
+            try {
+                sendMessageFromTlgGroupChat(update.getMessage());
+                return true;
+            }catch (Exception e){
+                return false;
+            }
+        }));
+
+        mainBot.subscribe(new TelegramGroupEditMessageReactor(update -> {
+            try {
+                sendMessageFromTlgGroupChat(update.getMessage());
+                return true;
+            }catch (Exception e){
+                return false;
+            }
+        }));
     }
 
     private boolean sendWorkLogQueue(Long chatId) throws TelegramApiException {
-        List<WorkLogDto> notAcceptedWorkLogs = new ArrayList<>();
+        List<WorkLog> notAcceptedWorkLogs = new ArrayList<>();
         AtomicBoolean hasActive = new AtomicBoolean(false);
-        List<WorkLogDto> queueByTelegramId = workLogDispatcher.getQueueByTelegramId(chatId);
-        for (WorkLogDto workLog : queueByTelegramId) {
+        List<WorkLog> queueByTelegramId = workLogDispatcher.getQueueByTelegramId(chatId);
+        for (WorkLog workLog : queueByTelegramId) {
             boolean isAccepted = workLog.getAcceptedEmployees().stream().anyMatch(e -> Objects.equals(e.getTelegramUserId(), chatId.toString()));
             if (isAccepted) {
                 TelegramMessageFactory.create(chatId, mainBot).workLogListItem(workLog, true, false, null).execute();
@@ -1197,15 +1249,15 @@ public class TelegramController {
         Employee author = employeeDispatcher.getByTelegramId(receivedMessage.getChatId()).orElseThrow(() -> new EntryNotFound("Идентификатор телеграм не привязан ни к одному аккаунту"));
         // Пытаемся получить активный журнал задачи монтажника который написал сообщение,
         // чтобы понять в какой чат транслировать сообщение.
-        WorkLogDto activeWorkLog = workLogDispatcher.getAcceptedByTelegramIdDTO(receivedMessage.getChatId());
+        WorkLog activeWorkLog = workLogDispatcher.getAcceptedByTelegramIdDTO(receivedMessage.getChatId());
         // Получаем целевой чат
-        ChatDto chat = activeWorkLog.getChat();
+        Chat chat = activeWorkLog.getChat();
         if (chat == null) throw new IllegalFields("Чат не прикреплен к журналу работ");
 
         switch (Utils.getTlgMsgType(receivedMessage)) {
             case TEXT, MEDIA -> {
                 // Создает сообщение в базе данных
-                SuperMessage textMessage = chatDispatcher.createMessage(chat.getChatId(), receivedMessage, author, this);
+                SuperMessage textMessage = chatDispatcher.createMessage(chat.getChatId(), receivedMessage, author, this, false);
                 broadcastUpdatesToWeb(textMessage);
             }
             case GROUP -> {
@@ -1215,12 +1267,13 @@ public class TelegramController {
                 } else {
                     groupedMessagesFromTelegram.put(group, Stream.of(receivedMessage).collect(Collectors.toList()));
                     try {
-                        Executors.newSingleThreadExecutor().execute(() -> {
+                        ExecutorService threadExecutor = Executors.newSingleThreadExecutor();
+                        threadExecutor.execute(() -> {
                             try {
                                 // Ждем несколько секунд пока придут все сообщения от telegram api
                                 sleep(1000);
                                 List<Message> listOfReceivedMessages = groupedMessagesFromTelegram.get(group);
-                                SuperMessage mediaGroupMessage = chatDispatcher.createMessage(chat.getChatId(), listOfReceivedMessages, author, this);
+                                SuperMessage mediaGroupMessage = chatDispatcher.createMessage(chat.getChatId(), listOfReceivedMessages, author, this, false);
                                 // Отправляет сообщение для обновления пользовательского интерфейса
                                 broadcastUpdatesToWeb(mediaGroupMessage);
                             } catch (InterruptedException | TelegramApiException | EntryNotFound |
@@ -1230,6 +1283,72 @@ public class TelegramController {
                                 groupedMessagesFromTelegram.remove(group);
                             }
                         });
+                        threadExecutor.shutdown();
+                    } catch (RuntimeException e) {
+                        throw new ExceptionInsideThread(e.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    public void sendMessageFromTlgGroupChat(Message receivedMessage) throws EntryNotFound, TelegramApiException, IllegalFields, SaveEntryFailed, IllegalMediaType, ExceptionInsideThread {
+
+        // Получаем автора сообщения
+        Employee author = employeeDispatcher.getByTelegramId(receivedMessage.getFrom().getId()).orElseThrow(() -> new EntryNotFound("Идентификатор телеграм не привязан ни к одному аккаунту"));
+
+        // Получаем монтажников в группе
+        List<Employee> employeesByGroup = employeeDispatcher.getByGroupTelegramId(receivedMessage.getChatId());
+
+        Set<Chat> chats = new HashSet<>();
+        for (Employee employee : employeesByGroup) {
+            chats.add(workLogDispatcher.getActiveChatByEmployee(employee));
+        }
+
+        for (Chat chat : chats){
+            if (!chat.getMembers().contains(author)) {
+                chat.getMembers().add(author);
+                List<SuperMessage> superMessages = chatDispatcher.setAllMessagesAsRead(chat.getChatId(), author);
+                superMessages.forEach(stompController::updateMessage);
+                stompController.updateChat(chatDispatcher.unsafeSave(chat));
+                stompController.updateCountUnreadMessage(author.getLogin(), chat.getChatId(), 0L);
+            }
+        }
+
+        switch (Utils.getTlgMsgType(receivedMessage)) {
+            case TEXT, MEDIA -> {
+                for (Chat chat : chats){
+                    // Создает сообщение в базе данных
+                    SuperMessage textMessage = chatDispatcher.createMessage(chat.getChatId(), receivedMessage, author, this, true);
+                    broadcastUpdatesToWeb(textMessage);
+                }
+            }
+            case GROUP -> {
+                String group = Utils.getTlgMsgGroupId(receivedMessage);
+                if (groupedMessagesFromTelegram.containsKey(group)) {
+                    groupedMessagesFromTelegram.get(group).add(receivedMessage);
+                } else {
+                    groupedMessagesFromTelegram.put(group, Stream.of(receivedMessage).collect(Collectors.toList()));
+                    try {
+                        ExecutorService threadExecutor = Executors.newSingleThreadExecutor();
+                        threadExecutor.execute(() -> {
+                            try {
+                                // Ждем несколько секунд пока придут все сообщения от telegram api
+                                sleep(1000);
+                                List<Message> listOfReceivedMessages = groupedMessagesFromTelegram.get(group);
+                                for (Chat chat : chats) {
+                                    SuperMessage mediaGroupMessage = chatDispatcher.createMessage(chat.getChatId(), listOfReceivedMessages, author, this, true);
+                                    // Отправляет сообщение для обновления пользовательского интерфейса
+                                    broadcastUpdatesToWeb(mediaGroupMessage);
+                                }
+                            } catch (InterruptedException | TelegramApiException | EntryNotFound |
+                                     IllegalFields | IllegalMediaType e) {
+                                throw new RuntimeException(e);
+                            } finally {
+                                groupedMessagesFromTelegram.remove(group);
+                            }
+                        });
+                        threadExecutor.shutdown();
                     } catch (RuntimeException e) {
                         throw new ExceptionInsideThread(e.getMessage());
                     }
@@ -1271,8 +1390,17 @@ public class TelegramController {
         // Список ответов от telegram об отправленных сообщениях
         List<Message> responses = new ArrayList<>();
 
+        Set<String> memberGroups = chat.getMembers().stream().map(Employee::getTelegramGroupChatId).filter(Objects::nonNull).filter(s->!s.isBlank()).collect(Collectors.toSet());
+
+        Set<Employee> membersWithoutGroup = chat.getMembers().stream().filter(Employee::isHasNotGroup).collect(Collectors.toSet());
+
+
+        for (String group : memberGroups) {
+            responses.add(TelegramMessageFactory.create(group, mainBot).broadcastTextMessage(message).execute());
+        }
+
         // Проходимся по всем членам чата, проверяем привязан ли телеграм, и не является ли целевой чат автором сообщения
-        for (Employee employee : chat.getMembers()) {
+        for (Employee employee : membersWithoutGroup) {
             // Идентификатор чата в телеграм
             String targetChatId = employee.getTelegramUserId();
 
@@ -1285,6 +1413,7 @@ public class TelegramController {
                 log.warn("Не удалось отправить сообщение в чат {} {}", targetChatId, employee.getLogin());
             }
         }
+
         return responses;
     }
 
@@ -1306,8 +1435,16 @@ public class TelegramController {
         // Список ответов от telegram об отправленных сообщениях
         List<Message> responses = new ArrayList<>();
 
+        Set<String> memberGroups = chat.getMembers().stream().map(Employee::getTelegramGroupChatId).filter(Objects::nonNull).filter(s->!s.isBlank()).collect(Collectors.toSet());
+
+        Set<Employee> membersWithoutGroup = chat.getMembers().stream().filter(Employee::isHasNotGroup).collect(Collectors.toSet());
+
+        for (String group : memberGroups) {
+            responses.add(TelegramMessageFactory.create(group, mainBot).broadcastMediaMessage(message).execute());
+        }
+
         // Проходимся по всем членам чата, проверяем привязан ли телеграм, и не является ли целевой чат автором сообщения
-        for (Employee employee : chat.getMembers()) {
+        for (Employee employee : membersWithoutGroup) {
             // Идентификатор чата в телеграм
             String targetChatId = employee.getTelegramUserId();
 
@@ -1331,8 +1468,18 @@ public class TelegramController {
      */
     public List<List<Message>> sendMediaGroupBroadcastMessage(Chat chat, List<ChatMessageDto> messages) throws TelegramApiException {
         if (messages.isEmpty()) return new ArrayList<>();
+
         List<List<Message>> responses = Stream.generate(ArrayList<Message>::new).limit(messages.size()).collect(Collectors.toList());
-        for (Employee employee : chat.getMembers()) {
+
+        Set<String> memberGroups = chat.getMembers().stream().map(Employee::getTelegramGroupChatId).filter(Objects::nonNull).filter(s->!s.isBlank()).collect(Collectors.toSet());
+
+        Set<Employee> membersWithoutGroup = chat.getMembers().stream().filter(Employee::isHasNotGroup).collect(Collectors.toSet());
+
+        for (String group : memberGroups) {
+            responses.add(TelegramMessageFactory.create(group, mainBot).broadcastMediaGroupMessage(messages).execute());
+        }
+
+        for (Employee employee : membersWithoutGroup) {
             String targetChatId = employee.getTelegramUserId();
             if (targetChatId == null || targetChatId.isBlank() || employee.getLogin().equals(messages.get(0).getAuthor().getLogin()))
                 continue;

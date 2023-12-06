@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.controllers.telegram;
 
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
+import com.microel.trackerbackend.controllers.telegram.handle.TelegramUpdateChatJoinHandler;
 import com.microel.trackerbackend.controllers.telegram.handle.TelegramUpdateSubscribe;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
 import com.microel.trackerbackend.CustomException;
@@ -57,13 +58,20 @@ public class MainBot extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
-        List<TelegramReactorType> sortExample = List.of(TelegramReactorType.COMMAND, TelegramReactorType.PROMPT, TelegramReactorType.CALLBACK, TelegramReactorType.MESSAGE, TelegramReactorType.EDIT_MESSAGE);
+        List<TelegramReactorType> sortExample = List.of(TelegramReactorType.CHAT_JOIN_REQUEST, TelegramReactorType.COMMAND, TelegramReactorType.PROMPT, TelegramReactorType.CALLBACK, TelegramReactorType.MESSAGE, TelegramReactorType.EDIT_MESSAGE);
         List<TelegramUpdateSubscribe> subscriptions = reactors.values().stream().sorted(Comparator.comparing(o -> sortExample.indexOf(o.getReactor().getType()))).toList();
         for (TelegramUpdateSubscribe subscribe : subscriptions) {
             boolean isHandled = false;
             try {
                 TelegramUpdateReactor reactor = subscribe.getReactor();
                 switch (reactor.getType()) {
+                    case CHAT_JOIN_REQUEST -> {
+                        TelegramChatJoinReactor chatJoinReactor = (TelegramChatJoinReactor) reactor;
+                        if (update.hasChatJoinRequest()) {
+                            if ((isHandled = chatJoinReactor.getHandler().handle(update)) && subscribe.getIsOnce())
+                                subscribe.unsubscribe();
+                        }
+                    }
                     case COMMAND -> {
                         TelegramCommandReactor cmdReactor = (TelegramCommandReactor) reactor;
                         if (update.hasMessage() && update.getMessage().isCommand()) {
@@ -108,6 +116,20 @@ public class MainBot extends TelegramLongPollingBot {
                     case EDIT_MESSAGE -> {
                         TelegramEditMessageReactor editMessageReactor = (TelegramEditMessageReactor) reactor;
                         if (update.hasEditedMessage() && update.getMessage().getChat().isUserChat()) {
+                            if ((isHandled = editMessageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
+                                subscribe.unsubscribe();
+                        }
+                    }
+                    case GROUP_MESSAGE -> {
+                        TelegramGroupMessageReactor messageReactor = (TelegramGroupMessageReactor) reactor;
+                        if (update.hasMessage() && !update.getMessage().isCommand() && update.getMessage().getChat().isGroupChat()) {
+                            if ((isHandled = messageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
+                                subscribe.unsubscribe();
+                        }
+                    }
+                    case GROUP_EDIT_MESSAGE -> {
+                        TelegramGroupEditMessageReactor editMessageReactor = (TelegramGroupEditMessageReactor) reactor;
+                        if (update.hasEditedMessage() && update.getMessage().getChat().isGroupChat()) {
                             if ((isHandled = editMessageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
