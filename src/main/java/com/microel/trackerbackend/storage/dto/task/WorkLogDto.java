@@ -6,7 +6,9 @@ import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import lombok.*;
+import org.springframework.lang.Nullable;
 
+import javax.persistence.Column;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Set;
@@ -22,6 +24,9 @@ public class WorkLogDto {
     private TaskDto task;
     private ChatDto chat;
     private Set<EmployeeDto> employees;
+    @Nullable
+    private String gangLeader;
+    private Boolean deferredReport;
     private Set<AcceptingEntry> acceptedEmployees;
     private EmployeeDto creator;
     private Timestamp created;
@@ -37,4 +42,5 @@ public class WorkLogDto {
     private Long leadTime;
     private Boolean calculated;
     private List<WorkCalculation> workCalculations;
+    private Boolean isReportsUncompleted;
 }

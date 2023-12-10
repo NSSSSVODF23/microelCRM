@@ -233,5 +233,7 @@ public class Task {
         private Long parentId;
         @Nullable
         private String initialComment;
+        @Nullable
+        private String type;
     }
 }

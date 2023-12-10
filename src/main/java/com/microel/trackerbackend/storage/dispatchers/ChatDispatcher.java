@@ -75,143 +75,143 @@ public class ChatDispatcher {
         return chatMessageDispatcher.getChatMessages(chatId, first, limit);
     }
 
-    /**
-     * Создает текстовое сообщение в базе данных. И транслирует в чаты.
-     *
-     * @param chatId           Идентификатор чата в бд
-     * @param text             Текст сообщения
-     * @param author           Автор сообщения
-     * @param context          Контекст телеграм контроллера для транслирования в tg api
-     * @param replyToMessageId Идентификатор сообщения для ответа (Необязательно)
-     * @return Возвращает созданное сообщение
-     * @throws EntryNotFound Если чат не найден
-     */
-    public SuperMessage createMessage(Long chatId, String text, Employee author,
-                                      @Nullable Long replyToMessageId, TelegramController context) throws TelegramApiException, EntryNotFound {
-        Chat chat = getChat(chatId);
-        ChatMessage replyToMessage = null;
-        if (Objects.nonNull(replyToMessageId)) {
-            try {
-                replyToMessage = chatMessageDispatcher.get(replyToMessageId);
-            } catch (EntryNotFound ignored) {
-                //Если не находим сообщение для ответа, игнорируем
-            }
-        }
-        ChatMessage message = ChatMessage.builder()
-                .text(text)
-                .author(author)
-                .replyTo(replyToMessage)
-                .parentChat(chat)
-                .sendAt(Timestamp.from(Instant.now()))
-                .readByEmployees(Stream.of(author).collect(Collectors.toSet()))
-                .build();
-        chat.setLastMessage(message);
-        chat.setUpdated(Timestamp.from(Instant.now()));
-        unsafeSave(chat);
-        ChatMessage savedMessage = chatMessageDispatcher.unsafeSave(message);
-        // Транслируем во все чаты
-        List<Message> responseMessages = context.sendTextBroadcastMessage(chat, ChatMessageMapper.toDto(savedMessage));
-        // Добавляем связи
-        return appendBindToMessage(savedMessage.getChatMessageId(), responseMessages);
-    }
+//    /**
+//     * Создает текстовое сообщение в базе данных. И транслирует в чаты.
+//     *
+//     * @param chatId           Идентификатор чата в бд
+//     * @param text             Текст сообщения
+//     * @param author           Автор сообщения
+//     * @param context          Контекст телеграм контроллера для транслирования в tg api
+//     * @param replyToMessageId Идентификатор сообщения для ответа (Необязательно)
+//     * @return Возвращает созданное сообщение
+//     * @throws EntryNotFound Если чат не найден
+//     */
+//    public SuperMessage createMessage(Long chatId, String text, Employee author,
+//                                      @Nullable Long replyToMessageId, TelegramController context) throws TelegramApiException, EntryNotFound {
+//        Chat chat = getChat(chatId);
+//        ChatMessage replyToMessage = null;
+//        if (Objects.nonNull(replyToMessageId)) {
+//            try {
+//                replyToMessage = chatMessageDispatcher.get(replyToMessageId);
+//            } catch (EntryNotFound ignored) {
+//                //Если не находим сообщение для ответа, игнорируем
+//            }
+//        }
+//        ChatMessage message = ChatMessage.builder()
+//                .text(text)
+//                .author(author)
+//                .replyTo(replyToMessage)
+//                .parentChat(chat)
+//                .sendAt(Timestamp.from(Instant.now()))
+//                .readByEmployees(Stream.of(author).collect(Collectors.toSet()))
+//                .build();
+//        chat.setLastMessage(message);
+//        chat.setUpdated(Timestamp.from(Instant.now()));
+//        unsafeSave(chat);
+//        ChatMessage savedMessage = chatMessageDispatcher.unsafeSave(message);
+//        // Транслируем во все чаты
+//        List<Message> responseMessages = context.sendTextBroadcastMessage(chat, ChatMessageMapper.toDto(savedMessage));
+//        // Добавляем связи
+//        return appendBindToMessage(savedMessage.getChatMessageId(), responseMessages);
+//    }
 
-    /**
-     * Создает медиа сообщение в базе данных. И транслирует в чаты.
-     *
-     * @param chatId           Идентификатор чата в бд
-     * @param text             Текст сообщения
-     * @param author           Автор сообщения
-     * @param attachment       Вложение
-     * @param context          Контекст телеграм контроллера для транслирования в tg api
-     * @param replyToMessageId Идентификатор сообщения для ответа (Необязательно)
-     * @return Возвращает созданное сообщение
-     * @throws EntryNotFound        Если чат не найден
-     * @throws IllegalFields        Если в сообщении нет вложения
-     * @throws IllegalMediaType     Если задан не верный тип данных для вложения
-     * @throws TelegramApiException Если ошибка отправки сообщения в tg api
-     */
-    public SuperMessage createMessage(Long chatId, String text, Employee author, Attachment attachment,
-                                      @Nullable Long replyToMessageId, TelegramController context) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
-        Chat chat = getChat(chatId);
-        ChatMessage replyToMessage = null;
-        if (Objects.nonNull(replyToMessageId)) {
-            try {
-                replyToMessage = chatMessageDispatcher.get(replyToMessageId);
-            } catch (EntryNotFound ignored) {
-                //Если не находим сообщение для ответа, игнорируем
-            }
-        }
-        ChatMessage message = ChatMessage.builder()
-                .text(text)
-                .author(author)
-                .replyTo(replyToMessage)
-                .attachment(attachment)
-                .parentChat(chat)
-                .sendAt(Timestamp.from(Instant.now()))
-                .readByEmployees(Stream.of(author).collect(Collectors.toSet()))
-                .build();
-        chat.setLastMessage(message);
-        chat.setUpdated(Timestamp.from(Instant.now()));
-        unsafeSave(chat);
-        ChatMessage savedMessage = chatMessageDispatcher.unsafeSave(message);
-        // Транслируем во все чаты
-        List<Message> responseMessages = context.sendMediaBroadcastMessage(chat, ChatMessageMapper.toDto(savedMessage));
-        // Добавляем связи
-        return appendBindToMessage(savedMessage.getChatMessageId(), responseMessages);
-    }
+//    /**
+//     * Создает медиа сообщение в базе данных. И транслирует в чаты.
+//     *
+//     * @param chatId           Идентификатор чата в бд
+//     * @param text             Текст сообщения
+//     * @param author           Автор сообщения
+//     * @param attachment       Вложение
+//     * @param context          Контекст телеграм контроллера для транслирования в tg api
+//     * @param replyToMessageId Идентификатор сообщения для ответа (Необязательно)
+//     * @return Возвращает созданное сообщение
+//     * @throws EntryNotFound        Если чат не найден
+//     * @throws IllegalFields        Если в сообщении нет вложения
+//     * @throws IllegalMediaType     Если задан не верный тип данных для вложения
+//     * @throws TelegramApiException Если ошибка отправки сообщения в tg api
+//     */
+//    public SuperMessage createMessage(Long chatId, String text, Employee author, Attachment attachment,
+//                                      @Nullable Long replyToMessageId, TelegramController context) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
+//        Chat chat = getChat(chatId);
+//        ChatMessage replyToMessage = null;
+//        if (Objects.nonNull(replyToMessageId)) {
+//            try {
+//                replyToMessage = chatMessageDispatcher.get(replyToMessageId);
+//            } catch (EntryNotFound ignored) {
+//                //Если не находим сообщение для ответа, игнорируем
+//            }
+//        }
+//        ChatMessage message = ChatMessage.builder()
+//                .text(text)
+//                .author(author)
+//                .replyTo(replyToMessage)
+//                .attachment(attachment)
+//                .parentChat(chat)
+//                .sendAt(Timestamp.from(Instant.now()))
+//                .readByEmployees(Stream.of(author).collect(Collectors.toSet()))
+//                .build();
+//        chat.setLastMessage(message);
+//        chat.setUpdated(Timestamp.from(Instant.now()));
+//        unsafeSave(chat);
+//        ChatMessage savedMessage = chatMessageDispatcher.unsafeSave(message);
+//        // Транслируем во все чаты
+//        List<Message> responseMessages = context.sendMediaBroadcastMessage(chat, ChatMessageMapper.toDto(savedMessage));
+//        // Добавляем связи
+//        return appendBindToMessage(savedMessage.getChatMessageId(), responseMessages);
+//    }
 
-    /**
-     * Создает групповое медиа сообщение в базе данных. И транслирует в чаты.
-     *
-     * @param chatId           Идентификатор чата в бд
-     * @param text             Текст сообщения
-     * @param author           Автор сообщения
-     * @param attachments      Список вложений
-     * @param context          Контекст телеграм контроллера для транслирования в tg api
-     * @param replyToMessageId Идентификатор сообщения для ответа (Необязательно)
-     * @return Возвращает созданное сообщение
-     * @throws EntryNotFound        Если чат не найден
-     * @throws IllegalFields        Если в сообщении нет вложения
-     * @throws IllegalMediaType     Если задан не верный тип данных для вложения
-     * @throws TelegramApiException Если ошибка отправки сообщения в tg api
-     */
-    public SuperMessage createMessage(Long chatId, String text, Employee author, List<Attachment> attachments,
-                                      @Nullable Long replyToMessageId, TelegramController context) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
-        Chat chat = getChat(chatId);
-        ChatMessage replyToMessage = null;
-        if (Objects.nonNull(replyToMessageId)) {
-            try {
-                replyToMessage = chatMessageDispatcher.get(replyToMessageId);
-            } catch (EntryNotFound ignored) {
-                //Если не находим сообщение для ответа, игнорируем
-            }
-        }
-
-        UUID mediaGroupId = UUID.randomUUID();
-        List<ChatMessage> messages = new ArrayList<>();
-
-        for (Attachment attachment : attachments) {
-            ChatMessage message = ChatMessage.builder()
-                    .text(text)
-                    .author(author)
-                    .replyTo(replyToMessage)
-                    .attachment(attachment)
-                    .parentChat(chat)
-                    .mediaGroup(mediaGroupId)
-                    .sendAt(Timestamp.from(Instant.now()))
-                    .readByEmployees(Stream.of(author).collect(Collectors.toSet()))
-                    .build();
-            messages.add(chatMessageDispatcher.unsafeSave(message));
-        }
-        chat.setLastMessage(messages.get(0));
-        chat.setUpdated(Timestamp.from(Instant.now()));
-        unsafeSave(chat);
-        List<ChatMessage> savedMessages = chatMessageDispatcher.unsafeSaveAll(messages);
-        // Транслируем во все чаты
-        List<List<Message>> responseMessages = context.sendMediaGroupBroadcastMessage(chat, savedMessages.stream().map(ChatMessageMapper::toDto).collect(Collectors.toList()));
-        // Добавляем связи
-        return appendBindToMessage(savedMessages.stream().map(ChatMessage::getChatMessageId).collect(Collectors.toList()), responseMessages);
-    }
+//    /**
+//     * Создает групповое медиа сообщение в базе данных. И транслирует в чаты.
+//     *
+//     * @param chatId           Идентификатор чата в бд
+//     * @param text             Текст сообщения
+//     * @param author           Автор сообщения
+//     * @param attachments      Список вложений
+//     * @param context          Контекст телеграм контроллера для транслирования в tg api
+//     * @param replyToMessageId Идентификатор сообщения для ответа (Необязательно)
+//     * @return Возвращает созданное сообщение
+//     * @throws EntryNotFound        Если чат не найден
+//     * @throws IllegalFields        Если в сообщении нет вложения
+//     * @throws IllegalMediaType     Если задан не верный тип данных для вложения
+//     * @throws TelegramApiException Если ошибка отправки сообщения в tg api
+//     */
+//    public SuperMessage createMessage(Long chatId, String text, Employee author, List<Attachment> attachments,
+//                                      @Nullable Long replyToMessageId, TelegramController context) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
+//        Chat chat = getChat(chatId);
+//        ChatMessage replyToMessage = null;
+//        if (Objects.nonNull(replyToMessageId)) {
+//            try {
+//                replyToMessage = chatMessageDispatcher.get(replyToMessageId);
+//            } catch (EntryNotFound ignored) {
+//                //Если не находим сообщение для ответа, игнорируем
+//            }
+//        }
+//
+//        UUID mediaGroupId = UUID.randomUUID();
+//        List<ChatMessage> messages = new ArrayList<>();
+//
+//        for (Attachment attachment : attachments) {
+//            ChatMessage message = ChatMessage.builder()
+//                    .text(text)
+//                    .author(author)
+//                    .replyTo(replyToMessage)
+//                    .attachment(attachment)
+//                    .parentChat(chat)
+//                    .mediaGroup(mediaGroupId)
+//                    .sendAt(Timestamp.from(Instant.now()))
+//                    .readByEmployees(Stream.of(author).collect(Collectors.toSet()))
+//                    .build();
+//            messages.add(chatMessageDispatcher.unsafeSave(message));
+//        }
+//        chat.setLastMessage(messages.get(0));
+//        chat.setUpdated(Timestamp.from(Instant.now()));
+//        unsafeSave(chat);
+//        List<ChatMessage> savedMessages = chatMessageDispatcher.unsafeSaveAll(messages);
+//        // Транслируем во все чаты
+//        List<List<Message>> responseMessages = context.sendMediaGroupBroadcastMessage(chat, savedMessages.stream().map(ChatMessageMapper::toDto).collect(Collectors.toList()));
+//        // Добавляем связи
+//        return appendBindToMessage(savedMessages.stream().map(ChatMessage::getChatMessageId).collect(Collectors.toList()), responseMessages);
+//    }
 
     /**
      * Создает текстовое сообщение в базе данных. И транслирует в чаты.
@@ -226,7 +226,7 @@ public class ChatDispatcher {
      * @throws IllegalMediaType Если задан не верный тип данных для вложения
      * @throws TelegramApiException Если ошибка отправки сообщения в tg api
      */
-    public SuperMessage createMessage(Long chatId, Message tlgMessage, Employee author, TelegramController context, Boolean isSentFromGroup) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
+    public SuperMessage createMessage(Long chatId, Message tlgMessage, Employee author, TelegramController context) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
         Chat chat = getChat(chatId);
         ChatMessage replyToMessage = null;
         if (Objects.nonNull(tlgMessage.getReplyToMessage())) {
@@ -257,21 +257,7 @@ public class ChatDispatcher {
         chat.setUpdated(Timestamp.from(Instant.now()));
         unsafeSave(chat);
         ChatMessage savedMessage = chatMessageDispatcher.unsafeSave(message);
-        // Транслируем во все чаты
-        List<Message> responseMessages = null;
-        if(!isSentFromGroup){
-            if (Utils.getTlgMsgType(tlgMessage) == TlgMessageType.MEDIA) {
-                responseMessages = context.sendMediaBroadcastMessage(chat, ChatMessageMapper.toDto(savedMessage));
-            } else if (Utils.getTlgMsgType(tlgMessage) == TlgMessageType.TEXT) {
-                responseMessages = context.sendTextBroadcastMessage(chat, ChatMessageMapper.toDto(savedMessage));
-            }
-            if (responseMessages == null) {
-                throw new IllegalFields("По какой то причине сообщение не было транслировано в Telegram Api");
-            }
-            // Добавляем связи
-            return appendBindToMessage(savedMessage.getChatMessageId(), responseMessages);
-        }
-        return collectSuperMessage(List.of(message));
+        return collectSuperMessage(List.of(savedMessage));
     }
 
     /**
@@ -287,7 +273,7 @@ public class ChatDispatcher {
      * @throws IllegalMediaType Если задан не верный тип данных для вложения
      * @throws TelegramApiException Если ошибка отправки сообщения в tg api
      */
-    public SuperMessage createMessage(Long chatId, List<Message> tlgMessages, Employee author, TelegramController context, Boolean isSentFromGroup) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
+    public SuperMessage createMessage(Long chatId, List<Message> tlgMessages, Employee author, TelegramController context) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
         Chat chat = getChat(chatId);
 
         List<ChatMessage> createdMessages = new ArrayList<>();
@@ -320,14 +306,8 @@ public class ChatDispatcher {
         chat.setLastMessage(createdMessages.get(0));
         unsafeSave(chat);
         List<ChatMessage> savedMessages = chatMessageDispatcher.unsafeSaveAll(createdMessages);
-        if(!isSentFromGroup) {
-            // Транслируем во все чаты
-            List<List<Message>> responseMessages = context.sendMediaGroupBroadcastMessage(chat, savedMessages.stream().map(ChatMessageMapper::toDto).collect(Collectors.toList()));
-            // Добавляем связи
-            return appendBindToMessage(savedMessages.stream().map(ChatMessage::getChatMessageId).collect(Collectors.toList()), responseMessages);
-        }
 
-        return collectSuperMessage(createdMessages);
+        return collectSuperMessage(savedMessages);
     }
 
     public SuperMessage createSystemMessage(Long chatId, String message, TelegramController context) throws EntryNotFound, TelegramApiException {
@@ -342,57 +322,57 @@ public class ChatDispatcher {
         chat.setUpdated(Timestamp.from(Instant.now()));
         unsafeSave(chat);
         ChatMessage chatMessage = chatMessageDispatcher.unsafeSave(systemMessage);
-        List<Message> messageList = context.sendTextBroadcastMessage(chat, ChatMessageMapper.toDto(chatMessage));
-        return appendBindToMessage(chatMessage.getChatMessageId(), messageList);
+//        List<Message> messageList = context.sendTextBroadcastMessage(chat, ChatMessageMapper.toDto(chatMessage));
+        return chatMessage.getSuperMessage();
     }
 
-    /**
-     * Добавляет привязку к сообщениям из telegram api в базу данных
-     *
-     * @param messageId   Идентификатор сообщения к которому нужно добавить привязку
-     * @param sentMessage Объект ответа от telegram api в котором хранятся необходимые данные
-     * @return Возвращает идентификатор сообщения с добавленной привязкой
-     * @throws EntryNotFound Если сообщение для добавления привязки не найдено в бд
-     */
-    public Long appendBindToMessage(Long messageId, Message sentMessage) throws EntryNotFound {
-        ChatMessage existedMessage = chatMessageDispatcher.get(messageId);
-        existedMessage.appendBind(TelegramMessageBind.from(sentMessage));
-        return chatMessageDispatcher.unsafeSave(existedMessage).getChatMessageId();
-    }
+//    /**
+//     * Добавляет привязку к сообщениям из telegram api в базу данных
+//     *
+//     * @param messageId   Идентификатор сообщения к которому нужно добавить привязку
+//     * @param sentMessage Объект ответа от telegram api в котором хранятся необходимые данные
+//     * @return Возвращает идентификатор сообщения с добавленной привязкой
+//     * @throws EntryNotFound Если сообщение для добавления привязки не найдено в бд
+//     */
+//    public Long appendBindToMessage(Long messageId, Message sentMessage) throws EntryNotFound {
+//        ChatMessage existedMessage = chatMessageDispatcher.get(messageId);
+//        existedMessage.appendBind(TelegramMessageBind.from(sentMessage));
+//        return chatMessageDispatcher.unsafeSave(existedMessage).getChatMessageId();
+//    }
 
-    /**
-     * Добавляет несколько привязок из разных чатов telegram к одному сообщению из базы данных
-     *
-     * @param messageId    Идентификатор сообщения к которому нужно добавить привязку
-     * @param sentMessages Список объектов ответа от telegram api в которых хранятся необходимые данные
-     * @return Возвращает объект SuperMessage созданный на основе сообщения к которому была произведена привязка
-     * @throws EntryNotFound Если сообщение для добавления привязки не найдено в бд
-     */
-    @Nullable
-    public SuperMessage appendBindToMessage(Long messageId, List<Message> sentMessages) throws EntryNotFound {
-        for (Message message : sentMessages) {
-            appendBindToMessage(messageId, message);
-        }
-        return collectSuperMessageByIds(messageId);
-    }
+//    /**
+//     * Добавляет несколько привязок из разных чатов telegram к одному сообщению из базы данных
+//     *
+//     * @param messageId    Идентификатор сообщения к которому нужно добавить привязку
+//     * @param sentMessages Список объектов ответа от telegram api в которых хранятся необходимые данные
+//     * @return Возвращает объект SuperMessage созданный на основе сообщения к которому была произведена привязка
+//     * @throws EntryNotFound Если сообщение для добавления привязки не найдено в бд
+//     */
+//    @Nullable
+//    public SuperMessage appendBindToMessage(Long messageId, List<Message> sentMessages) throws EntryNotFound {
+//        for (Message message : sentMessages) {
+//            appendBindToMessage(messageId, message);
+//        }
+//        return collectSuperMessageByIds(messageId);
+//    }
 
-    /**
-     * Добавляет несколько привязок из разных чатов telegram к группе сообщений (медиа группа) из базы данных
-     *
-     * @param mediaGroupMessagesIds Список идентификаторов к которым нужно добавить привязку
-     * @param sentMessages          Список объектов ответа от telegram api в которых хранятся необходимые данные (Двухмерный список, Сообщение -> [...Ответ])
-     * @return Возвращает объект SuperMessage созданный на основе сообщений к которым была произведена привязка
-     * @throws EntryNotFound Если сообщение для добавления привязки не найдено в бд
-     */
-    @Nullable
-    public SuperMessage appendBindToMessage(List<Long> mediaGroupMessagesIds, List<List<Message>> sentMessages) throws EntryNotFound {
-        for (int i = 0; i < mediaGroupMessagesIds.size(); i++) {
-            Long messageId = mediaGroupMessagesIds.get(i);
-            List<Message> messageList = sentMessages.get(i);
-            appendBindToMessage(messageId, messageList);
-        }
-        return collectSuperMessageByIds(mediaGroupMessagesIds);
-    }
+//    /**
+//     * Добавляет несколько привязок из разных чатов telegram к группе сообщений (медиа группа) из базы данных
+//     *
+//     * @param mediaGroupMessagesIds Список идентификаторов к которым нужно добавить привязку
+//     * @param sentMessages          Список объектов ответа от telegram api в которых хранятся необходимые данные (Двухмерный список, Сообщение -> [...Ответ])
+//     * @return Возвращает объект SuperMessage созданный на основе сообщений к которым была произведена привязка
+//     * @throws EntryNotFound Если сообщение для добавления привязки не найдено в бд
+//     */
+//    @Nullable
+//    public SuperMessage appendBindToMessage(List<Long> mediaGroupMessagesIds, List<List<Message>> sentMessages) throws EntryNotFound {
+//        for (int i = 0; i < mediaGroupMessagesIds.size(); i++) {
+//            Long messageId = mediaGroupMessagesIds.get(i);
+//            List<Message> messageList = sentMessages.get(i);
+//            appendBindToMessage(messageId, messageList);
+//        }
+//        return collectSuperMessageByIds(mediaGroupMessagesIds);
+//    }
 
 
     public ChatMessageDto updateMessage(Long messageId, ChatMessage message) throws EntryNotFound {

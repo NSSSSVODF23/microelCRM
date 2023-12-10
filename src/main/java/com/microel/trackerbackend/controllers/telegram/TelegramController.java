@@ -143,7 +143,8 @@ public class TelegramController {
     private void initializeChatCommands() throws IOException, TelegramApiException {
         if (mainBot == null) throw new IOException("Telegram Bot не инициализирован");
         List<BotCommand> commands = List.of(
-                new BotCommand("menu", "Основные действия"),
+                new BotCommand("current_task", "Текущая задача"),
+                new BotCommand("another_task", "Список моих задач"),
                 new BotCommand("check_alive", "Проверить живых"),
                 new BotCommand("house_sessions", "Получить сессии в доме"),
                 new BotCommand("commutator_sessions", "Получить сессии коммутатора"),
@@ -176,23 +177,47 @@ public class TelegramController {
             return true;
         }));
 
-        mainBot.subscribe(new TelegramCommandReactor("/menu", update -> {
+//        mainBot.subscribe(new TelegramCommandReactor("/menu", update -> {
+//            Long chatId = update.getMessage().getChatId();
+//            try {
+//                Employee employee = getEmployeeByChat(chatId);
+//                operatingModes.put(employee, OperatingMode.CHECK_ALIVE);
+//                if (employee.getOffsite()) {
+//                    TelegramMessageFactory.create(chatId, mainBot).offsiteMenu().execute();
+//                } else {
+//                    TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Меню отсутствует").execute();
+//                }
+//                return true;
+//            } catch (Exception e) {
+//                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+//                return false;
+//            }
+//        }));
+
+        mainBot.subscribe(new TelegramCommandReactor("/current_task", update -> {
             Long chatId = update.getMessage().getChatId();
             try {
                 Employee employee = getEmployeeByChat(chatId);
-                operatingModes.put(employee, OperatingMode.CHECK_ALIVE);
-                if (employee.getOffsite()) {
-                    TelegramMessageFactory.create(chatId, mainBot).offsiteMenu().execute();
-                } else {
-                    TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Меню отсутствует").execute();
-                }
+                WorkLog acceptedByTelegramId = workLogDispatcher.getAcceptedByTelegramIdDTO(chatId);
+                TelegramMessageFactory.create(chatId, mainBot).currentActiveTask(acceptedByTelegramId.getTask()).execute();
                 return true;
             } catch (Exception e) {
                 TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
                 return false;
             }
         }));
-        
+
+        mainBot.subscribe(new TelegramCommandReactor("/another_task", update -> {
+            Long chatId = update.getMessage().getChatId();
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                return sendWorkLogQueue(chatId);
+            } catch (Exception e) {
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+                return false;
+            }
+        }));
+
         mainBot.subscribe(new TelegramCommandReactor("/check_alive", update -> {
             Long chatId = update.getMessage().getChatId();
             try {
@@ -302,7 +327,8 @@ public class TelegramController {
                         .filter(login -> !Objects.equals(login, employee.getLogin()))
                         .anyMatch(employeesWithEqualGroups::contains);
                 if(!alreadySentTaskInfoToGroup) {
-                    TelegramMessageFactory.create(employee.getTelegramGroupChatId(), mainBot).currentActiveTaskForGroupChat(workLog.getTask()).execute();
+                    TelegramMessageFactory groupChatFactory = TelegramMessageFactory.create(employee.getTelegramGroupChatId(), mainBot);
+                    groupChatFactory.currentActiveTaskForGroupChat(workLog.getTask()).execute();
                 }
             }
             if (workLog.getTargetDescription() != null && !workLog.getTargetDescription().isBlank())
@@ -342,7 +368,7 @@ public class TelegramController {
                     operatingModes.remove(employee);
                     factory.deleteMessage(messageId).execute();
                     factory.simpleMessage("Отчет успешно отправлен").execute();
-                    sendTextBroadcastMessage(workLog.getChat(), ChatMessage.of("Написал отчет и отключился от чата задачи.", employee));
+//                    sendTextBroadcastMessage(workLog.getChat(), ChatMessage.of("Написал отчет и отключился от чата задачи.", employee));
                     return sendWorkLogQueue(chatId);
                 } catch (EntryNotFound | IllegalFields e) {
                     factory.deleteMessage(messageId).execute();
@@ -772,6 +798,20 @@ public class TelegramController {
                 Employee employee = getEmployeeByChat(chatId);
                 try {
                     WorkLog workLog = workLogDispatcher.getAcceptedWorkLogByEmployee(employee);
+
+                    if(workLog.getDeferredReport() != null && workLog.getDeferredReport()){
+                        workLogDispatcher.createReport(employee);
+                        if(employee.isHasGroup()){
+                            String title = Decorator.underline(Decorator.bold("Задача завершена #"+workLog.getTask().getTaskId()));
+                            TelegramMessageFactory.create(employee.getTelegramGroupChatId(), mainBot)
+                                    .simpleMessage(title)
+                                    .execute();
+                        }
+                        factory.simpleMessage("Задача завершена. Отчет нужно написать позже.").execute();
+                        factory.clearKeyboardMenu().execute();
+                        return true;
+                    }
+
                     factory.closeWorkLogMessage().execute();
                     factory.clearKeyboardMenu().execute();
                     reportMessages.put(employee, new ArrayList<>());
@@ -796,12 +836,12 @@ public class TelegramController {
                 Employee employee = getEmployeeByChat(chatId);
                 OperatingMode operatingMode = operatingModes.get(employee);
                 if(operatingMode == null) {
-                    try {
-                        sendMessageFromTlgChat(update.getMessage());
-                        return true;
-                    } catch (IllegalFields | SaveEntryFailed | IllegalMediaType | ExceptionInsideThread e) {
-                        log.warn(e.getMessage());
-                    }
+//                    try {
+//                        sendMessageFromTlgChat(update.getMessage());
+//                        return true;
+//                    } catch (IllegalFields | SaveEntryFailed | IllegalMediaType | ExceptionInsideThread e) {
+//                        log.warn(e.getMessage());
+//                    }
                     return false;
                 }
                 switch (operatingMode){
@@ -863,12 +903,12 @@ public class TelegramController {
                 Employee employee = getEmployeeByChat(chatId);
                 OperatingMode operatingMode = operatingModes.get(employee);
                 if(operatingMode == null) {
-                    try {
-                        sendMessageFromTlgChat(update.getMessage());
-                        return true;
-                    } catch (IllegalFields | SaveEntryFailed | IllegalMediaType | ExceptionInsideThread e) {
-                        log.warn(e.getMessage());
-                    }
+//                    try {
+//                        sendMessageFromTlgChat(update.getMessage());
+//                        return true;
+//                    } catch (IllegalFields | SaveEntryFailed | IllegalMediaType | ExceptionInsideThread e) {
+//                        log.warn(e.getMessage());
+//                    }
                     return false;
                 }
                 switch (operatingMode){
@@ -1065,178 +1105,178 @@ public class TelegramController {
         }
     }
 
-    private void broadcastEditChatMessage(ChatDto chat, ChatMessageDto chatMessage) {
+//    private void broadcastEditChatMessage(ChatDto chat, ChatMessageDto chatMessage) {
+//
+//    }
 
-    }
+//    public void refreshChatUnreadCount(Chat chat, SuperMessage superMessage) {
+//        chat.getMembers()
+//                .stream()
+//                .filter(e -> !e.getLogin().equals(superMessage.getAuthor().getLogin()))
+//                .forEach(e -> {
+//                    String login = e.getLogin();
+//                    Long chatId = chat.getChatId();
+//                    Long countUnreadMessages = chatDispatcher.getUnreadMessagesCount(chatId, e);
+//                    stompController.updateCountUnreadMessage(login, chatId, countUnreadMessages);
+//                });
+//    }
 
-    public void refreshChatUnreadCount(Chat chat, SuperMessage superMessage) {
-        chat.getMembers()
-                .stream()
-                .filter(e -> !e.getLogin().equals(superMessage.getAuthor().getLogin()))
-                .forEach(e -> {
-                    String login = e.getLogin();
-                    Long chatId = chat.getChatId();
-                    Long countUnreadMessages = chatDispatcher.getUnreadMessagesCount(chatId, e);
-                    stompController.updateCountUnreadMessage(login, chatId, countUnreadMessages);
-                });
-    }
+//    /**
+//     * Обрабатывает сообщения полученные из web версии crm, и отправляет их всем пользователям чата
+//     *
+//     * @param chatId      Идентификатор чата из базы данных
+//     * @param messageData Данные сообщения полученные из web
+//     * @param author      Объект сотрудника отправившего сообщение
+//     * @throws EntryNotFound        Если не находит чат или сообщение в базе данных
+//     * @throws EmptyFile            Попытка сохранить пустой файл
+//     * @throws WriteError           Ошибка при записи файла на диск
+//     * @throws TelegramApiException Ошибка при обращении к telegram api
+//     * @throws IllegalFields        Ошибка при попытке отправить мультимедиа-сообщение без вложения
+//     * @throws IllegalMediaType     Ошибка при неудачной попытке определить тип данных вложения
+//     */
+//    public void sendMessageFromWeb(Long chatId, MessageData messageData, Employee author) throws EntryNotFound,
+//            EmptyFile, WriteError, TelegramApiException, IllegalFields, IllegalMediaType {
+//        // Находим целевой чат
+//        Chat chat = chatDispatcher.getChat(chatId);
+//
+//        if (chat.getClosed() != null) {
+//            throw new IllegalFields("Не возможно отправить сообщение в закрытый чат");
+//        }
+//
+//        if (!chat.getMembers().contains(author)) {
+//            chat.getMembers().add(author);
+//            List<SuperMessage> superMessages = chatDispatcher.setAllMessagesAsRead(chat.getChatId(), author);
+//            superMessages.forEach(stompController::updateMessage);
+//            stompController.updateChat(chatDispatcher.unsafeSave(chat));
+//            stompController.updateCountUnreadMessage(author.getLogin(), chatId, 0L);
+//        }
+//
+//        // Из messageData создаем одно или несколько сообщений в зависимости от вложений
+//        Set<Attachment> attachments = new HashSet<>();
+//        if (!messageData.getFiles().isEmpty()) {
+//            attachments = new HashSet<>(attachmentDispatcher.saveAttachments(messageData.getFiles()));
+//        }
+//
+//        if (attachments.size() > 1) {
+//            // Если вложений больше 1 создаем несколько сообщений по медиа группам для корректной отправки в tg
+//
+//
+//            List<Attachment> visualMedia = attachments.stream()
+//                    .filter(a -> a.getType() == AttachmentType.PHOTO || a.getType() == AttachmentType.VIDEO)
+//                    .collect(Collectors.toList());
+//            List<Attachment> audioMedia = attachments.stream()
+//                    .filter(a -> a.getType() == AttachmentType.AUDIO)
+//                    .collect(Collectors.toList());
+//            List<Attachment> documentsMedia = attachments.stream()
+//                    .filter(a -> a.getType() == AttachmentType.DOCUMENT || a.getType() == AttachmentType.FILE)
+//                    .collect(Collectors.toList());
+//
+//            if (messageData.getText() != null && !messageData.getText().isBlank()) {
+//                // Создаем текстовое сообщение, если есть текст
+//
+//                // Записываем в бд и транслируем в tg чаты членов чата
+//                SuperMessage textMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, messageData.getReplyMessageId(), this);
+//
+//                // Обновляем web
+//                broadcastUpdatesToWeb(textMessage);
+//            } else {
+//                // Если текста нет, транслируем в чаты метку отправителя
+//
+//                sendTextBroadcastMessage(chat, ChatMessage.of("", author));
+//            }
+//
+//            // Создаем, отправляем и транслируем медиа сообщения в зависимости от количества вложений
+//            if (visualMedia.size() == 1) {
+//                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, visualMedia.get(0), messageData.getReplyMessageId(), this);
+//
+//                // Отправляем обновления в интерфейс пользователя
+//                broadcastUpdatesToWeb(mediaMessage);
+//            } else if (visualMedia.size() > 1) {
+//                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, visualMedia, messageData.getReplyMessageId(), this);
+//
+//                // Отправляем обновления в интерфейс пользователя
+//                broadcastUpdatesToWeb(mediaMessage);
+//            }
+//            if (audioMedia.size() == 1) {
+//                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, audioMedia.get(0), messageData.getReplyMessageId(), this);
+//
+//                // Отправляем обновления в интерфейс пользователя
+//                broadcastUpdatesToWeb(mediaMessage);
+//            } else if (audioMedia.size() > 1) {
+//                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, audioMedia, messageData.getReplyMessageId(), this);
+//
+//                // Отправляем обновления в интерфейс пользователя
+//                broadcastUpdatesToWeb(mediaMessage);
+//            }
+//            if (documentsMedia.size() == 1) {
+//                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, documentsMedia.get(0), messageData.getReplyMessageId(), this);
+//
+//                // Отправляем обновления в интерфейс пользователя
+//                broadcastUpdatesToWeb(mediaMessage);
+//            } else if (documentsMedia.size() > 1) {
+//                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, documentsMedia, messageData.getReplyMessageId(), this);
+//
+//                // Отправляем обновления в интерфейс пользователя
+//                broadcastUpdatesToWeb(mediaMessage);
+//            }
+//
+//        } else if (attachments.size() == 1) {
+//            // Если вложение одно, то создаем простое медиа сообщение
+//
+//            Attachment attachment = attachments.iterator().next();
+//
+//            SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, attachment, messageData.getReplyMessageId(), this);
+//
+//            // Отправляем обновления в интерфейс пользователя
+//            broadcastUpdatesToWeb(mediaMessage);
+//        } else {
+//            // Если вложений нет, то создаем текстовое сообщение.
+//
+//            // Записываем в бд и транслируем в tg чаты членов чата
+//            SuperMessage textMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, messageData.getReplyMessageId(), this);
+//
+//            // Обновляем web
+//            broadcastUpdatesToWeb(textMessage);
+//        }
+//    }
 
-    /**
-     * Обрабатывает сообщения полученные из web версии crm, и отправляет их всем пользователям чата
-     *
-     * @param chatId      Идентификатор чата из базы данных
-     * @param messageData Данные сообщения полученные из web
-     * @param author      Объект сотрудника отправившего сообщение
-     * @throws EntryNotFound        Если не находит чат или сообщение в базе данных
-     * @throws EmptyFile            Попытка сохранить пустой файл
-     * @throws WriteError           Ошибка при записи файла на диск
-     * @throws TelegramApiException Ошибка при обращении к telegram api
-     * @throws IllegalFields        Ошибка при попытке отправить мультимедиа-сообщение без вложения
-     * @throws IllegalMediaType     Ошибка при неудачной попытке определить тип данных вложения
-     */
-    public void sendMessageFromWeb(Long chatId, MessageData messageData, Employee author) throws EntryNotFound,
-            EmptyFile, WriteError, TelegramApiException, IllegalFields, IllegalMediaType {
-        // Находим целевой чат
-        Chat chat = chatDispatcher.getChat(chatId);
-
-        if (chat.getClosed() != null) {
-            throw new IllegalFields("Не возможно отправить сообщение в закрытый чат");
-        }
-
-        if (!chat.getMembers().contains(author)) {
-            chat.getMembers().add(author);
-            List<SuperMessage> superMessages = chatDispatcher.setAllMessagesAsRead(chat.getChatId(), author);
-            superMessages.forEach(stompController::updateMessage);
-            stompController.updateChat(chatDispatcher.unsafeSave(chat));
-            stompController.updateCountUnreadMessage(author.getLogin(), chatId, 0L);
-        }
-
-        // Из messageData создаем одно или несколько сообщений в зависимости от вложений
-        Set<Attachment> attachments = new HashSet<>();
-        if (!messageData.getFiles().isEmpty()) {
-            attachments = new HashSet<>(attachmentDispatcher.saveAttachments(messageData.getFiles()));
-        }
-
-        if (attachments.size() > 1) {
-            // Если вложений больше 1 создаем несколько сообщений по медиа группам для корректной отправки в tg
-
-
-            List<Attachment> visualMedia = attachments.stream()
-                    .filter(a -> a.getType() == AttachmentType.PHOTO || a.getType() == AttachmentType.VIDEO)
-                    .collect(Collectors.toList());
-            List<Attachment> audioMedia = attachments.stream()
-                    .filter(a -> a.getType() == AttachmentType.AUDIO)
-                    .collect(Collectors.toList());
-            List<Attachment> documentsMedia = attachments.stream()
-                    .filter(a -> a.getType() == AttachmentType.DOCUMENT || a.getType() == AttachmentType.FILE)
-                    .collect(Collectors.toList());
-
-            if (messageData.getText() != null && !messageData.getText().isBlank()) {
-                // Создаем текстовое сообщение, если есть текст
-
-                // Записываем в бд и транслируем в tg чаты членов чата
-                SuperMessage textMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, messageData.getReplyMessageId(), this);
-
-                // Обновляем web
-                broadcastUpdatesToWeb(textMessage);
-            } else {
-                // Если текста нет, транслируем в чаты метку отправителя
-
-                sendTextBroadcastMessage(chat, ChatMessage.of("", author));
-            }
-
-            // Создаем, отправляем и транслируем медиа сообщения в зависимости от количества вложений
-            if (visualMedia.size() == 1) {
-                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, visualMedia.get(0), messageData.getReplyMessageId(), this);
-
-                // Отправляем обновления в интерфейс пользователя
-                broadcastUpdatesToWeb(mediaMessage);
-            } else if (visualMedia.size() > 1) {
-                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, visualMedia, messageData.getReplyMessageId(), this);
-
-                // Отправляем обновления в интерфейс пользователя
-                broadcastUpdatesToWeb(mediaMessage);
-            }
-            if (audioMedia.size() == 1) {
-                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, audioMedia.get(0), messageData.getReplyMessageId(), this);
-
-                // Отправляем обновления в интерфейс пользователя
-                broadcastUpdatesToWeb(mediaMessage);
-            } else if (audioMedia.size() > 1) {
-                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, audioMedia, messageData.getReplyMessageId(), this);
-
-                // Отправляем обновления в интерфейс пользователя
-                broadcastUpdatesToWeb(mediaMessage);
-            }
-            if (documentsMedia.size() == 1) {
-                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, documentsMedia.get(0), messageData.getReplyMessageId(), this);
-
-                // Отправляем обновления в интерфейс пользователя
-                broadcastUpdatesToWeb(mediaMessage);
-            } else if (documentsMedia.size() > 1) {
-                SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, documentsMedia, messageData.getReplyMessageId(), this);
-
-                // Отправляем обновления в интерфейс пользователя
-                broadcastUpdatesToWeb(mediaMessage);
-            }
-
-        } else if (attachments.size() == 1) {
-            // Если вложение одно, то создаем простое медиа сообщение
-
-            Attachment attachment = attachments.iterator().next();
-
-            SuperMessage mediaMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, attachment, messageData.getReplyMessageId(), this);
-
-            // Отправляем обновления в интерфейс пользователя
-            broadcastUpdatesToWeb(mediaMessage);
-        } else {
-            // Если вложений нет, то создаем текстовое сообщение.
-
-            // Записываем в бд и транслируем в tg чаты членов чата
-            SuperMessage textMessage = chatDispatcher.createMessage(chatId, messageData.getText(), author, messageData.getReplyMessageId(), this);
-
-            // Обновляем web
-            broadcastUpdatesToWeb(textMessage);
-        }
-    }
-
-    /**
-     * Удаляет сообщение из базы данных и из telegram api при запросе от web crm
-     *
-     * @param messageId Идентификатор целевого сообщения
-     * @param employee  Кто удаляет сообщение
-     * @return Список удаленных сообщений
-     * @throws EntryNotFound  Если сообщение не найдено
-     * @throws NotOwner       Если сообщение не принадлежит сотруднику
-     * @throws AlreadyDeleted Если сообщение уже удалено
-     */
-    public SuperMessage deleteMessageFromWeb(Long messageId, Employee employee) throws EntryNotFound, NotOwner, AlreadyDeleted, TelegramApiException {
-        List<ChatMessage> listOfRelatedMessages = chatDispatcher.getListOfRelatedMessages(messageId);
-        ChatMessageMediaGroup listOfDeletedMessages = new ChatMessageMediaGroup();
-        for (ChatMessage chatMessage : listOfRelatedMessages) {
-            listOfDeletedMessages.addMessage(chatDispatcher.deleteMessage(chatMessage.getChatMessageId(), employee));
-            deleteMessageFromTelegram(chatMessage);
-        }
-        SuperMessage superMessage = listOfDeletedMessages.getSuperMessage();
-        stompController.deleteMessage(superMessage);
-        return superMessage;
-    }
+//    /**
+//     * Удаляет сообщение из базы данных и из telegram api при запросе от web crm
+//     *
+//     * @param messageId Идентификатор целевого сообщения
+//     * @param employee  Кто удаляет сообщение
+//     * @return Список удаленных сообщений
+//     * @throws EntryNotFound  Если сообщение не найдено
+//     * @throws NotOwner       Если сообщение не принадлежит сотруднику
+//     * @throws AlreadyDeleted Если сообщение уже удалено
+//     */
+//    public SuperMessage deleteMessageFromWeb(Long messageId, Employee employee) throws EntryNotFound, NotOwner, AlreadyDeleted, TelegramApiException {
+//        List<ChatMessage> listOfRelatedMessages = chatDispatcher.getListOfRelatedMessages(messageId);
+//        ChatMessageMediaGroup listOfDeletedMessages = new ChatMessageMediaGroup();
+//        for (ChatMessage chatMessage : listOfRelatedMessages) {
+//            listOfDeletedMessages.addMessage(chatDispatcher.deleteMessage(chatMessage.getChatMessageId(), employee));
+//            deleteMessageFromTelegram(chatMessage);
+//        }
+//        SuperMessage superMessage = listOfDeletedMessages.getSuperMessage();
+//        stompController.deleteMessage(superMessage);
+//        return superMessage;
+//    }
 
 
-    /**
-     * Редактирует сообщение из базы данных и из telegram api при запросе от web crm
-     *
-     * @param editMessageId Идентификатор редактируемого сообщения
-     * @param text          Отредактированный текст
-     * @param author        Кто редактирует сообщение
-     * @throws TelegramApiException Если ошибка при отправке сообщения в telegram api
-     * @throws EntryNotFound        Если сообщение не найдено
-     * @throws NotOwner             Если сообщение не принадлежит сотруднику
-     * @throws IllegalFields        Если сообщение пустое или изменений нет
-     */
-    public void updateMessageFromWeb(Long editMessageId, String text, Employee author) throws TelegramApiException, EntryNotFound, NotOwner, IllegalFields {
-        stompController.updateMessage(chatMessageDispatcher.updateMessageFromWeb(editMessageId, text, author, this));
-    }
+//    /**
+//     * Редактирует сообщение из базы данных и из telegram api при запросе от web crm
+//     *
+//     * @param editMessageId Идентификатор редактируемого сообщения
+//     * @param text          Отредактированный текст
+//     * @param author        Кто редактирует сообщение
+//     * @throws TelegramApiException Если ошибка при отправке сообщения в telegram api
+//     * @throws EntryNotFound        Если сообщение не найдено
+//     * @throws NotOwner             Если сообщение не принадлежит сотруднику
+//     * @throws IllegalFields        Если сообщение пустое или изменений нет
+//     */
+//    public void updateMessageFromWeb(Long editMessageId, String text, Employee author) throws TelegramApiException, EntryNotFound, NotOwner, IllegalFields {
+//        stompController.updateMessage(chatMessageDispatcher.updateMessageFromWeb(editMessageId, text, author, this));
+//    }
 
     private void deleteMessageFromTelegram(ChatMessage chatMessage) throws TelegramApiException {
         for (TelegramMessageBind telegramMessageBind : chatMessage.getTelegramBinds()) {
@@ -1244,53 +1284,53 @@ public class TelegramController {
         }
     }
 
-    public void sendMessageFromTlgChat(Message receivedMessage) throws EntryNotFound, TelegramApiException, IllegalFields, SaveEntryFailed, IllegalMediaType, ExceptionInsideThread {
-        // Получаем автора сообщения
-        Employee author = employeeDispatcher.getByTelegramId(receivedMessage.getChatId()).orElseThrow(() -> new EntryNotFound("Идентификатор телеграм не привязан ни к одному аккаунту"));
-        // Пытаемся получить активный журнал задачи монтажника который написал сообщение,
-        // чтобы понять в какой чат транслировать сообщение.
-        WorkLog activeWorkLog = workLogDispatcher.getAcceptedByTelegramIdDTO(receivedMessage.getChatId());
-        // Получаем целевой чат
-        Chat chat = activeWorkLog.getChat();
-        if (chat == null) throw new IllegalFields("Чат не прикреплен к журналу работ");
-
-        switch (Utils.getTlgMsgType(receivedMessage)) {
-            case TEXT, MEDIA -> {
-                // Создает сообщение в базе данных
-                SuperMessage textMessage = chatDispatcher.createMessage(chat.getChatId(), receivedMessage, author, this, false);
-                broadcastUpdatesToWeb(textMessage);
-            }
-            case GROUP -> {
-                String group = Utils.getTlgMsgGroupId(receivedMessage);
-                if (groupedMessagesFromTelegram.containsKey(group)) {
-                    groupedMessagesFromTelegram.get(group).add(receivedMessage);
-                } else {
-                    groupedMessagesFromTelegram.put(group, Stream.of(receivedMessage).collect(Collectors.toList()));
-                    try {
-                        ExecutorService threadExecutor = Executors.newSingleThreadExecutor();
-                        threadExecutor.execute(() -> {
-                            try {
-                                // Ждем несколько секунд пока придут все сообщения от telegram api
-                                sleep(1000);
-                                List<Message> listOfReceivedMessages = groupedMessagesFromTelegram.get(group);
-                                SuperMessage mediaGroupMessage = chatDispatcher.createMessage(chat.getChatId(), listOfReceivedMessages, author, this, false);
-                                // Отправляет сообщение для обновления пользовательского интерфейса
-                                broadcastUpdatesToWeb(mediaGroupMessage);
-                            } catch (InterruptedException | TelegramApiException | EntryNotFound |
-                                     IllegalFields | IllegalMediaType e) {
-                                throw new RuntimeException(e);
-                            } finally {
-                                groupedMessagesFromTelegram.remove(group);
-                            }
-                        });
-                        threadExecutor.shutdown();
-                    } catch (RuntimeException e) {
-                        throw new ExceptionInsideThread(e.getMessage());
-                    }
-                }
-            }
-        }
-    }
+//    public void sendMessageFromTlgChat(Message receivedMessage) throws EntryNotFound, TelegramApiException, IllegalFields, SaveEntryFailed, IllegalMediaType, ExceptionInsideThread {
+//        // Получаем автора сообщения
+//        Employee author = employeeDispatcher.getByTelegramId(receivedMessage.getChatId()).orElseThrow(() -> new EntryNotFound("Идентификатор телеграм не привязан ни к одному аккаунту"));
+//        // Пытаемся получить активный журнал задачи монтажника который написал сообщение,
+//        // чтобы понять в какой чат транслировать сообщение.
+//        WorkLog activeWorkLog = workLogDispatcher.getAcceptedByTelegramIdDTO(receivedMessage.getChatId());
+//        // Получаем целевой чат
+//        Chat chat = activeWorkLog.getChat();
+//        if (chat == null) throw new IllegalFields("Чат не прикреплен к журналу работ");
+//
+//        switch (Utils.getTlgMsgType(receivedMessage)) {
+//            case TEXT, MEDIA -> {
+//                // Создает сообщение в базе данных
+//                SuperMessage textMessage = chatDispatcher.createMessage(chat.getChatId(), receivedMessage, author, this, false);
+//                broadcastUpdatesToWeb(textMessage);
+//            }
+//            case GROUP -> {
+//                String group = Utils.getTlgMsgGroupId(receivedMessage);
+//                if (groupedMessagesFromTelegram.containsKey(group)) {
+//                    groupedMessagesFromTelegram.get(group).add(receivedMessage);
+//                } else {
+//                    groupedMessagesFromTelegram.put(group, Stream.of(receivedMessage).collect(Collectors.toList()));
+//                    try {
+//                        ExecutorService threadExecutor = Executors.newSingleThreadExecutor();
+//                        threadExecutor.execute(() -> {
+//                            try {
+//                                // Ждем несколько секунд пока придут все сообщения от telegram api
+//                                sleep(1000);
+//                                List<Message> listOfReceivedMessages = groupedMessagesFromTelegram.get(group);
+//                                SuperMessage mediaGroupMessage = chatDispatcher.createMessage(chat.getChatId(), listOfReceivedMessages, author, this, false);
+//                                // Отправляет сообщение для обновления пользовательского интерфейса
+//                                broadcastUpdatesToWeb(mediaGroupMessage);
+//                            } catch (InterruptedException | TelegramApiException | EntryNotFound |
+//                                     IllegalFields | IllegalMediaType e) {
+//                                throw new RuntimeException(e);
+//                            } finally {
+//                                groupedMessagesFromTelegram.remove(group);
+//                            }
+//                        });
+//                        threadExecutor.shutdown();
+//                    } catch (RuntimeException e) {
+//                        throw new ExceptionInsideThread(e.getMessage());
+//                    }
+//                }
+//            }
+//        }
+//    }
 
     public void sendMessageFromTlgGroupChat(Message receivedMessage) throws EntryNotFound, TelegramApiException, IllegalFields, SaveEntryFailed, IllegalMediaType, ExceptionInsideThread {
 
@@ -1305,21 +1345,21 @@ public class TelegramController {
             chats.add(workLogDispatcher.getActiveChatByEmployee(employee));
         }
 
-        for (Chat chat : chats){
-            if (!chat.getMembers().contains(author)) {
-                chat.getMembers().add(author);
-                List<SuperMessage> superMessages = chatDispatcher.setAllMessagesAsRead(chat.getChatId(), author);
-                superMessages.forEach(stompController::updateMessage);
-                stompController.updateChat(chatDispatcher.unsafeSave(chat));
-                stompController.updateCountUnreadMessage(author.getLogin(), chat.getChatId(), 0L);
-            }
-        }
+//        for (Chat chat : chats){
+//            if (!chat.getMembers().contains(author)) {
+//                chat.getMembers().add(author);
+//                List<SuperMessage> superMessages = chatDispatcher.setAllMessagesAsRead(chat.getChatId(), author);
+//                superMessages.forEach(stompController::updateMessage);
+//                stompController.updateChat(chatDispatcher.unsafeSave(chat));
+//                stompController.updateCountUnreadMessage(author.getLogin(), chat.getChatId(), 0L);
+//            }
+//        }
 
         switch (Utils.getTlgMsgType(receivedMessage)) {
             case TEXT, MEDIA -> {
                 for (Chat chat : chats){
                     // Создает сообщение в базе данных
-                    SuperMessage textMessage = chatDispatcher.createMessage(chat.getChatId(), receivedMessage, author, this, true);
+                    SuperMessage textMessage = chatDispatcher.createMessage(chat.getChatId(), receivedMessage, author, this);
                     broadcastUpdatesToWeb(textMessage);
                 }
             }
@@ -1337,7 +1377,7 @@ public class TelegramController {
                                 sleep(1000);
                                 List<Message> listOfReceivedMessages = groupedMessagesFromTelegram.get(group);
                                 for (Chat chat : chats) {
-                                    SuperMessage mediaGroupMessage = chatDispatcher.createMessage(chat.getChatId(), listOfReceivedMessages, author, this, true);
+                                    SuperMessage mediaGroupMessage = chatDispatcher.createMessage(chat.getChatId(), listOfReceivedMessages, author, this);
                                     // Отправляет сообщение для обновления пользовательского интерфейса
                                     broadcastUpdatesToWeb(mediaGroupMessage);
                                 }
@@ -1362,7 +1402,7 @@ public class TelegramController {
             ChatDto chat = chatDispatcher.getChatDto(message.getParentChatId());
             stompController.createMessage(message, chat.getMembers());
             stompController.updateChat(ChatMapper.fromDto(chat));
-            refreshChatUnreadCount(ChatMapper.fromDto(chat), message);
+//            refreshChatUnreadCount(ChatMapper.fromDto(chat), message);
         }
     }
 
@@ -1378,44 +1418,44 @@ public class TelegramController {
         stompController.updateMessage(chatMessageDispatcher.updateMessageFromTlg(receivedMessage, this));
     }
 
-    /**
-     * Отправляет сообщения броадкастом во все телеграм чаты
-     *
-     * @param chat    {@link Chat} из базы данных
-     * @param message Отправляемое текстовое сообщение
-     * @return Список ответов от telegram api об отправленных сообщениях
-     * @throws TelegramApiException Если возникла ошибка при отправке сообщения
-     */
-    public List<Message> sendTextBroadcastMessage(Chat chat, ChatMessageDto message) throws TelegramApiException {
-        // Список ответов от telegram об отправленных сообщениях
-        List<Message> responses = new ArrayList<>();
-
-        Set<String> memberGroups = chat.getMembers().stream().map(Employee::getTelegramGroupChatId).filter(Objects::nonNull).filter(s->!s.isBlank()).collect(Collectors.toSet());
-
-        Set<Employee> membersWithoutGroup = chat.getMembers().stream().filter(Employee::isHasNotGroup).collect(Collectors.toSet());
-
-
-        for (String group : memberGroups) {
-            responses.add(TelegramMessageFactory.create(group, mainBot).broadcastTextMessage(message).execute());
-        }
-
-        // Проходимся по всем членам чата, проверяем привязан ли телеграм, и не является ли целевой чат автором сообщения
-        for (Employee employee : membersWithoutGroup) {
-            // Идентификатор чата в телеграм
-            String targetChatId = employee.getTelegramUserId();
-
-            // Проверка валидности чата
-            if (targetChatId == null || targetChatId.isBlank() || employee.getLogin().equals(message.getAuthor().getLogin()))
-                continue;
-            try {
-                responses.add(TelegramMessageFactory.create(targetChatId, mainBot).broadcastTextMessage(message).execute());
-            }catch (Throwable e){
-                log.warn("Не удалось отправить сообщение в чат {} {}", targetChatId, employee.getLogin());
-            }
-        }
-
-        return responses;
-    }
+//    /**
+//     * Отправляет сообщения броадкастом во все телеграм чаты
+//     *
+//     * @param chat    {@link Chat} из базы данных
+//     * @param message Отправляемое текстовое сообщение
+//     * @return Список ответов от telegram api об отправленных сообщениях
+//     * @throws TelegramApiException Если возникла ошибка при отправке сообщения
+//     */
+//    public List<Message> sendTextBroadcastMessage(Chat chat, ChatMessageDto message) throws TelegramApiException {
+//        // Список ответов от telegram об отправленных сообщениях
+//        List<Message> responses = new ArrayList<>();
+//
+//        Set<String> memberGroups = chat.getMembers().stream().map(Employee::getTelegramGroupChatId).filter(Objects::nonNull).filter(s->!s.isBlank()).collect(Collectors.toSet());
+//
+//        Set<Employee> membersWithoutGroup = chat.getMembers().stream().filter(Employee::isHasNotGroup).collect(Collectors.toSet());
+//
+//
+//        for (String group : memberGroups) {
+//            responses.add(TelegramMessageFactory.create(group, mainBot).broadcastTextMessage(message).execute());
+//        }
+//
+//        // Проходимся по всем членам чата, проверяем привязан ли телеграм, и не является ли целевой чат автором сообщения
+//        for (Employee employee : membersWithoutGroup) {
+//            // Идентификатор чата в телеграм
+//            String targetChatId = employee.getTelegramUserId();
+//
+//            // Проверка валидности чата
+//            if (targetChatId == null || targetChatId.isBlank() || employee.getLogin().equals(message.getAuthor().getLogin()))
+//                continue;
+//            try {
+//                responses.add(TelegramMessageFactory.create(targetChatId, mainBot).broadcastTextMessage(message).execute());
+//            }catch (Throwable e){
+//                log.warn("Не удалось отправить сообщение в чат {} {}", targetChatId, employee.getLogin());
+//            }
+//        }
+//
+//        return responses;
+//    }
 
     public void sendMessageToTlgId(String chatId, String message) throws TelegramApiException {
         TelegramMessageFactory.create(chatId, mainBot).simpleMessage(message).execute();
@@ -1513,8 +1553,27 @@ public class TelegramController {
     }
 
     public void assignInstallers(WorkLog workLog, Employee employee) throws TelegramApiException {
+        if(workLog.getGangLeader() != null){
+            Employee gangLeader = workLog.getEmployees().stream().filter(emp -> Objects.equals(emp.getLogin(), workLog.getGangLeader())).findFirst().orElseThrow(() -> {
+                workLogDispatcher.remove(workLog);
+                return new ResponseException("Бригадира нет в списке монтажников");
+            });
+            boolean hasNotTelegram = workLog.getEmployees().stream().anyMatch(ins -> ins.getTelegramUserId() == null || ins.getTelegramUserId().isBlank());
+            if(hasNotTelegram){
+                workLogDispatcher.remove(workLog);
+                throw new ResponseException("У бригадира не назначен telegram id");
+            }
+            try {
+                TelegramMessageFactory.create(gangLeader.getTelegramUserId(), mainBot).acceptWorkLog(workLog, employee).execute();
+            }catch (Throwable e){
+                workLogDispatcher.remove(workLog);
+                throw new ResponseException("Бригадир имеет не верный telegram id");
+            }
+            return;
+        }
         boolean hasNotTelegram = workLog.getEmployees().stream().anyMatch(ins -> ins.getTelegramUserId() == null || ins.getTelegramUserId().isBlank());
         if (hasNotTelegram){
+            workLogDispatcher.remove(workLog);
             throw new ResponseException("У сотрудников не назначен telegram id");
         }
         try {
@@ -1522,6 +1581,7 @@ public class TelegramController {
                 TelegramMessageFactory.create(installer.getTelegramUserId(), mainBot).acceptWorkLog(workLog, employee).execute();
             }
         }catch (Throwable e){
+            workLogDispatcher.remove(workLog);
             throw new ResponseException("Один или несколько сотрудников имеют не верный telegram id");
         }
     }

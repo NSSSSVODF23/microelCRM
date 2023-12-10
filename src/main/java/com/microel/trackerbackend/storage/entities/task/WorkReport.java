@@ -29,4 +29,6 @@ public class WorkReport {
     @OneToOne()
     private Employee author;
     private Timestamp created;
+    @Column(columnDefinition = "boolean default false")
+    private Boolean awaitingWriting;
 }

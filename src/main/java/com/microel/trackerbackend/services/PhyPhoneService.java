@@ -58,7 +58,7 @@ public class PhyPhoneService {
 //                    throw new ResponseException("Не удалось позвонить на телефон");
                 }
             }
-            case NEW -> {
+            case X1S -> {
                 try {
                     // Получение идентификатора сессии из cookie
                     Connection.Response sessionCookie = Jsoup.connect("http://" + phoneInfo.getIp()).method(Connection.Method.GET).execute();
@@ -106,6 +106,66 @@ public class PhyPhoneService {
                         Jsoup.connect("http://" + phoneInfo.getIp() + "/webdial.htm").method(Connection.Method.POST).cookies(cookies).data(callRequestMap).execute();
                     }catch (IOException e){
                         throw new ResponseException("Не удалось позвонить на телефон");
+                    }
+
+                    // Logout на телефоне
+                    Map<String, String> logoutRequestMap = Map.of("DefaultLogout", "Выход");
+                    Jsoup.connect("http://" + phoneInfo.getIp() + "/title.htm").method(Connection.Method.POST).cookies(cookies).data(logoutRequestMap).execute();
+
+                } catch (IOException e) {
+                    throw new ResponseException(e.getMessage());
+                } catch (NoSuchAlgorithmException e) {
+                    throw new ResponseException("Ошибка кодирования данных для авторизации на телефоне");
+                }
+            }
+            case X3S -> {
+                try {
+                    // Получение идентификатора сессии из cookie
+                    Connection.Response sessionCookie = Jsoup.connect("http://" + phoneInfo.getIp()).method(Connection.Method.GET).execute();
+                    Map<String, String> cookies = sessionCookie.cookies();
+
+                    // Обновление идентификатора сессии
+                    Document authDocument = Jsoup.connect("http://" + phoneInfo.getIp() + "/key==nonce?now=" + (Instant.now().toEpochMilli()))
+                            .cookies(cookies)
+                            .get();
+                    String nonce = authDocument.text();
+                    if(!nonce.isBlank()) {
+                        cookies.put("auth", nonce);
+                    } else if(cookies.containsKey("auth")) {
+                        nonce = cookies.get("auth");
+                    } else {
+                        throw new ResponseException("Не удалось получить id сессии на телефоне");
+                    }
+
+                    // Хеширование данных запроса для авторизации
+                    MessageDigest md = MessageDigest.getInstance("MD5");
+                    String encoded = phoneInfo.getLogin() + ":" + HexFormat.of().formatHex(md.digest((phoneInfo.getLogin() + ":" + phoneInfo.getPassword() + ":" + nonce).getBytes(StandardCharsets.UTF_8)));
+
+                    // Авторизация на телефоне
+                    Map<String, String> authBody = Map.of(
+                            "encoded", encoded,
+                            "CurLanguage", "ru",
+                            "ReturnPage", "/"
+                    );
+                    try {
+                        Jsoup.connect("http://" + phoneInfo.getIp() + "/").cookies(cookies).data(authBody).post();
+                    }catch (HttpStatusException e){
+                        throw new ResponseException("Не верный логин или пароль для авторизации на телефоне");
+                    }catch (IOException e){
+                        throw new ResponseException("Не удалось авторизоваться на телефоне");
+                    }
+
+                    // Звонок на указанный номер телефона
+                    Map<String, String> callRequestMap = Map.of(
+                            "PHB_AutoDialNumber", phoneNumber,
+                            "ReturnPage", "/webdial.htm",
+                            "AutoDialSubmit", "submit",
+                            "PHB_AutoDialLine", "1"
+                    );
+                    try {
+                        Jsoup.connect("http://" + phoneInfo.getIp() + "/information.htm").method(Connection.Method.POST).cookies(cookies).data(callRequestMap).execute();
+                    }catch (IOException ignore){
+//                        throw new ResponseException("Не удалось позвонить на телефон");
                     }
 
                     // Logout на телефоне

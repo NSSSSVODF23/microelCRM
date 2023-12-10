@@ -152,7 +152,16 @@ public class TaskDispatcher {
             createdTask.setDepartmentsObservers(departmentsObservers);
         }
 
-        createdTask.setCurrentStage(wireframe.getFirstStage());
+        if(body.getType() == null){
+            createdTask.setCurrentStage(wireframe.getFirstStage());
+        }else{
+            TaskStage taskStage = taskStageRepository.findFirstByStageId(body.getType()).orElse(null);
+            if(taskStage == null){
+                createdTask.setCurrentStage(wireframe.getFirstStage());
+            }else{
+                createdTask.setCurrentStage(taskStage);
+            }
+        }
 
         // Устанавливаем статус задачи как активная
         createdTask.setTaskStatus(TaskStatus.ACTIVE);
@@ -336,32 +345,38 @@ public class TaskDispatcher {
 
     @Transactional
     public WorkLog assignInstallers(Long taskId, WorkLog.AssignBody body, Employee creator) throws EntryNotFound, IllegalFields {
-        Task task = taskRepository.findByTaskId(taskId).orElse(null);
-        if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
-        WorkLog existed = workLogDispatcher.getActiveWorkLogByTask(task).orElse(null);
-        if (existed != null) throw new IllegalFields("Задаче уже назначены другие монтажники");
-        WorkLog workLog = workLogDispatcher.createWorkLog(task, body, creator);
-        task.setTaskStatus(TaskStatus.PROCESSING);
-        task.setUpdated(Timestamp.from(Instant.now()));
-        taskRepository.save(task);
+        WorkLog workLog = null;
+        try {
+            Task task = taskRepository.findByTaskId(taskId).orElse(null);
+            if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
+            WorkLog existed = workLogDispatcher.getActiveWorkLogByTask(task).orElse(null);
+            if (existed != null) throw new IllegalFields("Задаче уже назначены другие монтажники");
+            workLog = workLogDispatcher.createWorkLog(task, body, creator);
+            task.setTaskStatus(TaskStatus.PROCESSING);
+            task.setUpdated(Timestamp.from(Instant.now()));
+            taskRepository.save(task);
 
-        Long wireframeId = task.getModelWireframe().getWireframeId();
+            Long wireframeId = task.getModelWireframe().getWireframeId();
 
-        task.getAllEmployeesObservers().forEach(observer -> {
-            Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
-            Map<String, Long> incomingTasksCountByStages = getIncomingTasksCountByStages(observer, wireframeId);
-            stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
-            Map<Long, Map<Long, Long>> incomingTasksCountByTags = getIncomingTasksCountByTags(observer);
-            stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
-        });
+            task.getAllEmployeesObservers().forEach(observer -> {
+                Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
+                Map<String, Long> incomingTasksCountByStages = getIncomingTasksCountByStages(observer, wireframeId);
+                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+                Map<Long, Map<Long, Long>> incomingTasksCountByTags = getIncomingTasksCountByTags(observer);
+                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+            });
 
-        Long tasksCount = getTasksCount(task.getModelWireframe().getWireframeId());
-        Map<String, Long> tasksCountByStages = getTasksCountByStages(wireframeId);
-        stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
-        Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
-        stompController.updateTagTaskCounter(tasksCountByTags);
+            Long tasksCount = getTasksCount(task.getModelWireframe().getWireframeId());
+            Map<String, Long> tasksCountByStages = getTasksCountByStages(wireframeId);
+            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+            Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
+            stompController.updateTagTaskCounter(tasksCountByTags);
 
-        return workLog;
+            return workLog;
+        }catch (Exception e){
+            if (workLog != null) workLogDispatcher.remove(workLog);
+            throw e;
+        }
     }
 
     @Transactional
@@ -636,6 +651,7 @@ public class TaskDispatcher {
             throw new IllegalFields("Пока задача отдана монтажникам её нельзя закрыть");
         task.setTaskStatus(TaskStatus.CLOSE);
         task.setUpdated(Timestamp.from(Instant.now()));
+        task.getTags().removeIf(TaskTag::getUnbindAfterClose);
         // Обновляем счетчики задач на странице
         Long wireframeId = task.getModelWireframe().getWireframeId();
 

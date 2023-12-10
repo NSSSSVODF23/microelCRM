@@ -65,7 +65,8 @@ public class PhyPhoneInfo {
     }
 
     public enum PhyPhoneModel {
-        NEW("NEW"),
+        X1S("X1S"),
+        X3S("X3S"),
         OLD("OLD");
 
         private final String model;
@@ -76,8 +77,9 @@ public class PhyPhoneInfo {
 
         public String getLabel() {
             return switch (this) {
-                case NEW -> "Новый телефон";
                 case OLD -> "Старый телефон";
+                case X1S -> "X1S";
+                case X3S -> "X3S";
             };
         }
 

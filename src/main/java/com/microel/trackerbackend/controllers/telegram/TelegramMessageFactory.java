@@ -131,14 +131,15 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> currentActiveTask(Task task) {
-        List<ModelItem> fields = task.getFields();
+        List<ModelItem> fields = task.getFields().stream().filter(ModelItem::nonEmpty).toList();
+
         KeyboardRow keyboardRowMenu = new KeyboardRow(List.of(new KeyboardButton("ℹ️ Меню задачи")));
         KeyboardRow keyboardRowClose = new KeyboardRow(List.of(new KeyboardButton("\uD83D\uDC4C Завершить задачу")));
         ReplyKeyboardMarkup keyboardMarkup = ReplyKeyboardMarkup.builder().keyboard(List.of(keyboardRowMenu, keyboardRowClose)).resizeKeyboard(true).build();
         StringBuilder messageBuilder = new StringBuilder();
-        messageBuilder.append("Задача #").append(task.getTaskId()).append("\n\n");
+        messageBuilder.append("Задача #").append(task.getTaskId()).append("\n");
         for (ModelItem field : fields) {
-            messageBuilder.append(Decorator.italic(field.getName())).append(": ").append(field.getTextRepresentationForTlg()).append("\n\n");
+            messageBuilder.append(Decorator.underline(field.getName())).append(": ").append(field.getTextRepresentationForTlg()).append("\n");
         }
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
@@ -150,15 +151,18 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> currentActiveTaskForGroupChat(Task task) {
-        List<ModelItem> fields = task.getFields();
+        List<ModelItem> fields = task.getFields().stream().filter(ModelItem::nonEmpty).toList();
+        ReplyKeyboardRemove clearKeyboardMarkup = ReplyKeyboardRemove.builder().removeKeyboard(true).build();
+
         StringBuilder messageBuilder = new StringBuilder();
-        messageBuilder.append("Назначена задача #").append(task.getTaskId()).append("\n\n");
+        messageBuilder.append("Новая задача #").append(task.getTaskId()).append("\n");
         for (ModelItem field : fields) {
-            messageBuilder.append(Decorator.italic(field.getName())).append(": ").append(field.getTextRepresentationForTlg()).append("\n\n");
+            messageBuilder.append(Decorator.underline(field.getName())).append(": ").append(field.getTextRepresentationForTlg()).append("\n");
         }
         SendMessage message = SendMessage.builder()
                 .chatId(chatId)
                 .text(messageBuilder.toString())
+                .replyMarkup(clearKeyboardMarkup)
                 .parseMode("HTML")
                 .build();
         return new MessageExecutor<>(message, context);

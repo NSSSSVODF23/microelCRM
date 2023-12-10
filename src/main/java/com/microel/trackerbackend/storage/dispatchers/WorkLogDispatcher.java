@@ -22,6 +22,7 @@ import com.microel.trackerbackend.storage.exceptions.AlreadyClosed;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.WorkLogRepository;
+import com.microel.trackerbackend.storage.repositories.WorkReportRepository;
 import org.hibernate.Hibernate;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Sort;
@@ -46,14 +47,17 @@ public class WorkLogDispatcher {
     private final TaskDispatcher taskDispatcher;
     private final StompController stompController;
     private final NotificationDispatcher notificationDispatcher;
+    private final WorkReportRepository workReportRepository;
 
-    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher, TaskEventDispatcher taskEventDispatcher, @Lazy TaskDispatcher taskDispatcher, StompController stompController, @Lazy NotificationDispatcher notificationDispatcher) {
+    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher, TaskEventDispatcher taskEventDispatcher, @Lazy TaskDispatcher taskDispatcher, StompController stompController, @Lazy NotificationDispatcher notificationDispatcher,
+                             WorkReportRepository workReportRepository) {
         this.workLogRepository = workLogRepository;
         this.employeeDispatcher = employeeDispatcher;
         this.taskEventDispatcher = taskEventDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.stompController = stompController;
         this.notificationDispatcher = notificationDispatcher;
+        this.workReportRepository = workReportRepository;
     }
 
     @Transactional
@@ -77,7 +81,20 @@ public class WorkLogDispatcher {
 //        chatMembers.add(creator);
         Chat chat = Chat.builder().creator(creator).title("Чат из задачи #" + task.getTaskId()).created(Timestamp.from(Instant.now())).members(Stream.of(creator).collect(Collectors.toSet())).deleted(false).updated(Timestamp.from(Instant.now())).build();
 
-        WorkLog workLog = WorkLog.builder().chat(chat).created(Timestamp.from(Instant.now())).task(task).isForceClosed(false).targetDescription(assignBody.getDescription()).employees(assignBody.getInstallers()).creator(creator).workReports(new HashSet<>()).acceptedEmployees(new HashSet<>()).calculated(false).build();
+        WorkLog workLog = WorkLog.builder()
+                .chat(chat)
+                .created(Timestamp.from(Instant.now()))
+                .task(task)
+                .isForceClosed(false)
+                .targetDescription(assignBody.getDescription())
+                .employees(assignBody.getInstallers())
+                .gangLeader(assignBody.getGangLeader())
+                .deferredReport(assignBody.getDeferredReport())
+                .creator(creator)
+                .workReports(new HashSet<>())
+                .acceptedEmployees(new HashSet<>())
+                .calculated(false)
+                .build();
 
         return workLogRepository.save(workLog);
     }
@@ -213,7 +230,15 @@ public class WorkLogDispatcher {
      * @throws EntryNotFound Если активного журнала задачи не найдено
      */
     public WorkLog getAcceptedByTelegramIdDTO(Long chatId) throws EntryNotFound {
-        return getQueueByTelegramId(chatId).stream().filter(workLog -> workLog.getAcceptedEmployees() != null && workLog.getAcceptedEmployees().stream().anyMatch(e -> e.getTelegramUserId().equals(chatId.toString()))).findFirst().orElseThrow(() -> new EntryNotFound("Нет активной задачи"));
+        WorkLog foundWorkLog = getQueueByTelegramId(chatId)
+                .stream()
+                .filter(workLog -> workLog.getAcceptedEmployees() != null && workLog.getAcceptedEmployees().stream().anyMatch(e -> e.getTelegramUserId().equals(chatId.toString())))
+                .findFirst()
+                .orElseThrow(() -> new EntryNotFound("Нет активной задачи"));
+        for(ModelItem modelItem : foundWorkLog.getTask().getFields()){
+            modelItem.getTextRepresentationForTlg();
+        }
+        return foundWorkLog;
     }
 
     /**
@@ -277,14 +302,45 @@ public class WorkLogDispatcher {
         if (!workLog.getEmployees().contains(employee)) throw new IllegalFields("Эта задача вам не назначена");
         if (workLog.getAcceptedEmployees().contains(acceptingEntry))
             throw new IllegalFields("Вы уже приняли эту задачу");
-        List<WorkLog> acceptedWorkLogs = workLogs.stream().filter(wl -> wl.getAcceptedEmployees().contains(acceptingEntry)).toList();
-        boolean allReportsHaveBeenWritten = acceptedWorkLogs.stream().allMatch(wl -> wl.getWorkReports().stream().anyMatch(wr -> Objects.equals(wr.getAuthor(), employee)));
-        if (!allReportsHaveBeenWritten)
+        if (isHasUnclosedWorkLogs(workLogs, employee))
             throw new IllegalFields("Чтобы принять задачу, нужно завершить текущую активную");
+        if(workLog.getGangLeader() != null){
+            if(Objects.equals(employee.getLogin(), workLog.getGangLeader())){
+                throw new IllegalFields("Вы не являетесь лидером бригадиром по данной задаче");
+            }
+            if(!workLog.getEmployees().stream().map(Employee::getLogin).toList().contains(workLog.getGangLeader())){
+                throw new IllegalFields("Бригадира нет среди монтажников по данной задаче");
+            }
+            for(Employee installer : workLog.getEmployees()){
+                List<WorkLog> installerWorkLogs = workLogRepository.findAll((root, query, cb) -> {
+                    List<Predicate> predicates = new ArrayList<>();
+                    Join<WorkLog, Employee> employeeJoin = root.join("employees", JoinType.LEFT);
+                    predicates.add(employeeJoin.in(installer));
+                    predicates.add(cb.isNull(root.get("closed")));
+                    return cb.and(predicates.toArray(Predicate[]::new));
+                });
+                if(isHasUnclosedWorkLogs(installerWorkLogs, employee)){
+                    throw new IllegalFields("Вы не можете принять задачу как бригадир т.к. у монтажника "+installer.getFullName()+" имеется не закрытая задача");
+                }
+            }
+            for(Employee installer : workLog.getEmployees()) {
+                AcceptingEntry gangAcceptingEntry = new AcceptingEntry(installer.getLogin(), installer.getTelegramUserId(), Timestamp.from(Instant.now()));
+                workLog.getAcceptedEmployees().add(gangAcceptingEntry);
+                workLog.getChat().getMembers().add(installer);
+            }
+            stompController.updateWorkLog(workLog);
+            return workLogRepository.save(workLog);
+        }
         workLog.getAcceptedEmployees().add(acceptingEntry);
         workLog.getChat().getMembers().add(employee);
         stompController.updateWorkLog(workLog);
         return workLogRepository.save(workLog);
+    }
+
+    private boolean isHasUnclosedWorkLogs(List<WorkLog> workLogs, Employee targetEmployee){
+        AcceptingEntry acceptingEntry = new AcceptingEntry(targetEmployee.getLogin(), "", Timestamp.from(Instant.now()));
+        List<WorkLog> acceptedWorkLogs = workLogs.stream().filter(wl -> wl.getAcceptedEmployees().contains(acceptingEntry)).toList();
+        return !acceptedWorkLogs.stream().allMatch(wl -> wl.getWorkReports().stream().anyMatch(wr -> Objects.equals(wr.getAuthor(), targetEmployee)));
     }
 
     public List<WorkLog> getAllByTaskId(Long taskId) {
@@ -307,13 +363,85 @@ public class WorkLogDispatcher {
 
         Timestamp timestamp = Timestamp.from(Instant.now());
 
-        WorkReport workReport = WorkReport.builder().description(text.toString()).created(timestamp).author(employee).build();
-        workLog.addWorkReport(workReport);
-        workLog.getChat().getMembers().removeIf(member -> member.getLogin().equals(employee.getLogin()));
+        if(workLog.getGangLeader() != null){
+            if(!Objects.equals(workLog.getGangLeader(), employee.getLogin())){
+                throw new IllegalFields("Только бригадир "+workLog.getGangLeader()+" может закрыть задачу");
+            }
+            for(Employee installer : workLog.getEmployees()) {
+                WorkReport workReport = WorkReport.builder().description(text.toString()).created(timestamp).author(installer).awaitingWriting(false).build();
+                workLog.addWorkReport(workReport);
+                workLog.getChat().getMembers().removeIf(member -> member.getLogin().equals(installer.getLogin()));
+                notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.reportReceived(workLog, workReport));
+            }
+        }else{
+            WorkReport workReport = WorkReport.builder().description(text.toString()).created(timestamp).author(employee).awaitingWriting(false).build();
+            workLog.addWorkReport(workReport);
+            workLog.getChat().getMembers().removeIf(member -> member.getLogin().equals(employee.getLogin()));
+            notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.reportReceived(workLog, workReport));
+        }
+
         stompController.updateWorkLog(workLog);
         stompController.updateChat(workLog.getChat());
         stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.reportCreated(workLog.getTask(), text.toString(), employee)));
-        notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.reportReceived(workLog, workReport));
+        if (workLog.getWorkReports().size() == workLog.getEmployees().size()) {
+            workLog.setClosed(timestamp);
+            Task task = workLog.getTask();
+            task.setTaskStatus(TaskStatus.CLOSE);
+            task.setUpdated(timestamp);
+            workLog.getChat().setClosed(timestamp);
+            stompController.updateTask(workLog.getTask());
+
+            // Обновляем счетчики задач на странице
+            Long wireframeId = task.getModelWireframe().getWireframeId();
+
+            task.getAllEmployeesObservers().forEach(observer -> {
+                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
+                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
+                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
+                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+            });
+
+            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
+            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
+            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
+            stompController.updateTagTaskCounter(tasksCountByTags);
+
+            stompController.closeChat(workLog.getChat());
+            stompController.closeWorkLog(workLog);
+            stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
+            notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.worksCompleted(workLog));
+        }
+        return workLogRepository.save(workLog);
+    }
+
+    @Transactional
+    public WorkLog createReport(Employee employee) throws EntryNotFound, IllegalFields {
+        WorkLog workLog = getAcceptedWorkLogByEmployee(employee);
+
+        Timestamp timestamp = Timestamp.from(Instant.now());
+
+        if(workLog.getGangLeader() != null){
+            if(!Objects.equals(workLog.getGangLeader(), employee.getLogin())){
+                throw new IllegalFields("Только бригадир "+workLog.getGangLeader()+" может закрыть задачу");
+            }
+            for(Employee installer : workLog.getEmployees()) {
+                WorkReport workReport = WorkReport.builder().description("").created(timestamp).author(installer).awaitingWriting(true).build();
+                workLog.addWorkReport(workReport);
+                workLog.getChat().getMembers().removeIf(member -> member.getLogin().equals(installer.getLogin()));
+                notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.reportReceived(workLog, workReport));
+            }
+        }else{
+            WorkReport workReport = WorkReport.builder().description("").created(timestamp).author(employee).awaitingWriting(true).build();
+            workLog.addWorkReport(workReport);
+            workLog.getChat().getMembers().removeIf(member -> member.getLogin().equals(employee.getLogin()));
+            notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.reportReceived(workLog, workReport));
+        }
+
+        stompController.updateWorkLog(workLog);
+        stompController.updateChat(workLog.getChat());
+//        stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.reportCreated(workLog.getTask(), text.toString(), employee)));
         if (workLog.getWorkReports().size() == workLog.getEmployees().size()) {
             workLog.setClosed(timestamp);
             Task task = workLog.getTask();
@@ -389,5 +517,40 @@ public class WorkLogDispatcher {
 
             return cb.and(predicates.toArray(Predicate[]::new));
         });
+    }
+
+    public List<WorkLog> getUncompletedReports(Employee employee) {
+        return workLogRepository.findAll((root, query, cb)->{
+            List<Predicate> predicates = new ArrayList<>();
+            Join<WorkLog,WorkReport> workReportJoin = root.join("workReports", JoinType.LEFT);
+            predicates.add(cb.equal(workReportJoin.get("author"), employee));
+            predicates.add(cb.isTrue(workReportJoin.get("awaitingWriting")));
+            predicates.add(cb.isNotNull(root.get("closed")));
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        });
+    }
+
+    @Transactional
+    public void saveReport(WorkLog.WritingReportForm form, Employee employee) {
+        WorkLog workLog = workLogRepository.findById(form.getWorkLogId()).orElseThrow(() -> new EntryNotFound("Журнал работ не найден"));
+        if(workLog.getGangLeader() != null){
+            workLog.getWorkReports().forEach(wr->{
+               wr.setAwaitingWriting(false);
+               wr.setDescription(form.getReportDescription());
+            });
+        }else{
+            workLog.getWorkReports()
+                .stream()
+                .filter(wr -> Objects.equals(wr.getAuthor(), employee))
+                .filter(WorkReport::getAwaitingWriting)
+                .forEach(wr->{
+                    wr.setAwaitingWriting(false);
+                    wr.setDescription(form.getReportDescription());
+                });
+        }
+        workLogRepository.save(workLog);
+        stompController.updateWorkLog(workLog);
+        stompController.updateChat(workLog.getChat());
     }
 }

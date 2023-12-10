@@ -40,18 +40,18 @@ public class PublicRequestController {
     }
 
     @PostMapping("sign-in")
-    public ResponseEntity<AuthorizationProvider.TokenChain> signIn(@RequestBody Credentials body, HttpServletResponse response) {
+    public ResponseEntity<AuthorizationProvider.TokenChainWithUserInfo> signIn(@RequestBody Credentials body, HttpServletResponse response) {
         if (!body.isCorrect()) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
 
         try {
 
-            AuthorizationProvider.TokenChain tokenChain = authorizationProvider.signIn(body.getLogin(), body.getPassword());
+            AuthorizationProvider.TokenChainWithUserInfo tokenChain = authorizationProvider.signIn(body.getLogin(), body.getPassword());
             if (tokenChain == null) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
             }
 
-            response.addCookie(tokenChain.getTokenCookie());
-            response.addCookie(tokenChain.getRefreshTokenCookie());
+            response.addCookie(tokenChain.getTokenChain().getTokenCookie());
+            response.addCookie(tokenChain.getTokenChain().getRefreshTokenCookie());
 
             return ResponseEntity.ok(tokenChain);
 

@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.misc.accounting;
 
+import com.microel.trackerbackend.misc.FactorAction;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.storage.entities.salary.ActionTaken;
 import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
@@ -24,9 +25,13 @@ public class TDocumentFactory {
         Workbook workbook = new XSSFWorkbook();
 
         short percentFormat = workbook.createDataFormat().getFormat("0.00%");
+        short factorFormat = workbook.createDataFormat().getFormat("0.00");
 
         CellStyle percentStyle = workbook.createCellStyle();
         percentStyle.setDataFormat(percentFormat);
+
+        CellStyle factorStyle = workbook.createCellStyle();
+        factorStyle.setDataFormat(factorFormat);
 
         CellStyle headerStyle = workbook.createCellStyle();
         XSSFFont headerFont = ((XSSFWorkbook) workbook).createFont();
@@ -53,7 +58,7 @@ public class TDocumentFactory {
         // Установка заголовка таблицы
         Row header = sheet.createRow(0);
         header.setHeight((short) 500);
-        List<String> headers = List.of("Дата", "ФИО", "ID Задачи", "Действие", "Кол-во", "Цена", "Доля", "Сумма");
+        List<String> headers = List.of("Дата", "ФИО", "ID Задачи", "Действие", "Кол-во", "Коэф.", "Цена", "Доля", "Сумма");
         for(int i = 0; i < headers.size(); i++){
             Cell headerCell = header.createCell(i);
             headerCell.setCellValue(headers.get(i));
@@ -107,19 +112,26 @@ public class TDocumentFactory {
 
                             Cell actionCell = contentRow.createCell(3);
                             Cell countCell = contentRow.createCell(4);
-                            Cell priceCell = contentRow.createCell(5);
+                            Cell factorCell = contentRow.createCell(5);
+                            Cell priceCell = contentRow.createCell(6);
 
                             actionCell.setCellValue(actionTaken.getPaidAction().getName());
+                            float factor = 1.0f;
+                            if(calculation.getFactorsActions() != null){
+                                factor = calculation.getFactorsActions().stream().filter(fa -> fa.getActionUuids().contains(actionTaken.getUuid())).map(FactorAction::getFactor).findFirst().orElse(1.0f);
+                            }
+                            factorCell.setCellValue(factor);
+                            factorCell.setCellStyle(factorStyle);
                             countCell.setCellValue(actionTaken.getCount());
                             priceCell.setCellValue(actionTaken.getPaidAction().getCost());
                         }
 
                         globalRowIndex += actions.size();
 
-                        Cell shareCell = contentRow.createCell(6);
+                        Cell shareCell = contentRow.createCell(7);
                         shareCell.setCellValue(calculation.getRatio());
                         shareCell.setCellStyle(percentStyle);
-                        Cell sumCell = contentRow.createCell(7);
+                        Cell sumCell = contentRow.createCell(8);
                         sumCell.setCellValue(calculation.getSum());
                     }
                     Float allSum = workingDay.getCalculations().stream().map(WorkCalculation::getSum).reduce(Float::sum).orElse(null);

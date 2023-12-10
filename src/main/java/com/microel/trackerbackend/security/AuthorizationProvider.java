@@ -9,6 +9,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
@@ -35,14 +36,14 @@ public class AuthorizationProvider {
         this.passwordService = passwordService;
     }
 
-    public TokenChain signIn(String login, String password) throws EntryNotFound, IllegalFields {
+    public TokenChainWithUserInfo signIn(String login, String password) throws EntryNotFound, IllegalFields {
         Employee employee = employeeDispatcher.getEmployee(login);
 
         if (employee == null || employee.getDeleted()) throw new EntryNotFound("Пользователь не найден");
         if (Objects.isNull(employee.getPassword()) || employee.getPassword().isBlank()) throw new IllegalFields("Вход не возможен, у данного пользователя нет пароля");
 
         if (passwordService.decryptPassword(password, employee.getPassword())) {
-            return TokenChain.builder().token(generateToken(employee)).refreshToken(generateRefreshToken(employee)).build();
+            return new TokenChainWithUserInfo(TokenChain.builder().token(generateToken(employee)).refreshToken(generateRefreshToken(employee)).build(), employee);
         } else {
             return null;
         }
@@ -199,5 +200,13 @@ public class AuthorizationProvider {
             cookie.setMaxAge((int) (AuthorizationProvider.JWS_REFRESH_EXPIRATION / 1000L));
             return cookie;
         }
+    }
+
+    @Getter
+    @Setter
+    @AllArgsConstructor
+    public static class TokenChainWithUserInfo{
+        private TokenChain tokenChain;
+        private Employee employee;
     }
 }

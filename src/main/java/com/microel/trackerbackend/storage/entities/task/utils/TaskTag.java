@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.entities.task.utils;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskStatus;
 import com.microel.trackerbackend.storage.entities.team.Employee;
@@ -8,6 +9,7 @@ import lombok.*;
 import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
+import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import java.sql.Timestamp;
@@ -40,6 +42,8 @@ public class TaskTag {
     @ManyToMany(mappedBy = "tags")
     @BatchSize(size = 25)
     private Set<Task> task;
+    @Column(columnDefinition = "boolean default false")
+    private Boolean unbindAfterClose;
 
     @Override
     public boolean equals(Object o) {
@@ -52,5 +56,29 @@ public class TaskTag {
     @Override
     public int hashCode() {
         return Objects.hash(getTaskTagId());
+    }
+
+    @Getter
+    @Setter
+    public static class Form {
+        @Nullable
+        private Long id;
+        private String name;
+        private String color;
+        private Boolean unbindAfterClose;
+
+        public void throwIfIncomplete() {
+            if (name == null || name.isBlank()) throw new ResponseException("Название не установлено");
+            if (color == null || color.isBlank()) throw new ResponseException("Цвет не установлен");
+            if (unbindAfterClose == null) throw new ResponseException("Не установлено поведение при закрытии задачи");
+        }
+
+        public TaskTag toTaskTag() {
+            return TaskTag.builder()
+                    .name(name)
+                    .color(color)
+                    .unbindAfterClose(unbindAfterClose)
+                    .build();
+        }
     }
 }

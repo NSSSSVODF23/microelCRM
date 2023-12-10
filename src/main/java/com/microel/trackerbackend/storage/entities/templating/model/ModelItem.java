@@ -253,4 +253,8 @@ public class ModelItem {
                 return null;
         }
     }
+
+    public boolean nonEmpty() {
+        return !(getTextRepresentation() == null || getTextRepresentation().equals("-") || getTextRepresentation().isBlank());
+    }
 }

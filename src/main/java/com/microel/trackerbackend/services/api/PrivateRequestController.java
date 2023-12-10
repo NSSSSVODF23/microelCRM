@@ -60,6 +60,7 @@ import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskFieldsSnapshot;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
+import com.microel.trackerbackend.storage.entities.task.WorkReport;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.Observer;
@@ -750,9 +751,10 @@ public class PrivateRequestController {
 
     // Создает тег задачи
     @PostMapping("task-tag")
-    public ResponseEntity<TaskTag> createTaskTag(@RequestBody TaskTag body, HttpServletRequest request) {
+    public ResponseEntity<TaskTag> createTaskTag(@RequestBody TaskTag.Form form, HttpServletRequest request) {
+        form.throwIfIncomplete();
         try {
-            TaskTag taskTag = taskTagDispatcher.create(body, getEmployeeFromRequest(request));
+            TaskTag taskTag = taskTagDispatcher.create(form, getEmployeeFromRequest(request));
             stompController.createTaskTag(taskTag);
             return ResponseEntity.ok(taskTag);
         } catch (AlreadyExists e) {
@@ -764,9 +766,11 @@ public class PrivateRequestController {
 
     // Изменяет тег задачи
     @PatchMapping("task-tag")
-    public ResponseEntity<TaskTag> updateTaskTag(@RequestBody TaskTag body) {
+    public ResponseEntity<TaskTag> updateTaskTag(@RequestBody TaskTag.Form form) {
+        form.throwIfIncomplete();
         try {
-            TaskTag modifyTag = taskTagDispatcher.modify(body);
+            if(form.getId() == null) throw new ResponseException("Не установлен id тега в запросе");
+            TaskTag modifyTag = taskTagDispatcher.modify(form);
             stompController.updateTaskTag(modifyTag);
             return ResponseEntity.ok(modifyTag);
         } catch (EntryNotFound | IllegalFields e) {
@@ -1201,7 +1205,6 @@ public class PrivateRequestController {
             notificationDispatcher.createNotification(observers, Notification.taskProcessed(workLog));
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.createdWorkLog(workLog.getTask(), workLog, employeeFromRequest));
             stompController.createTaskEvent(taskId, taskEvent);
-
         } catch (Throwable e) {
             taskDispatcher.abortAssignation(taskId);
             throw new ResponseException(e.getMessage());
@@ -1628,40 +1631,40 @@ public class PrivateRequestController {
     }
 
     // Отправляет сообщение в чат
-    @PostMapping("chat/{chatId}/message")
-    public ResponseEntity<Void> sendMessage(@PathVariable Long chatId, @RequestBody MessageData message, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        try {
-            telegramController.sendMessageFromWeb(chatId, message, employee);
-            return ResponseEntity.ok().build();
-        } catch (EntryNotFound | EmptyFile | WriteError | TelegramApiException | IllegalFields | IllegalMediaType e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
+//    @PostMapping("chat/{chatId}/message")
+//    public ResponseEntity<Void> sendMessage(@PathVariable Long chatId, @RequestBody MessageData message, HttpServletRequest request) {
+//        Employee employee = getEmployeeFromRequest(request);
+//        try {
+//            telegramController.sendMessageFromWeb(chatId, message, employee);
+//            return ResponseEntity.ok().build();
+//        } catch (EntryNotFound | EmptyFile | WriteError | TelegramApiException | IllegalFields | IllegalMediaType e) {
+//            throw new ResponseException(e.getMessage());
+//        }
+//    }
 
     // Редактирует сообщение в чате
-    @PatchMapping("chat/message/{messageId}")
-    public ResponseEntity<Void> editMessage(@PathVariable Long messageId, @RequestBody String text, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        try {
-            telegramController.updateMessageFromWeb(messageId, text, employee);
-        } catch (TelegramApiException | EntryNotFound | NotOwner | IllegalFields e) {
-            throw new ResponseException(e.getMessage());
-        }
-        return ResponseEntity.ok().build();
-    }
+//    @PatchMapping("chat/message/{messageId}")
+//    public ResponseEntity<Void> editMessage(@PathVariable Long messageId, @RequestBody String text, HttpServletRequest request) {
+//        Employee employee = getEmployeeFromRequest(request);
+//        try {
+//            telegramController.updateMessageFromWeb(messageId, text, employee);
+//        } catch (TelegramApiException | EntryNotFound | NotOwner | IllegalFields e) {
+//            throw new ResponseException(e.getMessage());
+//        }
+//        return ResponseEntity.ok().build();
+//    }
 
     // Удаляет сообщение из чата
-    @DeleteMapping("chat/message/{messageId}")
-    public ResponseEntity<Void> deleteMessage(@PathVariable Long messageId, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        try {
-            telegramController.deleteMessageFromWeb(messageId, employee);
-            return ResponseEntity.ok().build();
-        } catch (EntryNotFound | NotOwner | AlreadyDeleted | TelegramApiException e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
+//    @DeleteMapping("chat/message/{messageId}")
+//    public ResponseEntity<Void> deleteMessage(@PathVariable Long messageId, HttpServletRequest request) {
+//        Employee employee = getEmployeeFromRequest(request);
+//        try {
+//            telegramController.deleteMessageFromWeb(messageId, employee);
+//            return ResponseEntity.ok().build();
+//        } catch (EntryNotFound | NotOwner | AlreadyDeleted | TelegramApiException e) {
+//            throw new ResponseException(e.getMessage());
+//        }
+//    }
 
     @PostMapping("chat/{chatId}/message/{superMessageId}/attach-to-task")
     public ResponseEntity<Void> attachToTask(@PathVariable Long superMessageId, @PathVariable Long chatId, @RequestBody Map<String, String> body, HttpServletRequest request) {
@@ -1909,6 +1912,23 @@ public class PrivateRequestController {
     @GetMapping("work-logs/uncalculated")
     public ResponseEntity<List<WorkLog>> getUncalculatedWorkLogs() {
         return ResponseEntity.ok(workLogDispatcher.getUncalculated());
+    }
+
+    @GetMapping("uncompleted-reports")
+    public ResponseEntity<List<WorkLog>> getUncompletedReports(HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(workLogDispatcher.getUncompletedReports(employee));
+    }
+
+    //saveReport(form: {reportDescription: string, workLogId: number|null}) {
+    //        return this.sendPatch("api/private/work-log/writing-report", form);
+    //    }
+    @PatchMapping("work-log/writing-report")
+    public ResponseEntity<Void> saveReport(@RequestBody WorkLog.WritingReportForm form, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        form.throwIfIncomplete();
+        workLogDispatcher.saveReport(form, employee);
+        return ResponseEntity.ok().build();
     }
 
     @PostMapping("salary/work-calculation")

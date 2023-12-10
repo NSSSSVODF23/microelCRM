@@ -28,39 +28,28 @@ public class TaskTagDispatcher {
         this.taskTagRepository = taskTagRepository;
     }
 
-    public TaskTag create(TaskTag taskTag, Employee creator) throws AlreadyExists, IllegalFields {
+    public TaskTag create(TaskTag.Form form, Employee creator) throws AlreadyExists, IllegalFields {
         // Check if there is a tag with the same name
-        TaskTag existingTag = taskTagRepository.findByName(taskTag.getName());
+        TaskTag existingTag = taskTagRepository.findByName(form.getName());
         if(existingTag != null) throw new AlreadyExists();
-
-        if(taskTag.getName() == null || taskTag.getName().isBlank()) throw new IllegalFields("Имя тега не может быть пустым");
-        if(taskTag.getColor() == null || taskTag.getColor().isBlank()) throw new IllegalFields("Цвет тега не может быть пустым");
-
-        taskTag.setTaskTagId(null);
-        taskTag.setTask(new HashSet<>());
+        TaskTag taskTag = form.toTaskTag();
         taskTag.setCreator(creator);
         taskTag.setCreated(Timestamp.from(Instant.now()));
         taskTag.setDeleted(false);
-
         return taskTagRepository.save(taskTag);
     }
-    public TaskTag modify(TaskTag taskTag) throws EntryNotFound, IllegalFields {
-        // We take a tag from the database for editing
-        TaskTag existingTag = taskTagRepository.findById(taskTag.getTaskTagId()).orElse(null);
-        if(existingTag == null) throw new EntryNotFound("Данного тега не существует");
-
-        if(taskTag.getName() == null || taskTag.getName().isBlank()) throw new IllegalFields("Имя тега не может быть пустым");
-        if(taskTag.getColor() == null || taskTag.getColor().isBlank()) throw new IllegalFields("Цвет тега не может быть пустым");
-
-        existingTag.setName(taskTag.getName());
-        existingTag.setColor(taskTag.getColor());
-
+    public TaskTag modify(TaskTag.Form form) throws EntryNotFound, IllegalFields {
+        if(form.getId() == null) throw new IllegalFields("Не указан id тега");
+        TaskTag existingTag = taskTagRepository.findById(form.getId()).orElseThrow(()->new EntryNotFound("Тега не существует"));
+        existingTag.setName(form.getName());
+        existingTag.setColor(form.getColor());
+        existingTag.setUnbindAfterClose(form.getUnbindAfterClose());
+        existingTag.setDeleted(false);
         return taskTagRepository.save(existingTag);
     }
     public TaskTag delete(Long id) throws EntryNotFound {
         // We take a tag from the database for editing
-        TaskTag existingTag = taskTagRepository.findById(id).orElse(null);
-        if(existingTag == null) throw new EntryNotFound("Данного тега не существует");
+        TaskTag existingTag = taskTagRepository.findById(id).orElseThrow(()-> new EntryNotFound("Данного тега не существует"));
 
         if(existingTag.getTask().isEmpty()){
             taskTagRepository.deleteById(id);

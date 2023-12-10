@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.entities.task;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
@@ -9,6 +10,7 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.vladmihalcea.hibernate.type.json.JsonType;
 import lombok.*;
 import org.hibernate.annotations.*;
+import org.springframework.lang.Nullable;
 
 import javax.persistence.CascadeType;
 import javax.persistence.Entity;
@@ -50,6 +52,10 @@ public class WorkLog {
     @ManyToMany()
     @BatchSize(size = 25)
     private Set<Employee> employees;
+    @Nullable
+    private String gangLeader;
+    @Column(columnDefinition = "boolean default false")
+    private Boolean deferredReport;
     @Type(type = "json")
     @Column(columnDefinition = "jsonb")
     private Set<AcceptingEntry> acceptedEmployees;
@@ -162,6 +168,13 @@ public class WorkLog {
         return this;
     }
 
+    public boolean getIsReportsUncompleted(){
+        if(getIsForceClosed()) return false;
+        if(workReports == null || workReports.isEmpty()) return true;
+        if(workReports.size() != getWorkReports().size()) return true;
+        return workReports.stream().anyMatch(WorkReport::getAwaitingWriting);
+    }
+
     @Override
     public int hashCode() {
         return Objects.hash(getWorkLogId());
@@ -181,6 +194,21 @@ public class WorkLog {
     @Setter
     public static class AssignBody{
         private Set<Employee> installers;
+        @Nullable
+        private String gangLeader;
+        private Boolean deferredReport;
         private String description;
+    }
+
+    @Getter
+    @Setter
+    public static class WritingReportForm{
+        private String reportDescription;
+        private Long workLogId;
+
+        public void throwIfIncomplete(){
+            if(reportDescription == null || reportDescription.isBlank()) throw new ResponseException("Отчет не заполнен");
+            if(workLogId == null) throw new ResponseException("Не указан id журнала задачи");
+        }
     }
 }

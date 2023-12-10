@@ -13,6 +13,7 @@ public class WorkReportMapper {
                 .created(workReport.getCreated())
                 .description(workReport.getDescription())
                 .workReportId(workReport.getWorkReportId())
+                .awaitingWriting(workReport.getAwaitingWriting())
                 .build();
     }
 
@@ -24,6 +25,7 @@ public class WorkReportMapper {
                 .created(workReport.getCreated())
                 .description(workReport.getDescription())
                 .workReportId(workReport.getWorkReportId())
+                .awaitingWriting(workReport.getAwaitingWriting())
                 .build();
     }
 }

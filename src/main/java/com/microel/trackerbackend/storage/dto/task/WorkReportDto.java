@@ -16,4 +16,5 @@ public class WorkReportDto {
     private String description;
     private EmployeeDto author;
     private Timestamp created;
+    private Boolean awaitingWriting;
 }

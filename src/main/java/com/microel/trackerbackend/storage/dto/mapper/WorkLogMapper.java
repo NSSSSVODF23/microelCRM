@@ -17,6 +17,8 @@ public class WorkLogMapper {
                 .created(workLog.getCreated())
                 .creator(EmployeeMapper.toDto(workLog.getCreator()))
                 .employees(workLog.getEmployees().stream().map(EmployeeMapper::toDto).collect(Collectors.toSet()))
+                .gangLeader(workLog.getGangLeader())
+                .deferredReport(workLog.getDeferredReport())
                 .acceptedEmployees(workLog.getAcceptedEmployees())
                 .isForceClosed(workLog.getIsForceClosed())
                 .task(TaskMapper.toDto(workLog.getTask()))
@@ -31,6 +33,7 @@ public class WorkLogMapper {
                 .whoClosed(workLog.getWhoClosed() != null ? workLog.getWhoClosed().stream().map(EmployeeMapper::toDto).collect(Collectors.toSet()) : new HashSet<>())
                 .calculated(workLog.getCalculated())
                 .workCalculations(workLog.getWorkCalculations())
+                .isReportsUncompleted(workLog.getIsReportsUncompleted())
                 .build();
     }
 
@@ -43,6 +46,8 @@ public class WorkLogMapper {
                 .created(workLog.getCreated())
                 .creator(EmployeeMapper.fromDto(workLog.getCreator()))
                 .employees(workLog.getEmployees().stream().map(EmployeeMapper::fromDto).collect(Collectors.toSet()))
+                .gangLeader(workLog.getGangLeader())
+                .deferredReport(workLog.getDeferredReport())
                 .acceptedEmployees(workLog.getAcceptedEmployees())
                 .isForceClosed(workLog.getIsForceClosed())
                 .forceClosedReason(workLog.getForceClosedReason())
