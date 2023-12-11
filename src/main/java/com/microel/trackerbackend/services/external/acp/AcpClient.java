@@ -483,7 +483,7 @@ public class AcpClient {
         AbstractRemoteAccess remoteAccess = null;
 
         try {
-            if (additionalInfo != null) {
+            if (additionalInfo != null && !(modelName.equals("DES-1100-16") || modelName.equals("DES-1100-24"))) {
                 remoteAccess = remoteAccessFactory.getRemoteAccess(modelName, commutator.getIpaddr());
                 remoteAccess.auth();
                 SystemInfo receivedSystemInfo = remoteAccess.getSystemInfo();

@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Component
-@Transactional
+@Transactional(readOnly = true)
 public class ChatDispatcher {
     private final ChatRepository chatRepository;
     private final ChatMessageDispatcher chatMessageDispatcher;
@@ -226,6 +226,7 @@ public class ChatDispatcher {
      * @throws IllegalMediaType Если задан не верный тип данных для вложения
      * @throws TelegramApiException Если ошибка отправки сообщения в tg api
      */
+    @Transactional
     public SuperMessage createMessage(Long chatId, Message tlgMessage, Employee author, TelegramController context) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
         Chat chat = getChat(chatId);
         ChatMessage replyToMessage = null;
@@ -273,6 +274,7 @@ public class ChatDispatcher {
      * @throws IllegalMediaType Если задан не верный тип данных для вложения
      * @throws TelegramApiException Если ошибка отправки сообщения в tg api
      */
+    @Transactional
     public SuperMessage createMessage(Long chatId, List<Message> tlgMessages, Employee author, TelegramController context) throws TelegramApiException, EntryNotFound, IllegalFields, IllegalMediaType {
         Chat chat = getChat(chatId);
 

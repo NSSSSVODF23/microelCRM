@@ -120,7 +120,17 @@ public class WorkLogDispatcher {
 
         WorkLog workLog = WorkLog.builder().chat(chat).created(creatingDate).task(task).isForceClosed(false).employees(installersReportForm.getInstallers()).creator(creator).closed(creatingDate).acceptedEmployees(installersReportForm.getInstallers().stream().map((e) -> AcceptingEntry.of(e, creatingDate)).collect(Collectors.toSet())).calculated(false).build();
 
-        workLog.setWorkReports(installersReportForm.getInstallers().stream().map((e) -> WorkReport.builder().author(e).created(creatingDate).description(installersReportForm.getReport()).workLog(workLog).build()).collect(Collectors.toSet()));
+        workLog.setWorkReports(
+                installersReportForm.getInstallers()
+                        .stream().map((e) -> {
+                            return WorkReport.builder()
+                                    .author(e)
+                                    .created(creatingDate)
+                                    .description(installersReportForm.getReport())
+                                    .workLog(workLog)
+                                    .awaitingWriting(false)
+                                    .build();
+                        }).collect(Collectors.toSet()));
 
         return workLogRepository.save(workLog);
     }

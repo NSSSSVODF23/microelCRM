@@ -31,4 +31,10 @@ public class WorkReport {
     private Timestamp created;
     @Column(columnDefinition = "boolean default false")
     private Boolean awaitingWriting;
+    public Boolean getAwaitingWriting() {
+        if(awaitingWriting == null) {
+            return false;
+        }
+        return awaitingWriting;
+    }
 }
