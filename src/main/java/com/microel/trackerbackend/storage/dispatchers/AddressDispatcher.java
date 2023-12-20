@@ -14,6 +14,7 @@ import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
 import com.microel.trackerbackend.storage.repositories.AddressRepository;
 import lombok.*;
+import org.apache.commons.math3.analysis.function.Add;
 import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
@@ -21,9 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -75,23 +74,24 @@ public class AddressDispatcher {
     }
 
     public List<Long> getAddressIds(FilterModelItem filterModelItem) throws JsonProcessingException {
-        Address addressExample = AddressMapper.fromDto(new ObjectMapper().treeToValue(filterModelItem.getValue(), AddressDto.class));
-        if(addressExample == null) return new ArrayList<>();
+        if(!(filterModelItem.getValue() instanceof LinkedHashMap addressExample)) return new ArrayList<>();
+        ObjectMapper objectMapper = new ObjectMapper();
+        Address address = objectMapper.convertValue(addressExample, Address.class);
         List<Address> founded = addressRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            if (addressExample.getCity() != null)
-                predicates.add(cb.equal(root.join("city", JoinType.LEFT).get("cityId"), addressExample.getCity().getCityId()));
-            if (addressExample.getStreet() != null)
-                predicates.add(cb.equal(root.join("street", JoinType.LEFT).get("streetId"), addressExample.getStreet().getStreetId()));
-            if (addressExample.getHouseNum() != null)
-                predicates.add(cb.equal(root.get("houseNum"), addressExample.getHouseNum()));
-            if (addressExample.getFraction() != null)
-                predicates.add(cb.equal(root.get("fraction"), addressExample.getFraction()));
-            if (addressExample.getLetter() != null)
-                predicates.add(cb.equal(root.get("letter"), addressExample.getLetter()));
-            if (addressExample.getBuild() != null) predicates.add(cb.equal(root.get("build"), addressExample.getBuild()));
-            if (addressExample.getApartmentNum() != null)
-                predicates.add( cb.equal(root.get("apartmentNum"), addressExample.getApartmentNum()));
+            if (address.getCity() != null)
+                predicates.add(cb.equal(root.join("city", JoinType.LEFT).get("cityId"), address.getCity().getCityId()));
+            if (address.getStreet() != null)
+                predicates.add(cb.equal(root.join("street", JoinType.LEFT).get("streetId"), address.getStreet().getStreetId()));
+            if (address.getHouseNum() != null)
+                predicates.add(cb.equal(root.get("houseNum"), address.getHouseNum()));
+            if (address.getFraction() != null)
+                predicates.add(cb.equal(root.get("fraction"), address.getFraction()));
+            if (address.getLetter() != null)
+                predicates.add(cb.equal(root.get("letter"), address.getLetter()));
+            if (address.getBuild() != null) predicates.add(cb.equal(root.get("build"), address.getBuild()));
+            if (address.getApartmentNum() != null)
+                predicates.add( cb.equal(root.get("apartmentNum"), address.getApartmentNum()));
             query.distinct(true);
             return cb.and(predicates.toArray(Predicate[]::new));
         });

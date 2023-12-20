@@ -125,72 +125,84 @@ public class Address implements Comparable<Address> {
 
     public String getAddressName() {
         StringBuilder addressName = new StringBuilder();
-        if(city != null) {
-            addressName.append(city.getName(), 0, 4).append(".");
+        String streetName = getStreetNamePart();
+        String houseName = getHouseNamePart();
+        String apartmentName = getApartmentNamePart();
+        if(!streetName.isBlank()) {
+            addressName.append(streetName);
         }
-        if(street  != null) {
-            addressName.append(" ");
-            if(street.getPrefix() != null){
-                addressName.append(street.getPrefix()).append(".");
-            }
-            if(street.getName() != null){
-                addressName.append(street.getName());
-            }
+        if(!houseName.isBlank()) {
+            addressName.append(" ").append(houseName);
         }
-        if(houseNum != null) {
-            addressName.append(" ").append(houseNum);
-        }
-        if(fraction != null) {
-            addressName.append("/").append(fraction);
-        }
-        if(letter != null) {
-            addressName.append(letter);
-        }
-        if(build != null) {
-            addressName.append(" стр.").append(build);
-        }
-        if(apartmentNum != null) {
-            addressName.append(" кв.").append(apartmentNum);
-        }
-        if(entrance != null) {
-            addressName.append(" под.").append(entrance);
-        }
-        if(floor != null) {
-            addressName.append(" эт.").append(floor);
-        }
-        if(apartmentMod != null) {
-            addressName.append(" (").append(apartmentMod).append(")");
+        if(!apartmentName.isBlank()) {
+            addressName.append(" ").append(apartmentName);
         }
         return addressName.toString();
     }
 
     public String getHouseName() {
         StringBuilder addressName = new StringBuilder();
-        if(city != null) {
-            addressName.append(city.getName(), 0, 4).append(".");
+        String streetName = getStreetNamePart();
+        String houseName = getHouseNamePart();
+        if(!streetName.isBlank()) {
+            addressName.append(streetName);
         }
-        if(street  != null) {
-            addressName.append(" ");
-            if(street.getPrefix() != null){
-                addressName.append(street.getPrefix()).append(".");
-            }
-            if(street.getName() != null){
-                addressName.append(street.getName());
-            }
-        }
-        if(houseNum != null) {
-            addressName.append(" ").append(houseNum);
-        }
-        if(fraction != null) {
-            addressName.append("/").append(fraction);
-        }
-        if(letter != null) {
-            addressName.append(letter);
-        }
-        if(build != null) {
-            addressName.append(" стр.").append(build);
+        if(!houseName.isBlank()) {
+            addressName.append(" ").append(houseName);
         }
         return addressName.toString();
+    }
+
+    public String getStreetNamePart(){
+        StringBuilder part = new StringBuilder();
+        if(city != null) {
+            part.append(city.getName(), 0, 4).append(".");
+        }
+        if(street  != null) {
+            part.append(" ");
+            if(street.getPrefix() != null){
+                part.append(street.getPrefix()).append(".");
+            }
+            if(street.getName() != null){
+                part.append(street.getName());
+            }
+        }
+        return part.toString();
+    }
+
+    public String getHouseNamePart(){
+        StringBuilder part = new StringBuilder();
+        if(houseNum != null) {
+            part.append(houseNum);
+        }
+        if(fraction != null) {
+            part.append("/").append(fraction);
+        }
+        if(letter != null) {
+            part.append(letter);
+        }
+        if(build != null) {
+            part.append(" стр.").append(build);
+        }
+        if(apartmentMod != null) {
+            part.append(" (").append(apartmentMod).append(")");
+        }
+        return part.toString();
+    }
+
+
+    public String getApartmentNamePart(){
+        StringBuilder part = new StringBuilder();
+        if(apartmentNum != null) {
+            part.append(apartmentNum);
+        }
+        if(entrance != null) {
+            part.append(" под.").append(entrance);
+        }
+        if(floor != null) {
+            part.append(" эт.").append(floor);
+        }
+        return part.toString();
     }
 
     public void setAddressName(String addressName) {

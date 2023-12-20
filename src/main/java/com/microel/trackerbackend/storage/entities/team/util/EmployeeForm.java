@@ -20,4 +20,6 @@ public class EmployeeForm {
     private Long department;
     private Long position;
     private Boolean offsite;
+    @Nullable
+    private OldTrackerCredentials oldTrackerCredentials;
 }

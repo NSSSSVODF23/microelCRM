@@ -19,6 +19,7 @@ public enum WireframeFieldType {
     CONNECTION_SERVICES("CONNECTION_SERVICES"),
     CONNECTION_TYPE("CONNECTION_TYPE"),
     PHONE_ARRAY("PHONE_ARRAY"),
+    PASSPORT_DETAILS("PASSPORT_DETAILS"),
     COUNTING_LIVES("COUNTING_LIVES");
 
     private final String name;
@@ -49,6 +50,7 @@ public enum WireframeFieldType {
             case "CONNECTION_TYPE" -> "Тип подключения";
             case "PHONE_ARRAY" -> "Телефонные номера";
             case "COUNTING_LIVES" -> "Количество живых";
+            case "PASSPORT_DETAILS" -> "Паспортные данные";
             default -> "НЕИЗВЕСТНЫЙ ТИП";
         };
     }

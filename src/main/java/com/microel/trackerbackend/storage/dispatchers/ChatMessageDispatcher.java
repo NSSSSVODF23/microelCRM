@@ -34,7 +34,7 @@ import java.util.stream.Stream;
 import static com.microel.trackerbackend.controllers.telegram.TlgMessageType.TEXT;
 
 @Component
-@Transactional
+@Transactional(readOnly = true)
 public class ChatMessageDispatcher {
     private final ChatMessageRepository chatMessageRepository;
 
@@ -146,10 +146,12 @@ public class ChatMessageDispatcher {
             return null;
     }
 
+    @Transactional
     public ChatMessage unsafeSave(ChatMessage message) {
         return chatMessageRepository.save(message);
     }
 
+    @Transactional
     public List<ChatMessage> unsafeSaveAll(List<ChatMessage> messages) {
         return chatMessageRepository.saveAll(messages);
     }
@@ -192,6 +194,7 @@ public class ChatMessageDispatcher {
      * @param chatMessageIds Список идентификаторов сообщений для объединения
      * @param mediaGroupId   Сгенерированный идентификатор группы
      */
+    @Transactional
     public void assignMediaGroup(List<Long> chatMessageIds, UUID mediaGroupId) {
         List<ChatMessage> foundMessages = chatMessageRepository.findAllById(chatMessageIds);
         foundMessages.forEach(m -> m.setMediaGroup(mediaGroupId));
@@ -205,6 +208,7 @@ public class ChatMessageDispatcher {
      * @param employee   Кто прочитал сообщения
      * @return Список сообщений которые были изменены
      */
+    @Transactional
     public List<ChatMessage> setMessagesAsRead(Set<Long> messageIds, Employee employee) {
         List<ChatMessage> foundMessages = chatMessageRepository.findAllById(messageIds);
         List<ChatMessage> changed = foundMessages.stream()
@@ -220,6 +224,7 @@ public class ChatMessageDispatcher {
      * @param employee Кто прочитал сообщения
      * @return Список прочитанных сообщений
      */
+    @Transactional
     public List<ChatMessage> setAllMessagesAsRead(Long chatId, Employee employee) {
         List<ChatMessage> foundMessages = chatMessageRepository.findAllByParentChat_ChatIdAndDeletedIsNull(chatId);
         List<ChatMessage> changed = foundMessages.stream()
@@ -269,7 +274,7 @@ public class ChatMessageDispatcher {
                 .orElseThrow(() -> new EntryNotFound("Сообщение не найдено"));
     }
 
-
+    @Transactional
     public SuperMessage updateMessageFromTlg(Message receivedMessage, TelegramController context) throws EntryNotFound, TelegramApiException, IllegalFields {
         ChatMessage messageByBind = getMessageByBind(receivedMessage.getChatId(), receivedMessage.getMessageId(), receivedMessage.getMediaGroupId());
         if (Utils.getTlgMsgType(receivedMessage) == TEXT) {
@@ -297,6 +302,7 @@ public class ChatMessageDispatcher {
         }
     }
 
+    @Transactional
     public SuperMessage updateMessageFromWeb(Long editMessageId, String text, Employee author, TelegramController context) throws EntryNotFound, NotOwner, IllegalFields, TelegramApiException {
         ChatMessage target = get(editMessageId);
         if (!target.getAuthor().equals(author))

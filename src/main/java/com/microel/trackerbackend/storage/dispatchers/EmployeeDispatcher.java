@@ -6,10 +6,7 @@ import com.microel.trackerbackend.security.PasswordService;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.entities.team.Employee;
-import com.microel.trackerbackend.storage.entities.team.util.Department;
-import com.microel.trackerbackend.storage.entities.team.util.EmployeeStatus;
-import com.microel.trackerbackend.storage.entities.team.util.PhyPhoneInfo;
-import com.microel.trackerbackend.storage.entities.team.util.Position;
+import com.microel.trackerbackend.storage.entities.team.util.*;
 import com.microel.trackerbackend.storage.exceptions.AlreadyExists;
 import com.microel.trackerbackend.storage.exceptions.EditingNotPossible;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
@@ -19,6 +16,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
@@ -28,6 +26,7 @@ import java.util.*;
 
 @Component
 @Slf4j
+@Transactional(readOnly = true)
 public class EmployeeDispatcher {
     public final EmployeeRepository employeeRepository;
     private final DepartmentDispatcher departmentDispatcher;
@@ -49,13 +48,14 @@ public class EmployeeDispatcher {
 
         if (employeeRepository.count() == 0) {
             try {
-                create("", "", "", "admin", "admin", 0, "", "", null, null, false);
+                create("", "", "", "admin", "admin", 0, "", "", null, null, false, null);
             } catch (AlreadyExists | EntryNotFound e) {
                 log.warn("Не удалось создать запись администратора");
             }
         }
     }
 
+    @Transactional
     public Employee unsafeSave(Employee employee) {
         return employeeRepository.save(employee);
     }
@@ -86,6 +86,7 @@ public class EmployeeDispatcher {
         }, Sort.by(Sort.Direction.ASC, "secondName", "firstName", "lastName", "login"));
     }
 
+    @Transactional
     public Employee create(
             String firstName,
             String lastName,
@@ -99,7 +100,9 @@ public class EmployeeDispatcher {
             Long department,
             @Nullable
             Long position,
-            Boolean offsite
+            Boolean offsite,
+            @Nullable
+            OldTrackerCredentials oldTrackerCredentials
     ) throws AlreadyExists, EntryNotFound {
         boolean exists = employeeRepository.existsById(login);
         if (exists) throw new AlreadyExists();
@@ -134,6 +137,7 @@ public class EmployeeDispatcher {
                 .department(foundDepartment)
                 .position(foundPosition)
                 .created(Timestamp.from(Instant.now()))
+                .oldTrackerCredentials(oldTrackerCredentials)
                 .deleted(false);
 
         if (offsite == null) employeeBuilder.offsite(false);
@@ -142,6 +146,7 @@ public class EmployeeDispatcher {
         return employeeRepository.save(employeeBuilder.build());
     }
 
+    @Transactional
     public Employee edit(
             String firstName,
             String lastName,
@@ -154,7 +159,9 @@ public class EmployeeDispatcher {
             @Nullable String telegramGroupChatId,
             Long department,
             Long position,
-            Boolean offsite
+            Boolean offsite,
+            @Nullable
+            OldTrackerCredentials oldTrackerCredentials
     ) throws EntryNotFound, EditingNotPossible {
         Employee foundEmployee = employeeRepository.findById(login).orElse(null);
         Employee foundEmployeeTelegramId = null;
@@ -195,10 +202,13 @@ public class EmployeeDispatcher {
         foundEmployee.setPosition(foundPosition);
         foundEmployee.setOffsite(offsite);
         foundEmployee.setTelegramGroupChatId(telegramGroupChatId);
+        if(!Objects.equals(foundEmployee.getOldTrackerCredentials(), oldTrackerCredentials))
+            foundEmployee.setOldTrackerCredentials(oldTrackerCredentials);
 
         return employeeRepository.save(foundEmployee);
     }
 
+    @Transactional
     public Employee delete(String login) throws EntryNotFound {
         Employee foundEmployee = employeeRepository.findById(login).orElse(null);
         if (foundEmployee == null) throw new EntryNotFound();
@@ -225,6 +235,7 @@ public class EmployeeDispatcher {
         return employeeRepository.findAllByLoginIsInAndDeletedIsFalseAndOffsiteIsFalse(personalResponsibilities);
     }
 
+    @Transactional
     public Employee setOnline(String login) throws EntryNotFound {
         Employee foundEmployee = employeeRepository.findById(login).orElse(null);
         if (foundEmployee == null) throw new EntryNotFound("Сотрудник не найден");
@@ -233,6 +244,7 @@ public class EmployeeDispatcher {
         return employeeRepository.save(foundEmployee);
     }
 
+    @Transactional
     public Employee setOffline(String login) throws EntryNotFound {
         Employee foundEmployee = employeeRepository.findById(login).orElse(null);
         if (foundEmployee == null) throw new EntryNotFound("Сотрудник не найден");
@@ -245,6 +257,7 @@ public class EmployeeDispatcher {
         return employeeRepository.findAllByLoginInAndDeletedIsFalseAndOffsiteIsFalse(logins);
     }
 
+    @Transactional
     public Employee changeStatus(String login, EmployeeStatus status) throws EntryNotFound {
         Employee foundEmployee = employeeRepository.findById(login).orElse(null);
         if (foundEmployee == null) throw new EntryNotFound("Сотрудник не найден");
@@ -253,6 +266,7 @@ public class EmployeeDispatcher {
     }
 
     // Если сотрудник не существует, сохраняет его в базе данных и возвращает true
+    @Transactional
     public Boolean saveIsNotExist(Employee employee) {
         if (employeeRepository.existsById(employee.getLogin())) return false;
         employeeRepository.save(employee);
@@ -281,6 +295,7 @@ public class EmployeeDispatcher {
         });
     }
 
+    @Transactional
     public void createPhyPhoneBind(PhyPhoneInfo.Form form) {
         Employee employee = employeeRepository.findById(form.getEmployeeLogin()).orElseThrow(()->new ResponseException("Пользователь не найден"));
         PhyPhoneInfo phoneInfo = PhyPhoneInfo.from(form);
@@ -289,12 +304,14 @@ public class EmployeeDispatcher {
         stompController.updateEmployee(employeeRepository.save(employee));
     }
 
+    @Transactional
     public void removePhyPhoneBind(String employeeLogin) {
         Employee employee = employeeRepository.findById(employeeLogin).orElseThrow(()->new ResponseException("Пользователь не найден"));
         employee.setPhyPhoneInfo(null);
         stompController.updateEmployee(employeeRepository.save(employee));
     }
 
+    @Transactional
     public void setPhyPhoneBind(@Nullable PhyPhoneInfo phone, Employee employee) {
         employee.setPhyPhoneInfo(phone);
         stompController.updateEmployee(employeeRepository.save(employee));

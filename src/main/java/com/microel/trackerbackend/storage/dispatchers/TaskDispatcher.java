@@ -1,14 +1,21 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.microel.trackerbackend.misc.DataPair;
 import com.microel.trackerbackend.misc.WireframeTaskCounter;
+import com.microel.trackerbackend.misc.accounting.ConnectionAgreement;
+import com.microel.trackerbackend.misc.accounting.TDocumentFactory;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.modules.transport.IDuration;
+import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
+import com.microel.trackerbackend.services.external.oldtracker.OldTrackerRequestFactory;
+import com.microel.trackerbackend.services.external.oldtracker.OldTrackerService;
+import com.microel.trackerbackend.services.external.oldtracker.requests.GetTaskRequest;
+import com.microel.trackerbackend.services.external.oldtracker.task.TaskClassOT;
 import com.microel.trackerbackend.storage.OffsetPageable;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
+import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskStatus;
@@ -17,11 +24,12 @@ import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.entities.team.util.Department;
-import com.microel.trackerbackend.storage.entities.templating.DefaultObserver;
-import com.microel.trackerbackend.storage.entities.templating.TaskStage;
-import com.microel.trackerbackend.storage.entities.templating.Wireframe;
+import com.microel.trackerbackend.storage.entities.templating.*;
+import com.microel.trackerbackend.storage.entities.templating.documents.ConnectionAgreementTemplate;
+import com.microel.trackerbackend.storage.entities.templating.documents.DocumentTemplate;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
+import com.microel.trackerbackend.storage.entities.templating.oldtracker.OldTrackerBind;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.TaskRepository;
@@ -41,10 +49,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.criteria.*;
+import javax.servlet.http.HttpServletResponse;
 import java.lang.reflect.Field;
 import java.sql.Timestamp;
 import java.time.*;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -63,13 +73,14 @@ public class TaskDispatcher {
     private final TaskTagDispatcher taskTagDispatcher;
     private final NotificationDispatcher notificationDispatcher;
     private final StompController stompController;
+    private final OldTrackerService oldTrackerService;
 
     public TaskDispatcher(TaskRepository taskRepository, ModelItemDispatcher modelItemDispatcher,
                           WireframeDispatcher wireframeDispatcher, CommentDispatcher commentDispatcher,
                           TaskStageRepository taskStageRepository, DepartmentDispatcher departmentDispatcher,
                           EmployeeDispatcher employeeDispatcher, WorkLogDispatcher workLogDispatcher,
                           TaskTagDispatcher taskTagDispatcher, AddressDispatcher addressDispatcher,
-                          @Lazy NotificationDispatcher notificationDispatcher, StompController stompController) {
+                          @Lazy NotificationDispatcher notificationDispatcher, StompController stompController, OldTrackerService oldTrackerService) {
         this.taskRepository = taskRepository;
         this.modelItemDispatcher = modelItemDispatcher;
         this.wireframeDispatcher = wireframeDispatcher;
@@ -81,6 +92,7 @@ public class TaskDispatcher {
         this.taskTagDispatcher = taskTagDispatcher;
         this.notificationDispatcher = notificationDispatcher;
         this.stompController = stompController;
+        this.oldTrackerService = oldTrackerService;
     }
 
     @Async
@@ -138,6 +150,18 @@ public class TaskDispatcher {
         // Если wireframe null то выбрасываем исключение
         if (wireframe == null) throw new IllegalFields("В базе данных не найден шаблон для создания задачи");
 
+        // Устанавливаем статус задачи как активная
+        createdTask.setTaskStatus(TaskStatus.ACTIVE);
+
+        // Устанавливаем шаблон задачи
+        createdTask.setModelWireframe(wireframe);
+
+        //Подготавливаем данные в задаче для сохранения
+        List<ModelItem> modelItems = modelItemDispatcher.prepareModelItems(ModelItemDispatcher.cleanToCreate(body.getFields()));
+
+        // Устанавливаем поля задачи
+        createdTask.setFields(modelItems);
+
         // Получаем список наблюдателей задачи по-умолчанию из шаблона
         List<DefaultObserver> defaultObservers = body.getObservers();
 
@@ -160,20 +184,33 @@ public class TaskDispatcher {
                 createdTask.setCurrentStage(wireframe.getFirstStage());
             }else{
                 createdTask.setCurrentStage(taskStage);
+                if(
+                    employee.isHasOldTrackerCredentials()
+                    && body.getIsDuplicateInOldTracker() != null
+                    && body.getIsDuplicateInOldTracker()
+                    && taskStage.getOldTrackerBind() != null
+                ){
+                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                    Long newTaskId = requestFactory.getNewTaskId(taskStage.getOldTrackerBind().getClassId()).execute();
+
+                    TaskClassOT taskClass = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+
+                    List<OldTrackerRequestFactory.FieldData> fields = Stream.concat(taskClass.getStandardFieldsOnCreation().get().stream(), createdTask.getFieldsForOldTracker(taskClass).stream()).collect(Collectors.toList());
+
+                    requestFactory.createTask(newTaskId, taskStage.getOldTrackerBind().getInitialStageId(), fields)
+                            .setInitialComment(body.getInitialComment())
+                            .execute();
+
+                    requestFactory.close().execute();
+
+                    createdTask.setOldTrackerTaskId(newTaskId);
+                    createdTask.setOldTrackerTaskClassId(taskStage.getOldTrackerBind().getClassId());
+                    createdTask.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
+
+                    System.out.println("Новый идентификатор задачи: " + newTaskId);
+                }
             }
         }
-
-        // Устанавливаем статус задачи как активная
-        createdTask.setTaskStatus(TaskStatus.ACTIVE);
-
-        // Устанавливаем шаблон задачи
-        createdTask.setModelWireframe(wireframe);
-
-        //Подготавливаем данные в задаче для сохранения
-        List<ModelItem> modelItems = modelItemDispatcher.prepareModelItems(ModelItemDispatcher.cleanToCreate(body.getFields()));
-
-        // Устанавливаем поля задачи
-        createdTask.setFields(modelItems);
 
         // Получаем все дочерние задачи из бд по идентификатору и устанавливаем их в createdTask
         if (body.getChildId() != null) {
@@ -243,9 +280,9 @@ public class TaskDispatcher {
             if (template != null && !template.isEmpty())
                 predicates.add(root.join("modelWireframe").get("wireframeId").in(template));
             if (filters != null && !filters.isEmpty()) {
-                List<FilterModelItem> filterModelItems = filters.stream().filter(f -> !f.getValue().isNull() && !(f.getValue().isArray() && ((ArrayNode) f.getValue()).isEmpty())).toList();
-                if(!filterModelItems.isEmpty())
-                    predicates.add(root.get("taskId").in(modelItemDispatcher.getTaskIdsByFilters(filterModelItems)));
+                List<FilterModelItem> nonEmptyFilters = filters.stream().filter(FilterModelItem::isNotEmpty).toList();
+                if(!nonEmptyFilters.isEmpty())
+                    predicates.add(root.get("taskId").in(modelItemDispatcher.getTaskIdsByFilters(nonEmptyFilters)));
             }
             if (commonFilteringString != null && !commonFilteringString.isBlank()) {
                 CriteriaBuilder.In<Long> inCauseTaskId = cb.in(root.get("taskId"));
@@ -297,12 +334,22 @@ public class TaskDispatcher {
     }
 
     @Transactional
-    public Task deleteTask(Long id) throws EntryNotFound {
-        Task foundTask = taskRepository.findByTaskId(id).orElse(null);
-        if (foundTask == null) throw new EntryNotFound();
-        foundTask.setDeleted(true);
-        foundTask.setUpdated(Timestamp.from(Instant.now()));
-        return taskRepository.save(foundTask);
+    public Task deleteTask(Long id, Employee employee) throws EntryNotFound {
+        Task task = taskRepository.findByTaskId(id).orElse(null);
+        if (task == null) throw new EntryNotFound();
+        task.setDeleted(true);
+        task.setUpdated(Timestamp.from(Instant.now()));
+
+        if(employee.isHasOldTrackerCredentials()){
+            TaskStage taskStage = task.getCurrentStage();
+            if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
+                OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                requestFactory.deleteTask(task.getOldTrackerTaskId()).execute();
+                requestFactory.close().execute();
+            }
+        }
+        
+        return taskRepository.save(task);
     }
 
     public Page<Task> getActiveTasksByStage(Long templateId, String stageId, Long offset, Integer limit) {
@@ -323,7 +370,11 @@ public class TaskDispatcher {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
         TaskStage stage = taskStageRepository.findById(stageId).orElse(null);
-        if (stage == null) throw new EntryNotFound("Не найдена стадия задачи с идентификатором " + stageId);
+        if (stage == null) throw new EntryNotFound("Не найден тип задачи с идентификатором " + stageId);
+        if(task.getCurrentStage().getOldTrackerBind() != null){
+            if(stage.getOldTrackerBind() == null) throw new ResponseException("Невозможно изменить тип задачи, в целевом типе не задана привязка к старому трекеру");
+            if(!Objects.equals(task.getCurrentStage().getOldTrackerBind().getClassId(), stage.getOldTrackerBind().getClassId())) throw new ResponseException("Невозможно изменить тип задачи, в привязках к старому трекеру заданы разные классы задач");
+        }
         task.setCurrentStage(stage);
         task.setUpdated(Timestamp.from(Instant.now()));
         return taskRepository.save(task);
@@ -354,7 +405,20 @@ public class TaskDispatcher {
             workLog = workLogDispatcher.createWorkLog(task, body, creator);
             task.setTaskStatus(TaskStatus.PROCESSING);
             task.setUpdated(Timestamp.from(Instant.now()));
-            taskRepository.save(task);
+
+            if(creator.isHasOldTrackerCredentials()){
+                TaskStage taskStage = task.getCurrentStage();
+                if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
+                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(creator.getOldTrackerCredentials().getUsername(), creator.getOldTrackerCredentials().getPassword());
+                    TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(task.getOldTrackerTaskClassId());
+                    List<OldTrackerRequestFactory.FieldData> dataList = taskClassOT.getStandardFieldsOnAssignation().get(workLog.getEmployees().toArray(Employee[]::new));
+                    requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getProcessingStageId(), dataList).execute();
+                    requestFactory.close().execute();
+                    task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getProcessingStageId());
+                }
+            }
+
+            stompController.updateTask(taskRepository.save(task));
 
             Long wireframeId = task.getModelWireframe().getWireframeId();
 
@@ -380,14 +444,26 @@ public class TaskDispatcher {
     }
 
     @Transactional
-    public void abortAssignation(Long taskId) {
+    public void abortAssignation(Long taskId, Employee employee) {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
         workLogDispatcher.getActiveWorkLogByTask(task).ifPresent(workLogDispatcher::remove);
         task.setTaskStatus(TaskStatus.ACTIVE);
         task.setUpdated(Timestamp.from(Instant.now()));
-        taskRepository.save(task);
         Long wireframeId = task.getModelWireframe().getWireframeId();
+
+        if(employee.isHasOldTrackerCredentials()){
+            TaskStage taskStage = task.getCurrentStage();
+            if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
+                OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getInitialStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
+                requestFactory.close().execute();
+                task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
+            }
+        }
+
+        stompController.updateTask(taskRepository.save(task));
 
         task.getAllEmployeesObservers().forEach(observer -> {
             Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
@@ -405,7 +481,7 @@ public class TaskDispatcher {
     }
 
     @Transactional
-    public WorkLog forceCloseWorkLog(Long taskId, String reasonOfClosing, Employee employeeFromRequest) throws EntryNotFound {
+    public WorkLog forceCloseWorkLog(Long taskId, String reasonOfClosing, Employee employee) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
         WorkLog workLog = workLogDispatcher.getActiveWorkLogByTask(task).orElse(null);
@@ -425,6 +501,19 @@ public class TaskDispatcher {
         workLogTask.setUpdated(timestamp);
 
         WorkLog save = workLogDispatcher.save(workLog);
+
+        if(employee.isHasOldTrackerCredentials()){
+            TaskStage taskStage = task.getCurrentStage();
+            if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
+                OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getInitialStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
+                requestFactory.close().execute();
+                task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
+            }
+        }
+
+        stompController.updateTask(taskRepository.save(task));
 
         Long wireframeId = task.getModelWireframe().getWireframeId();
 
@@ -643,7 +732,7 @@ public class TaskDispatcher {
     }
 
     @Transactional
-    public Task close(Long id) throws EntryNotFound, IllegalFields {
+    public Task close(Long id, Employee employee) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
         if (task.getTaskStatus().equals(TaskStatus.CLOSE)) throw new IllegalFields("Задача уже закрыта");
@@ -654,6 +743,17 @@ public class TaskDispatcher {
         task.getTags().removeIf(TaskTag::getUnbindAfterClose);
         // Обновляем счетчики задач на странице
         Long wireframeId = task.getModelWireframe().getWireframeId();
+
+        if(employee.isHasOldTrackerCredentials()){
+            TaskStage taskStage = task.getCurrentStage();
+            if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
+                OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getManualCloseStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
+                requestFactory.close().execute();
+                task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getManualCloseStageId());
+            }
+        }
 
         task.getAllEmployeesObservers().forEach(observer -> {
             Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
@@ -673,7 +773,7 @@ public class TaskDispatcher {
     }
 
     @Transactional
-    public Task reopen(Long taskId) throws EntryNotFound, IllegalFields {
+    public Task reopen(Long taskId, Employee employee) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
         if (task.getTaskStatus().equals(TaskStatus.ACTIVE)) throw new IllegalFields("Задача уже активна");
@@ -682,7 +782,19 @@ public class TaskDispatcher {
         task.setTaskStatus(TaskStatus.ACTIVE);
         task.setUpdated(Timestamp.from(Instant.now()));
 
-        taskRepository.save(task);
+
+        if(employee.isHasOldTrackerCredentials()){
+            TaskStage taskStage = task.getCurrentStage();
+            if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
+                OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getInitialStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
+                requestFactory.close().execute();
+                task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
+            }
+        }
+
+        stompController.updateTask(taskRepository.save(task));
 
         Long wireframeId = task.getModelWireframe().getWireframeId();
 
@@ -704,13 +816,22 @@ public class TaskDispatcher {
     }
 
     @Transactional
-    public Task edit(Long taskId, List<ModelItem> modelItems) throws EntryNotFound, IllegalFields {
+    public Task edit(Long taskId, List<ModelItem> modelItems, Employee employee) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
         if (task.getTaskStatus().equals(TaskStatus.CLOSE)) throw new IllegalFields("Задача уже закрыта");
 
         // Редактируем поля задачи и сохраняем их в БД
         task.editFields(modelItemDispatcher.prepareModelItems(modelItems));
+        if(employee.isHasOldTrackerCredentials()){
+            OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+            TaskStage taskStage = task.getCurrentStage();
+            if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
+                TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                requestFactory.editTask(task.getOldTrackerTaskId(), task.getFieldsForOldTracker(taskClassOT)).execute();
+                requestFactory.close().execute();
+            }
+        }
         task.setUpdated(Timestamp.from(Instant.now()));
         return taskRepository.save(task);
     }
@@ -1072,6 +1193,116 @@ public class TaskDispatcher {
         return statistic;
     }
 
+    public void checkCompatibility(Long taskId, Long otTaskId, Employee employee) {
+        Task targetTask = taskRepository.findByTaskId(taskId).orElse(null);
+        if(targetTask == null) throw new ResponseException("Целевая задача №"+taskId+" не найдена");
+        OldTrackerBind oldTrackerBind = targetTask.getCurrentStage().getOldTrackerBind();
+        if(oldTrackerBind == null) throw new ResponseException("У типа задачи не установлена привязка к старому трекеру");
+        if(!employee.isHasOldTrackerCredentials()) throw new ResponseException("У вас нет доступа к старому трекеру");
+        OldTrackerRequestFactory oldTrackerRequestFactory  = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+        GetTaskRequest.TaskInfo otTaskInfo = oldTrackerRequestFactory.getTask(otTaskId).execute();
+        oldTrackerRequestFactory.close().execute();
+        TaskClassOT taskClassByName = oldTrackerService.getTaskClassByName(otTaskInfo.getClassName());
+        if(!Objects.equals(oldTrackerBind.getClassId(), taskClassByName.getId())) throw new ResponseException("Класс настроенный в привязке к трекеру не совпадает с классом задачи в трекере");
+    }
+
+    @Transactional
+    public void connectToOldTracker(Long taskId, Long otTaskId, Employee employee) {
+        Task targetTask = taskRepository.findByTaskId(taskId).orElse(null);
+        if(targetTask == null) throw new ResponseException("Целевая задача №"+taskId+" не найдена");
+        OldTrackerBind oldTrackerBind = targetTask.getCurrentStage().getOldTrackerBind();
+        if(oldTrackerBind == null) throw new ResponseException("У типа задачи не установлена привязка к старому трекеру");
+        if(!employee.isHasOldTrackerCredentials()) throw new ResponseException("У вас нет доступа к старому трекеру");
+        OldTrackerRequestFactory oldTrackerRequestFactory  = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+        GetTaskRequest.TaskInfo otTaskInfo = oldTrackerRequestFactory.getTask(otTaskId).execute();
+        oldTrackerRequestFactory.close().execute();
+        TaskClassOT taskClassByName = oldTrackerService.getTaskClassByName(otTaskInfo.getClassName());
+        if(!Objects.equals(oldTrackerBind.getClassId(), taskClassByName.getId())) throw new ResponseException("Класс настроенный в привязке к трекеру не совпадает с классом задачи в трекере");
+        targetTask.setOldTrackerTaskId(otTaskId);
+        targetTask.setOldTrackerTaskClassId(taskClassByName.getId());
+        targetTask.setOldTrackerCurrentStageId(otTaskInfo.getStageId());
+        stompController.updateTask(taskRepository.save(targetTask));
+    }
+
+    @Transactional
+    public void changeTaskStageInOldTracker(Long taskId, Integer taskStageId, Employee employee) {
+        Task targetTask = taskRepository.findByTaskId(taskId).orElse(null);
+        if(targetTask == null) throw new ResponseException("Целевая задача №"+taskId+" не найдена");
+        OldTrackerBind oldTrackerBind = targetTask.getCurrentStage().getOldTrackerBind();
+        if(oldTrackerBind == null) throw new ResponseException("У типа задачи не установлена привязка к старому трекеру");
+        if(!employee.isHasOldTrackerCredentials()) throw new ResponseException("У вас нет доступа к старому трекеру");
+        OldTrackerRequestFactory oldTrackerRequestFactory  = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+        TaskClassOT taskClassById = oldTrackerService.getTaskClassById(oldTrackerBind.getClassId());
+        if(!taskClassById.isStageExist(taskStageId)) throw new ResponseException("Не существует стадии №"+taskStageId+" у класса задачи в трекере");
+        oldTrackerRequestFactory.changeStageTask(targetTask.getOldTrackerTaskId(), taskStageId, targetTask.getFieldsForOldTracker(taskClassById)).execute();
+        oldTrackerRequestFactory.close().execute();
+        targetTask.setOldTrackerCurrentStageId(taskStageId);
+        stompController.updateTask(taskRepository.save(targetTask));
+    }
+
+    public void getDocumentTemplate(Long taskId, Long documentTemplateId, HttpServletResponse response) {
+        Task task = taskRepository.findByTaskId(taskId).orElse(null);
+        if(task == null) throw new ResponseException("Задача не найдена");
+        if(task.getModelWireframe().getDocumentTemplates() == null || task.getModelWireframe().getDocumentTemplates().isEmpty())
+            throw new ResponseException("Отсутствуют шаблоны документов для данной задачи");
+
+        DocumentTemplate foundedDocumentTemplate = task.getModelWireframe().getDocumentTemplates().stream()
+                .filter(documentTemplate -> Objects.equals(documentTemplate.getDocumentTemplateId(), documentTemplateId)).findFirst().orElse(null);
+        if(foundedDocumentTemplate == null) throw new ResponseException("Шаблон документа не найден");
+
+        if(foundedDocumentTemplate instanceof ConnectionAgreementTemplate connectionAgreementTemplate){
+            AtomicReference<String> loginData = new AtomicReference<>();
+            AtomicReference<String> fullNameData = new AtomicReference<>();
+            AtomicReference<Timestamp> dateOfBirthData = new AtomicReference<>();
+            AtomicReference<String> regionOfBirthData = new AtomicReference<>();
+            AtomicReference<String> cityOfBirthData = new AtomicReference<>();
+            AtomicReference<PassportDetails> passportDetailsData = new AtomicReference<>();
+            AtomicReference<Address> addressData = new AtomicReference<>();
+            AtomicReference<String> phoneData = new AtomicReference<>();
+            AtomicReference<String> passwordData = new AtomicReference<>();
+            AtomicReference<String> tariffData = new AtomicReference<>();
+
+            if(connectionAgreementTemplate.getLoginFieldId() != null){
+                task.getFieldByIdAndType(connectionAgreementTemplate.getLoginFieldId(), WireframeFieldType.LOGIN).ifPresent(modelItem -> {
+                    loginData.set(modelItem.getTextRepresentation());
+                });
+                task.getFieldByIdAndType(connectionAgreementTemplate.getFullNameFieldId(), WireframeFieldType.SMALL_TEXT).ifPresent(modelItem -> {
+                    fullNameData.set(modelItem.getTextRepresentation());
+                });
+                // TODO Добавить поле даты
+//                task.getFieldByIdAndType(connectionAgreementTemplate.getDateOfBirthFieldId(), WireframeFieldType.SMALL_TEXT).ifPresent(modelItem -> {
+//                    dateOfBirthData = modelItem.getTextRepresentation();
+//                });
+                task.getFieldByIdAndType(connectionAgreementTemplate.getRegionOfBirthFieldId(), WireframeFieldType.SMALL_TEXT).ifPresent(modelItem -> {
+                    regionOfBirthData.set(modelItem.getTextRepresentation());
+                });
+                task.getFieldByIdAndType(connectionAgreementTemplate.getCityOfBirthFieldId(), WireframeFieldType.SMALL_TEXT).ifPresent(modelItem -> {
+                    cityOfBirthData.set(modelItem.getTextRepresentation());
+                });
+                task.getFieldByIdAndType(connectionAgreementTemplate.getPassportDetailsFieldId(), WireframeFieldType.PASSPORT_DETAILS).ifPresent(modelItem -> {
+                    passportDetailsData.set(modelItem.getPassportDetailsData());
+                });
+                task.getFieldByIdAndType(connectionAgreementTemplate.getAddressFieldId(), WireframeFieldType.ADDRESS).ifPresent(modelItem -> {
+                    addressData.set(modelItem.getAddressData());
+                });
+                task.getFieldByIdAndType(connectionAgreementTemplate.getPhoneFieldId(), WireframeFieldType.PHONE_ARRAY).ifPresent(modelItem -> {
+                    phoneData.set(modelItem.getTextRepresentation());
+                });
+                task.getFieldByIdAndType(connectionAgreementTemplate.getPasswordFieldId(), WireframeFieldType.SMALL_TEXT).ifPresent(modelItem -> {
+                    passwordData.set(modelItem.getTextRepresentation());
+                });
+                task.getFieldByIdAndType(connectionAgreementTemplate.getTariffFieldId(), WireframeFieldType.SMALL_TEXT).ifPresent(modelItem -> {
+                    tariffData.set(modelItem.getTextRepresentation());
+                });
+            }
+
+            ConnectionAgreement connectionAgreement = TDocumentFactory.createConnectionAgreement(loginData.get(), fullNameData.get(), dateOfBirthData.get(), regionOfBirthData.get(), cityOfBirthData.get(),
+                    passportDetailsData.get(), addressData.get(), phoneData.get(), passwordData.get(), tariffData.get());
+
+            connectionAgreement.sendByResponse(response);
+        }
+    }
+
     @Getter
     @Setter
     public static class WireframeDashboardStatistic{
@@ -1089,7 +1320,7 @@ public class TaskDispatcher {
         @Nullable
         private Set<Long> template;
         @Nullable
-        private String templateFilter;
+        private List<FilterModelItem> templateFilter;
         @Nullable
         private String searchPhrase;
         @Nullable

@@ -44,6 +44,11 @@ public class Street implements Comparable<Street> {
     private Set<House> houses;
 
     @JsonIgnore
+    public String getPrefixedName() {
+        return getPrefix() + " " + getName();
+    }
+
+    @JsonIgnore
     public List<Address> getAddress(@Nullable Boolean isAcpConnected) {
         return houses.stream()
                 .filter(house -> {

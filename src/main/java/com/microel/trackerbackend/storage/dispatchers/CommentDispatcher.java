@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.misc.sorting.TaskJournalSortingTypes;
 import com.microel.trackerbackend.services.api.StompController;
+import com.microel.trackerbackend.services.external.oldtracker.OldTrackerRequestFactory;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.OffsetPageable;
@@ -97,6 +98,12 @@ public class CommentDispatcher {
 
         stompController.createComment(Objects.requireNonNull(CommentMapper.toDto(comment), "Созданные комментарий равен null"), targetTask.getTaskId().toString());
         stompController.updateTask(targetTask);
+
+        if(currentUser.isHasOldTrackerCredentials() && targetTask.getOldTrackerTaskId() != null){
+            OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(currentUser.getOldTrackerCredentials().getUsername(), currentUser.getOldTrackerCredentials().getPassword());
+            requestFactory.createComment(targetTask.getOldTrackerTaskId(), comment.getMessage()).execute();
+            requestFactory.close().execute();
+        }
 
         return comment;
     }

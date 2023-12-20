@@ -5,7 +5,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.microel.trackerbackend.services.api.ResponseException;
+import com.microel.trackerbackend.storage.entities.storehouse.EquipmentRealization;
 import com.microel.trackerbackend.storage.entities.templating.ConnectionService;
+import com.microel.trackerbackend.storage.entities.templating.PassportDetails;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.CountItemsByTask;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
@@ -19,10 +21,7 @@ import javax.persistence.criteria.CriteriaBuilder;
 import javax.persistence.criteria.Join;
 import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -47,39 +46,41 @@ public class ModelItemDispatcher {
             List<Predicate> predicates = new ArrayList<>();
             Join<Object, Object> phoneTable = root.join("phoneData", JoinType.LEFT);
             for (FilterModelItem filter : filters) {
-                if(filter.getValue().isNull()) break;
+                if(filter.getValue() == null) continue;
                 switch (filter.getWireframeFieldType()) {
                     case BOOLEAN:
-                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),cb.equal(root.get("booleanData"),filter.getValue().asBoolean())));
+                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()), cb.equal(root.get("booleanData"), (Boolean) filter.getValue())));
                         acceptedFilters.getAndIncrement();
                         break;
                     case INTEGER:
-                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),cb.equal(root.get("integerData"),filter.getValue().asInt())));
+                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),cb.equal(root.get("integerData"), (Integer) filter.getValue())));
                         acceptedFilters.getAndIncrement();
                         break;
                     case FLOAT:
-                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),cb.equal(root.get("floatData"),filter.getValue().asDouble())));
+                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),cb.equal(root.get("floatData"), (Double) filter.getValue())));
                         acceptedFilters.getAndIncrement();
                         break;
                     case AD_SOURCE:
                     case CONNECTION_TYPE:
-                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),cb.equal(root.get("stringData"),filter.getValue().asText())));
+                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),cb.equal(root.get("stringData"), (String) filter.getValue())));
+                        acceptedFilters.getAndIncrement();
+                        break;
                     case LOGIN:
                     case IP:
                     case REQUEST_INITIATOR:
                     case SMALL_TEXT:
-                        if (filter.getValue().asText().isBlank()) break;
-                        if (filter.getValue().asText().chars().filter(c -> c == ' ').findFirst().isPresent()) {
-                            predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()), cb.isTrue(cb.function("fts", Boolean.class, root.get("stringData"), cb.literal(filter.getValue().asText())))));
+                        if (((String) filter.getValue()).isBlank()) break;
+                        if (((String) filter.getValue()).chars().filter(c -> c == ' ').findFirst().isPresent()) {
+                            predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()), cb.isTrue(cb.function("fts", Boolean.class, root.get("stringData"), cb.literal((String) filter.getValue())))));
                         } else {
-                            predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()), cb.like(cb.lower(root.get("stringData")), "%" + filter.getValue().asText().toLowerCase() + "%")));
+                            predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()), cb.like(cb.lower(root.get("stringData")), "%" + ((String) filter.getValue()).toLowerCase() + "%")));
                         }
                         acceptedFilters.getAndIncrement();
                         break;
                     case COUNTING_LIVES:
                     case LARGE_TEXT:
-                        if (filter.getValue().asText().isBlank()) break;
-                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()), cb.isTrue(cb.function("fts", Boolean.class, root.get("stringData"), cb.literal(filter.getValue().asText())))));
+                        if (((String) filter.getValue()).isBlank()) break;
+                        predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()), cb.isTrue(cb.function("fts", Boolean.class, root.get("stringData"), cb.literal((String) filter.getValue())))));
                         acceptedFilters.getAndIncrement();
                         break;
                     case ADDRESS:
@@ -94,7 +95,7 @@ public class ModelItemDispatcher {
                         }
                         break;
                     case PHONE_ARRAY:
-                        String preparedString = "%" + filter.getValue().asText().replaceAll("\\D", "") + "%";
+                        String preparedString = "%" + ((String) filter.getValue()).replaceAll("\\D", "") + "%";
                         predicates.add(
                                 cb.and(
                                         cb.equal(root.get("id"), filter.getId()),
@@ -112,13 +113,10 @@ public class ModelItemDispatcher {
                         break;
                     case CONNECTION_SERVICES:
                         try {
-                            ArrayNode servicesArray = (ArrayNode) filter.getValue();
+                            List<LinkedHashMap> servicesArray = (List<LinkedHashMap>) filter.getValue();
                             if(servicesArray.isEmpty()) break;
-                            List<ConnectionService> services = new ArrayList<>();
-                            servicesArray.forEach(node->{
-                                services.add(ConnectionService.getByValue(node.get("connectionService").asText()));
-                            });
-                            predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),root.join("connectionServicesData", JoinType.LEFT).get("connectionService").in(services)));
+                            List<ConnectionService> serviceNamesList = servicesArray.stream().map(serv -> (String) serv.get("connectionService")).filter(Objects::nonNull).map(ConnectionService::valueOf).toList();
+                            predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),root.join("connectionServicesData", JoinType.LEFT).get("connectionService").in(serviceNamesList)));
                             acceptedFilters.getAndIncrement();
                         }catch (Throwable e){
                             break;
@@ -126,17 +124,32 @@ public class ModelItemDispatcher {
                         break;
                     case EQUIPMENTS:
                         try {
-                            ArrayNode equipmentsArray = (ArrayNode) filter.getValue();
+                            List<LinkedHashMap> equipmentsArray = (List<LinkedHashMap>) filter.getValue();
                             if(equipmentsArray.isEmpty()) break;
-                            List<Long> equipments = new ArrayList<>();
-                            equipmentsArray.forEach(node->{
-                                equipments.add(node.get("equipmentRealization").asLong());
-                            });
-                            predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),root.join("equipmentRealizationsData", JoinType.LEFT).join("equipment", JoinType.LEFT).get("clientEquipmentId").in(equipments)));
+                            List<Long> equipmentsIdsList = equipmentsArray.stream().map(serv -> (Integer) serv.get("equipmentRealization")).filter(Objects::nonNull).map(Integer::longValue).toList();
+                            predicates.add(cb.and(cb.equal(root.get("id"), filter.getId()),root.join("equipmentRealizationsData", JoinType.LEFT).join("equipment", JoinType.LEFT).get("clientEquipmentId").in(equipmentsIdsList)));
                             acceptedFilters.getAndIncrement();
                         }catch (Throwable e){
                             break;
                         }
+                        break;
+                    case PASSPORT_DETAILS:
+                        if (filter.getValue() == null || ((String) filter.getValue()).isBlank()) break;
+                        String[] splitQuery = ((String) filter.getValue()).split("-", 2);
+                        List<String> queries = Arrays.stream(splitQuery).map(q -> "%" + q.toLowerCase() + "%").toList();
+                        Join<ModelItem, PassportDetails> passportDetailsJoin = root.join("passportDetailsData", JoinType.LEFT);
+                        List<Predicate> localPredicates = new ArrayList<>();
+                        if(queries.isEmpty()) break;
+                        try{
+                            String pSer = queries.get(0);
+                            localPredicates.add(cb.like(cb.lower(passportDetailsJoin.get("passportSeries")), pSer));
+                        }catch (Throwable ignore){}
+                        try{
+                            String pNum = queries.get(1);
+                            localPredicates.add(cb.like(cb.lower(passportDetailsJoin.get("passportNumber")), pNum));
+                        }catch (Throwable ignore){}
+                        predicates.add(cb.and(localPredicates.toArray(Predicate[]::new)));
+                        acceptedFilters.getAndIncrement();
                         break;
                 }
             }

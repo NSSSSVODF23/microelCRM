@@ -3,6 +3,7 @@ package com.microel.trackerbackend.storage.entities.templating;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.templating.documents.DocumentTemplate;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.StepItem;
 import com.vladmihalcea.hibernate.type.json.JsonType;
@@ -16,10 +17,7 @@ import javax.persistence.CascadeType;
 import javax.persistence.Entity;
 import javax.persistence.Table;
 import java.sql.Timestamp;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Entity
@@ -59,6 +57,10 @@ public class Wireframe {
     private Boolean deleted;
     private String listViewType;
     private String detailedViewType;
+    @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH}, orphanRemoval = true)
+    @JoinColumn(name = "f_wireframe_id")
+    @BatchSize(size = 25)
+    private List<DocumentTemplate> documentTemplates;
 
     /**
      * Создает список всех шаблонов полей из шаблона
@@ -90,5 +92,17 @@ public class Wireframe {
         return getStages().stream().filter(stage -> stage.getOrderIndex() == 0).findFirst().orElse(null);
     }
 
+    @Data
+    public static class Form{
+        private String name;
+        private String description;
+        private String listViewType;
+        private String detailedViewType;
+        private List<DefaultObserver> defaultObservers;
+        private List<TaskStage.Form> stages;
+        private List<StepItem> steps;
+        private WireframeType wireframeType;
+        private List<DocumentTemplate.Form> documentTemplates;
+    }
 
 }

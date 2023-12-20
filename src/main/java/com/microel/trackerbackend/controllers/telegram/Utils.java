@@ -7,9 +7,12 @@ import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import reactor.core.publisher.Mono;
 
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.Optional;
 
 public class Utils {
     public static TlgMessageType getTlgMsgType(Message message) {
@@ -86,5 +89,16 @@ public class Utils {
         return new Pair<>(start,end);
     }
 
+    public static Optional<String> stringConvertor(@Nullable Object obj) {
+        if (obj == null)
+            return Optional.empty();
+        if(obj instanceof String stringObj && stringObj.isBlank())
+            return Optional.empty();
+        if(obj instanceof Timestamp timestampObj){
+            SimpleDateFormat format = new SimpleDateFormat("dd.MM.yyyy");
+            return Optional.of(format.format(timestampObj));
+        }
+        return Optional.of(obj.toString());
+    }
 
 }

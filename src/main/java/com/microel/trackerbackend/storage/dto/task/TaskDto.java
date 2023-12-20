@@ -9,6 +9,7 @@ import com.microel.trackerbackend.storage.dto.templating.WireframeDto;
 import com.microel.trackerbackend.storage.entities.task.TaskStatus;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import lombok.*;
+import org.springframework.lang.Nullable;
 
 import java.sql.Timestamp;
 import java.util.List;
@@ -43,4 +44,6 @@ public class TaskDto {
     private Long parent;
     private List<TaskDto> children;
     private List<ModelItem> listItemFields;
+    @Nullable
+    private Long oldTrackerTaskId;
 }

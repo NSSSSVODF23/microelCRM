@@ -1,22 +1,37 @@
 package com.microel.trackerbackend.misc.accounting;
 
+import com.lowagie.text.pdf.BaseFont;
+import com.microel.trackerbackend.BackendApplication;
+import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.misc.FactorAction;
 import com.microel.trackerbackend.services.api.ResponseException;
+import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.salary.ActionTaken;
 import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
+import com.microel.trackerbackend.storage.entities.templating.PassportDetails;
+import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
-import org.apache.poi.ss.util.RegionUtil;
 import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.springframework.lang.Nullable;
+import org.xhtmlrenderer.layout.SharedContext;
+import org.xhtmlrenderer.pdf.ITextRenderer;
 
-import java.io.ByteArrayOutputStream;
+import java.io.*;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
-import java.time.format.DateTimeFormatter;
+import java.time.Instant;
+import java.time.Year;
 import java.util.*;
-import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class TDocumentFactory {
 
@@ -136,7 +151,7 @@ public class TDocumentFactory {
                     }
                     Float allSum = workingDay.getCalculations().stream().map(WorkCalculation::getSum).reduce(Float::sum).orElse(null);
                     if (allSum != null && allSum > 0) {
-                        CellRangeAddress region = new CellRangeAddress(globalRowIndex, globalRowIndex, 1, 7);
+                        CellRangeAddress region = new CellRangeAddress(globalRowIndex, globalRowIndex, 1, 8);
                         sheet.addMergedRegion(region);
                         contentRow = sheet.getRow(globalRowIndex);
                         if (contentRow == null) contentRow = sheet.createRow(globalRowIndex);
@@ -171,8 +186,108 @@ public class TDocumentFactory {
         return new MonthlySalaryReportTable("Otchet po montajnikam "+fileNameFormatter.format(startDate)+" - "+fileNameFormatter.format(endDate)+".xlsx", DocumentMimeType.XLSX.value, b);
     }
 
+    public static ConnectionAgreement createConnectionAgreement(@Nullable String login, @Nullable String fullName, @Nullable Timestamp dateOfBirth,
+                                                                @Nullable String regionOfBirth, @Nullable String cityOfBirth,
+                                                                @Nullable PassportDetails passportDetails, @Nullable Address address,
+                                                                @Nullable String phone, @Nullable String password, @Nullable String tariff) {
+        try {
+            URL template = TDocumentFactory.class.getResource("/ConnectionAgreementTemplate.html");
+            if(template == null) throw new ResponseException("Ресурс шаблона документа не найден");
+            URL font = TDocumentFactory.class.getResource("/Arial.ttf");
+            if(font == null) throw new ResponseException("Ресурс шрифта документа не найден");
+            Document document = Jsoup.parse(new File(template.toURI()), "UTF-8");
+            document.outputSettings().syntax(Document.OutputSettings.Syntax.xml);
+
+            SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy");
+
+            String lastName = "";
+            String firstName = "";
+            String patronymic = "";
+            if(fullName != null) {
+                List<String> names = Stream.of(fullName.split(" ")).toList();
+                if(names.size() > 0) lastName = names.get(0);
+                if(names.size() > 1) firstName = names.get(1);
+                if(names.size() > 2) patronymic = names.get(2);
+            }
+
+            String passportSeriesStr = "";
+            String passportNumberStr = "";
+            String passportIssuedByStr = "";
+            String passportIssuedDateStr = "";
+            String departmentCodeStr = "";
+            String registrationAddressStr = "";
+            if(passportDetails != null){
+                passportSeriesStr = Utils.stringConvertor(passportDetails.getPassportSeries()).orElse("");
+                passportNumberStr = Utils.stringConvertor(passportDetails.getPassportNumber()).orElse("");
+                passportIssuedByStr = Utils.stringConvertor(passportDetails.getPassportIssuedBy()).orElse("");
+                passportIssuedDateStr = Utils.stringConvertor(passportDetails.getPassportIssuedDate()).orElse("");
+                departmentCodeStr = Utils.stringConvertor(passportDetails.getDepartmentCode()).orElse("");
+                registrationAddressStr = Utils.stringConvertor(passportDetails.getRegistrationAddress()).orElse("");
+            }
+
+
+            String streetStr = "";
+            String houseStr = "";
+            String apartmentStr = "";
+            String entranceStr = "";
+            String floorStr = "";
+
+            if(address != null){
+                if(address.getStreet() != null) streetStr = Utils.stringConvertor(address.getStreet().getName()).orElse("");
+                houseStr = Utils.stringConvertor(address.getHouseNamePart()).orElse("");
+                apartmentStr = Utils.stringConvertor(address.getApartmentNum()).orElse("");
+                entranceStr = Utils.stringConvertor(address.getEntrance()).orElse("");
+                floorStr = Utils.stringConvertor(address.getFloor()).orElse("");
+            }
+
+            document.getElementById("current_date").text(String.valueOf(Year.now().getValue()));
+            document.getElementById("login_title").text(Utils.stringConvertor(login).orElse("_____________"));
+            document.getElementById("lastname").text(lastName);
+            document.getElementById("firstname").text(firstName);
+            document.getElementById("patronymic").text(patronymic);
+            document.getElementById("date_of_birth").text(Utils.stringConvertor(dateOfBirth).orElse(""));
+            document.getElementById("region_of_birth").text(Utils.stringConvertor(regionOfBirth).orElse(""));
+            document.getElementById("city_of_birth").text(Utils.stringConvertor(cityOfBirth).orElse(""));
+            document.getElementById("passport_series").text(passportSeriesStr);
+            document.getElementById("passport_number").text(passportNumberStr);
+            document.getElementById("passport_issued_by").text(passportIssuedByStr);
+            document.getElementById("department_code").text(departmentCodeStr);
+            document.getElementById("passport_issued_date").text(passportIssuedDateStr);
+            document.getElementById("registration_address").text(registrationAddressStr);
+            document.getElementById("street").text(streetStr);
+            document.getElementById("house").text(houseStr);
+            document.getElementById("apartment").text(apartmentStr);
+            document.getElementById("entrance").text(entranceStr);
+            document.getElementById("floor").text(floorStr);
+            document.getElementById("phone").text(Utils.stringConvertor(phone).orElse(""));
+            document.getElementById("login").text(Utils.stringConvertor(login).orElse(""));
+            document.getElementById("password").text(Utils.stringConvertor(password).orElse(""));
+            document.getElementById("tariff").text(Utils.stringConvertor(tariff).orElse(""));
+
+            ByteArrayOutputStream ms = new ByteArrayOutputStream();
+            ITextRenderer renderer = new ITextRenderer(5.05f, 3);
+            SharedContext sharedContext = renderer.getSharedContext();
+            sharedContext.setPrint(true);
+            sharedContext.setInteractive(false);
+
+            renderer.getFontResolver().addFont(new File(font.toURI()).getAbsolutePath(), BaseFont.IDENTITY_H, true);
+            renderer.setDocumentFromString(document.html());
+
+            renderer.layout();
+            renderer.createPDF(ms);
+            byte b[] = ms.toByteArray();
+            return new ConnectionAgreement("Dogovor na podkluchenie.pdf", DocumentMimeType.PDF.value, b);
+
+        } catch (URISyntaxException e) {
+            throw new ResponseException("Не удалось получить ресурс шаблона документа");
+        } catch (IOException e) {
+            throw new ResponseException("Не удалось прочитать шаблон документа");
+        }
+    }
+
     public enum DocumentMimeType{
-        XLSX("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        XLSX("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        PDF("application/pdf");
 
         private String value;
 

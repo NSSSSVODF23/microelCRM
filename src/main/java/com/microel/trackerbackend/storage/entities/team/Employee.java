@@ -2,17 +2,14 @@ package com.microel.trackerbackend.storage.entities.team;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.microel.trackerbackend.storage.entities.team.util.Department;
-import com.microel.trackerbackend.storage.entities.team.util.EmployeeStatus;
-import com.microel.trackerbackend.storage.entities.team.util.PhyPhoneInfo;
-import com.microel.trackerbackend.storage.entities.team.util.Position;
+import com.microel.trackerbackend.storage.entities.team.util.*;
 import com.microel.trackerbackend.storage.entities.templating.DefaultObserver;
 import lombok.*;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
 import org.springframework.lang.Nullable;
 
-import javax.persistence.*;
+import javax.persistence.*;import javax.persistence.CascadeType;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Objects;
@@ -63,6 +60,19 @@ public class Employee implements Observer{
     @OnDelete(action = OnDeleteAction.CASCADE)
     @JoinColumn(name = "f_employee_id")
     private PhyPhoneInfo phyPhoneInfo;
+    @Nullable
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH}, orphanRemoval = true)
+    @JoinColumn(name = "f_old_tracker_credentials_id")
+    private OldTrackerCredentials oldTrackerCredentials;
+
+    @JsonIgnore
+    public boolean isHasOldTrackerCredentials(){
+        return oldTrackerCredentials != null
+                && oldTrackerCredentials.getUsername() != null
+                && !oldTrackerCredentials.getUsername().isBlank()
+                && oldTrackerCredentials.getPassword() != null
+                && !oldTrackerCredentials.getPassword().isBlank();
+    }
 
     public static Employee getSystem() {
         return Employee.builder()

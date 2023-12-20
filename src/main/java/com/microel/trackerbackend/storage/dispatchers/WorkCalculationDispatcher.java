@@ -227,6 +227,6 @@ public class WorkCalculationDispatcher {
         calculating(workLog, form.getActions(), form.getSpreading(), null, employee, null, form.getIsPaidWork(), form.getAmountOfMoneyTaken());
         stompController.closeWorkLog(workLog);
         stompController.closeChat(workLog.getChat());
-        stompController.updateTask(taskDispatcher.close(task.getTaskId()));
+        stompController.updateTask(taskDispatcher.close(task.getTaskId(), employee));
     }
 }

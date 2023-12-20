@@ -1,0 +1,328 @@
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body{
+                font-family: Arial, sans-serif;
+            }
+            .title{
+                background: #E6E6E6;
+                text-align: center;
+                font-size: 14px;
+                padding-bottom: 5px;
+                vertical-align: middle;
+            }
+            .field_title{
+                float: left;
+                width: 100px;
+                display: inline;
+                padding-top: 1px;
+                font-size: 12px;
+            }
+            .field_title_inline{
+                float: left;
+                padding-top: 1px;
+                padding-left: 10px;
+                font-size: 12px;
+            }
+            .field_value{
+                border-bottom: 1px solid black;
+                width: 310px;
+                display: inline;
+                float: right;
+                font-size: 12px;
+            }
+            .mp_caption {
+                width: 310px;
+                display: inline;
+                float: right;
+                text-align: right;
+                font-size: 12px;
+            }
+            .agree_caption{
+                width: 410px;
+                display: inline;
+                float: right;
+                font-size: 14px;
+                text-align: justify;
+            }
+            @page {
+                /*size: 1000px 1150px;*/
+                size: 8.27in 11.69in;
+                margin: .5in .6in;
+            }
+        </style>
+    </head>
+    <body>
+        <div>
+            <p style="text-align:right; font-size: 12px">г. Волгодонск "____" __________ <span id="current_date"></span></p>
+            <p style="text-align:center; font-size:16px;">ДОГОВОР-ЗАЯВКА НА ПОДКЛЮЧЕНИЕ № «<span id="login_title"></span>»</p>
+            <p style="text-align:justify; font-size:14px; padding: 1em 0">ООО НПЦ «Микроэлектроника» оказывающее услуги под торговой маркой
+                «Микроэл» (лицензии №161386, №161385 от 08.02.2017 выданные Федеральной службой по надзору в сфере связи,
+                информационных технологий и массовых коммуникаций), именуемое в дальнейшем «Провайдер», в лице директора
+                Бондаренко Сергея Леонидовича, действующего на основании Устава и Абонент, подписавший договор-заявку, заключили
+                настоящий договор на предоставление телематических услуг связи и услуг связи по передаче данных (интернет) на
+                условиях оферты опубликованной на сайте http://www.vdonsk.ru/doc/oferta</p>
+
+            <div style="width:430px; float:left;">
+
+                <div style="width:410px; height:110px; float:left;">
+                    <div class="title">АБОНЕНТ</div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Фамилия:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="lastname"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Имя:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="firstname"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Отчество:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="patronymic"></span></div>
+                    </div>
+                </div>
+
+                <div style="width:410px; height:110px; float:left;">
+                    <div class="title">ДАТА И МЕСТО РОЖДЕНИЯ</div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Дата:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="date_of_birth"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Обл./Край</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="region_of_birth"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Город/Село:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="city_of_birth"></span></div>
+                    </div>
+                </div>
+
+                <div style="width:410px; float:left;">
+                    <div class="title">ДОКУМЕНТ</div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Документ:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span>Паспорт</div>
+                    </div>
+
+                    <div>
+                        <div style="width:410px; height:25px;">
+                            <div class="field_title">Серия:</div>
+                            <div class="field_value" style="width:100px; float: left"><span style="color:#FFF; font-size:16px;">!</span><span id="passport_series"></span></div>
+                            <div style="float: left; padding-left: 10px; font-size: 12px">№:</div>
+                            <div class="field_value" style="width:178px; float: left"><span style="color:#FFF; font-size:16px;">!</span><span id="passport_number"></span></div>
+                        </div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Кем выдан:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="passport_issued_by"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Код подраздел.:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="department_code"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Дата выдачи:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="passport_issued_date"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Регистрация:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="registration_address"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+
+                </div>
+
+
+                <div style="width:410px; height:90px; float:left; padding-top:10px;">
+                    <div class="title">АДРЕС ПОДКЛЮЧЕНИЯ</div>
+
+                    <div>
+                        <div style="width:410px; height:25px;">
+                            <div class="field_title">Улица:</div>
+                            <div class="field_value" style="width: 172px; float: left"><span style="color:#FFF; font-size:16px;">!</span><span id="street"></span></div>
+                            <div class="field_title_inline">Дом:</div>
+                            <div class="field_value" style="width: 80px; float: left; padding-left: 10px"><span style="color:#FFF; font-size:16px;">!</span><span id="house"></span></div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div style="width:410px; height:25px;">
+                            <div class="field_title">Квартира:</div>
+                            <div class="field_value" style="width: 50px; float: left; padding-left: 10px"><span style="color:#FFF; font-size:16px;">!</span><span id="apartment"></span></div>
+                            <div class="field_title_inline">Подъезд:</div>
+                            <div class="field_value" style="width: 50px; float: left; padding-left: 10px"><span style="color:#FFF; font-size:16px;">!</span><span id="entrance"></span></div>
+                            <div class="field_title_inline">Этаж:</div>
+                            <div class="field_value" style="width: 50px; float: left; padding-left: 10px"><span style="color:#FFF; font-size:16px;">!</span><span id="floor"></span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="width:410px; float:left; height:110px;">
+                    <div class="title">КОНТАКТНАЯ ИНФОРМАЦИЯ</div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Телефон:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="phone"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">E-mail:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Примечания:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+                </div>
+
+                <div style="width:410px; float:left; height:110px;">
+                    <div class="title">ИДЕНТИФИКАЦИОННЫЕ РЕКВИЗИТЫ</div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Логин:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="login"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Пароль:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="password"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">IP:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+
+                </div>
+
+                <div style="width:410px; float:left; height:90px;">
+                    <div class="title">ИНФОРМАЦИЯ ОБ УСЛУГЕ</div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Тариф:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span><span id="tariff"></span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Абон.плата:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Прим.:</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div style="width:410px; float:right;">
+
+                <div style="width:410px; height:110px; float:left; top:0;">
+                    <div class="title">ПРОВАЙДЕР</div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title"></div>
+                        <div class="field_value">ООО НПЦ "Микроэлектроника"</div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Юр.Адрес:</div>
+                        <div class="field_value">347371, г. Волгодонск, пр. Строителей, помещение II</div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Адрес:</div>
+                        <div class="field_value">347371, г. Волгодонск, пр. Строителей, помещение II</div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">ИНН:</div>
+                        <div class="field_value">6143010664</div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">КПП:</div>
+                        <div class="field_value">614301001</div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Р/c:</div>
+                        <div class="field_value">40702810952160100121</div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">Банк:</div>
+                        <div class="field_value">ЮГО-ЗАПАДНЫЙ БАНК ПАО СБЕРБАНК<br> Г. РОСТОВ-НА-ДОНУ</div>
+                    </div>
+
+                    <div style="width:410px; height:25px;">
+                        <div class="field_title">К/c:</div>
+                        <div class="field_value">30101810600000000602</div>
+                    </div>
+
+                    <div style="width:410px; height:45px;">
+                        <div class="field_title">БИК:</div>
+                        <div class="field_value">046015602</div>
+                    </div>
+
+                    <div style="width:410px; height:35px;">
+                        <div class="field_title">От Провайдера</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+
+                    <div style="width:410px; height:45px;">
+                        <div class="field_title">Подпись</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+
+                    <div style="width:410px; height:45px;">
+                        <div class="mp_caption">М.П</div>
+                    </div>
+
+                    <div style="width:410px; height:100px;">
+                        <div class="agree_caption">Подписав настоящий договор-заявку Абонент выражает согласие с
+                            условиями оферты и всех ее приложений, Абонент ознакомлен с указанными документами, их содержание
+                            Абоненту известно и понятно
+                        </div>
+                    </div>
+
+                    <div style="width:410px; height:35px;">
+                        <div class="field_title">От Абонента</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+
+                    <div style="width:410px; height:35px;">
+                        <div class="field_title">Дата</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+
+                    <div style="width:410px; height:45px;">
+                        <div class="field_title">Подпись</div>
+                        <div class="field_value"><span style="color:#FFF; font-size:16px;">!</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

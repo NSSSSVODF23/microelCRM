@@ -53,6 +53,7 @@ public class ChatDispatcher {
      *
      * @return Сохраненный чат
      */
+    @Transactional
     public Chat unsafeSave(Chat chat) {
         return chatRepository.save(chat);
     }
@@ -245,8 +246,12 @@ public class ChatDispatcher {
             attachmentFromMessage = context.getAttachmentFromMessage(tlgMessage);
         }
 
+        String messageText = tlgMessage.getText();
+        if(messageText == null || messageText.isBlank())
+            messageText = tlgMessage.getCaption();
+
         ChatMessage message = ChatMessage.builder()
-                .text(tlgMessage.getText())
+                .text(messageText)
                 .author(author)
                 .replyTo(replyToMessage)
                 .attachment(attachmentFromMessage)
@@ -294,7 +299,7 @@ public class ChatDispatcher {
             }
             Attachment attachmentFromGroupMessage = context.getAttachmentFromMessage(message);
             createdMessages.add(ChatMessage.builder()
-                    .text(message.getText())
+                    .text(message.getCaption())
                     .author(author)
                     .replyTo(replyToMessage)
                     .attachment(attachmentFromGroupMessage)
@@ -312,6 +317,7 @@ public class ChatDispatcher {
         return collectSuperMessage(savedMessages);
     }
 
+    @Transactional
     public SuperMessage createSystemMessage(Long chatId, String message, TelegramController context) throws EntryNotFound, TelegramApiException {
         Chat chat = getChat(chatId);
         ChatMessage systemMessage = ChatMessage.builder()
@@ -377,6 +383,7 @@ public class ChatDispatcher {
 //    }
 
 
+    @Transactional
     public ChatMessageDto updateMessage(Long messageId, ChatMessage message) throws EntryNotFound {
         ChatMessage existedMessage = chatMessageDispatcher.get(messageId);
         message.setText(message.getText());
@@ -396,6 +403,7 @@ public class ChatDispatcher {
      * @throws AlreadyDeleted Если сообщение уже удалено
      */
 
+    @Transactional
     public ChatMessage deleteMessage(Long messageId, Employee employee) throws EntryNotFound, NotOwner, AlreadyDeleted {
         ChatMessage existedMessage = chatMessageDispatcher.get(messageId);
         if (existedMessage.getDeleted() != null) throw new AlreadyDeleted("Сообщение уже удалено");
@@ -484,6 +492,7 @@ public class ChatDispatcher {
      * @param chatMessageIds Список идентификаторов сообщений которые нужно объединить в группу
      */
 
+    @Transactional
     public void assignMediaGroup(List<Long> chatMessageIds) {
         UUID mediaGroupId = UUID.randomUUID();
         chatMessageDispatcher.assignMediaGroup(chatMessageIds, mediaGroupId);
@@ -498,6 +507,7 @@ public class ChatDispatcher {
      */
 
     @Nullable
+    @Transactional
     public SuperMessage setMessagesAsRead(Set<Long> messageIds, Employee employee) {
         List<ChatMessage> chatMessages = chatMessageDispatcher.setMessagesAsRead(messageIds, employee);
         if (chatMessages.isEmpty()) return null;
@@ -512,6 +522,7 @@ public class ChatDispatcher {
      * @return Супер сообщения
      */
 
+    @Transactional
     public List<SuperMessage> setAllMessagesAsRead(Long chatId, Employee employee) {
         List<ChatMessage> chatMessages = chatMessageDispatcher.setAllMessagesAsRead(chatId, employee);
         List<SuperMessage> groupedMessages = chatMessages.stream()

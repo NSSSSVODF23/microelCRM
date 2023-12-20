@@ -34,6 +34,7 @@ public class ModelItemMapper {
                 .equipmentRealizationsData(modelItem.getEquipmentRealizationsData())
                 .textRepresentation(modelItem.getTextRepresentation())
                 .textRepresentationForTlg(modelItem.getTextRepresentationForTlg())
+                .displayType(modelItem.getDisplayType())
                 .build();
     }
 
@@ -55,6 +56,7 @@ public class ModelItemMapper {
                 .phoneData(modelItem.getPhoneData())
                 .connectionServicesData(modelItem.getConnectionServicesData())
                 .equipmentRealizationsData(modelItem.getEquipmentRealizationsData())
+                .displayType(modelItem.getDisplayType())
                 .build();
     }
 }

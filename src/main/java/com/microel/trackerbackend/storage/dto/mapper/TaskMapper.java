@@ -35,6 +35,7 @@ public class TaskMapper {
                 .taskEvents(task.getTaskEvents() == null ? new ArrayList<>() : task.getTaskEvents().stream().map(TaskEventMapper::toDto).collect(Collectors.toList()))
                 .taskStatus(task.getTaskStatus())
                 .listItemFields(task.getListItemFields())
+                .oldTrackerTaskId(task.getOldTrackerTaskId())
                 .build();
     }
 
@@ -58,6 +59,7 @@ public class TaskMapper {
                 .taskStatus(task.getTaskStatus())
                 .listItemFields(task.getListItemFields())
                 .lastComment(CommentMapper.toDto(task.getLastComment()))
+                .oldTrackerTaskId(task.getOldTrackerTaskId())
                 .build();
     }
 
@@ -82,6 +84,7 @@ public class TaskMapper {
                 .responsible(EmployeeMapper.fromDto(task.getResponsible()))
                 .taskEvents(task.getTaskEvents() == null ? new ArrayList<>() : task.getTaskEvents().stream().map(TaskEventMapper::fromDto).collect(Collectors.toList()))
                 .taskStatus(task.getTaskStatus())
+                .oldTrackerTaskId(task.getOldTrackerTaskId())
                 .build();
         build.setTags(task.getTags() == null ? new HashSet<>() : task.getTags().stream().map(TaskTagMapper::fromDto).collect(Collectors.toSet()));
         build.setChildren(task.getChildren() == null ? new ArrayList<>() : task.getChildren().stream().map(TaskMapper::fromDto).collect(Collectors.toList()));

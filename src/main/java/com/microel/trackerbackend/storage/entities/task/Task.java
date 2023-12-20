@@ -1,26 +1,32 @@
 package com.microel.trackerbackend.storage.entities.task;
 
-import com.fasterxml.jackson.annotation.*;
-import com.microel.trackerbackend.modules.transport.ChangeTaskObserversDTO;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.microel.trackerbackend.controllers.telegram.Utils;
+import com.microel.trackerbackend.services.api.ResponseException;
+import com.microel.trackerbackend.services.external.oldtracker.OldTrackerRequestFactory;
+import com.microel.trackerbackend.services.external.oldtracker.task.TaskClassOT;
+import com.microel.trackerbackend.services.external.oldtracker.task.TaskFieldOT;
+import com.microel.trackerbackend.services.external.oldtracker.task.fields.StreetFieldOT;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskGroup;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.util.Department;
-import com.microel.trackerbackend.storage.entities.templating.DefaultObserver;
-import com.microel.trackerbackend.storage.entities.templating.TaskStage;
-import com.microel.trackerbackend.storage.entities.templating.Wireframe;
+import com.microel.trackerbackend.storage.entities.templating.*;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
+import com.microel.trackerbackend.storage.entities.templating.oldtracker.fields.*;
 import lombok.*;
-import org.hibernate.annotations.*;
+import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
+import org.javatuples.Pair;
 import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
-import javax.persistence.CascadeType;
-import javax.persistence.Entity;
-import javax.persistence.Table;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -107,25 +113,46 @@ public class Task {
     @BatchSize(size = 25)
     private List<Task> children;
 
+    @Nullable
+    private Long oldTrackerTaskId;
+    @Nullable
+    private Integer oldTrackerTaskClassId;
+    @Nullable
+    private Integer oldTrackerCurrentStageId;
+
     /**
      * Создает отсортированный список полей для отображения в элементе списка
+     *
      * @return Список полей задачи
      */
-    public List<ModelItem> getListItemFields(){
-        return modelWireframe.getAllFields().stream()
-                .filter(f->f.getListViewIndex()!=null)
+    public List<ModelItem> getListItemFields() {
+        List<ModelItem> collect = modelWireframe.getAllFields().stream()
+                .filter(f -> f.getListViewIndex() != null)
                 .sorted(Comparator.comparing(FieldItem::getListViewIndex))
-                .map(fieldItem -> fields.stream().filter(f->f.getId().equals(fieldItem.getId())).findFirst().orElse(null))
+                .map(fieldItem -> fields.stream().filter(f -> f.getId().equals(fieldItem.getId())).findFirst().orElse(null))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
+        collect.addAll(fields.stream().filter(modelItem -> {
+            return modelWireframe.getAllFields().stream().noneMatch(mfi -> Objects.equals(mfi.getId(), modelItem.getId()));
+        }).toList());
+
+        return collect;
     }
 
-    public List<ModelItem> getFields(){
-        return modelWireframe.getAllFields().stream()
+    public List<ModelItem> getFields() {
+        List<ModelItem> collect = modelWireframe.getAllFields().stream()
                 .sorted(Comparator.nullsLast(Comparator.comparing(FieldItem::getOrderPosition))).filter(Objects::nonNull)
-                .map(fieldItem -> fields.stream().filter(f->Objects.equals(f.getId(), fieldItem.getId())).findFirst().orElse(null))
+                .map(fieldItem -> fields.stream().filter(f -> Objects.equals(f.getId(), fieldItem.getId())).findFirst().orElse(null))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
+        collect.addAll(fields.stream().filter(modelItem -> {
+            return modelWireframe.getAllFields().stream().noneMatch(mfi -> Objects.equals(mfi.getId(), modelItem.getId()));
+        }).toList());
+        return collect;
+    }
+
+    public void setFields(List<ModelItem> fieldsAppend) {
+        fields = fieldsAppend.stream().peek(f -> f.setTask(this)).collect(Collectors.toList());
     }
 
     @Override
@@ -153,20 +180,16 @@ public class Task {
         return Objects.hash(getTaskId());
     }
 
-    public void setFields(List<ModelItem> fieldsAppend) {
-        fields = fieldsAppend.stream().peek(f -> f.setTask(this)).collect(Collectors.toList());
-    }
-
     public void editFields(List<ModelItem> fields) {
         if (fields == null) return;
         // Заменяем поле если оно уже существует
-        this.fields.forEach(f->{
-            ModelItem  newField = fields.stream().filter(ff -> ff.getModelItemId().equals(f.getModelItemId())).findFirst().orElse(null);
-            if(newField == null) return;
+        this.fields.forEach(f -> {
+            ModelItem newField = fields.stream().filter(ff -> ff.getModelItemId().equals(f.getModelItemId())).findFirst().orElse(null);
+            if (newField == null) return;
             Object oldValue = f.getValue();
-            if(oldValue != null && newField.getValue() != null && !oldValue.equals(newField.getValue())) {
+            if (oldValue != null && newField.getValue() != null && !oldValue.equals(newField.getValue())) {
                 f.setValue(newField.getValue());
-            }else if(oldValue == null && newField.getValue() != null) {
+            } else if (oldValue == null && newField.getValue() != null) {
                 f.setValue(newField.getValue());
             }
         });
@@ -194,16 +217,16 @@ public class Task {
 
     public Set<Employee> getAllEmployeesObservers(Employee exclude) {
         Set<Employee> allEmployeeObservers = new HashSet<>();
-        if(employeesObservers != null) {
+        if (employeesObservers != null) {
             allEmployeeObservers.addAll(employeesObservers);
         }
-        if(departmentsObservers != null) {
+        if (departmentsObservers != null) {
             for (Department department : departmentsObservers) {
                 Set<Employee> departmentEmployees = department.getEmployees();
                 if (departmentEmployees != null) allEmployeeObservers.addAll(departmentEmployees);
             }
         }
-        if(exclude != null) allEmployeeObservers.remove(exclude);
+        if (exclude != null) allEmployeeObservers.remove(exclude);
         return allEmployeeObservers;
     }
 
@@ -215,12 +238,180 @@ public class Task {
         getTaskEvents().add(taskEvent);
     }
 
+    @JsonIgnore
+    public List<OldTrackerRequestFactory.FieldData> getFieldsForOldTracker(@NonNull TaskClassOT taskClassOT) {
+        if (currentStage.getOldTrackerBind() == null)
+            throw new ResponseException("Типу задачи не установлена конфигурация привязки");
+        List<FieldDataBind> fieldDataBinds = currentStage.getOldTrackerBind().getFieldDataBinds();
+        List<OldTrackerRequestFactory.FieldData> result = new ArrayList<>();
+        Pair<Integer, String> addressBackup = null;
+        for (FieldDataBind dataBind : fieldDataBinds) {
+            ModelItem modelItem = fields.stream().filter(f -> Objects.equals(dataBind.getFieldItemId(), f.getId())).findFirst().orElse(null);
+            if (modelItem == null) continue;
+            switch (modelItem.getWireframeFieldType()) {
+                case ADDRESS:
+                    if (!(dataBind instanceof AddressFieldDataBind addressDataBind))
+                        break;
+                    StreetFieldOT streetDropdownField = (StreetFieldOT) taskClassOT.getFieldById(addressDataBind.getStreetFieldId());
+                    Long internalStreetId = modelItem.getAddressData().getStreet().getStreetId();
+                    Pair<Integer, String> outerStreetPair = streetDropdownField.getStreetsBindings().get(internalStreetId);
+                    Integer outerStreetId = null;
+                    if (outerStreetPair == null) {
+                        if (addressDataBind.getBackupFieldId() != null) {
+                            addressBackup = new Pair<>(addressDataBind.getBackupFieldId(), modelItem.getAddressData().getHouseName());
+                        }
+                    } else {
+                        outerStreetId = outerStreetPair.getValue0();
+                    }
+                    if (addressDataBind.getStreetFieldId() != null)
+                        result.add(new OldTrackerRequestFactory.FieldData(addressDataBind.getStreetFieldId(), TaskFieldOT.Type.STREET, Utils.stringConvertor(outerStreetId).orElse(streetDropdownField.getDefaultNullStreet().toString())));
+                    if (addressDataBind.getHouseFieldId() != null)
+                        result.add(new OldTrackerRequestFactory.FieldData(addressDataBind.getHouseFieldId(), TaskFieldOT.Type.TEXT, Utils.stringConvertor(modelItem.getAddressData().getHouseNamePart()).orElse("-")));
+                    if (addressDataBind.getApartmentFieldId() != null)
+                        result.add(new OldTrackerRequestFactory.FieldData(addressDataBind.getApartmentFieldId(), TaskFieldOT.Type.TEXT, Utils.stringConvertor(modelItem.getAddressData().getApartmentNum()).orElse("-")));
+                    if (addressDataBind.getEntranceFieldId() != null)
+                        result.add(new OldTrackerRequestFactory.FieldData(addressDataBind.getEntranceFieldId(), TaskFieldOT.Type.TEXT, Utils.stringConvertor(modelItem.getAddressData().getEntrance()).orElse("-")));
+                    if (addressDataBind.getFloorFieldId() != null)
+                        result.add(new OldTrackerRequestFactory.FieldData(addressDataBind.getFloorFieldId(), TaskFieldOT.Type.TEXT, Utils.stringConvertor(modelItem.getAddressData().getFloor()).orElse("-")));
+                    break;
+                case AD_SOURCE:
+                    if (!(dataBind instanceof AdSourceFieldDataBind adSourceDataBind))
+                        break;
+                    if (adSourceDataBind.getAdSourceFieldId() != null) {
+                        try {
+                            AdvertisingSource advertisingSource = AdvertisingSource.valueOf(modelItem.getStringData());
+                            result.add(new OldTrackerRequestFactory.FieldData(adSourceDataBind.getAdSourceFieldId(), TaskFieldOT.Type.AD_SOURCE, Utils.stringConvertor(advertisingSource.ordinal()).orElse("1")));
+                        } catch (IllegalArgumentException e) {
+                            break;
+                        }
+                    }
+                    break;
+                case CONNECTION_TYPE:
+                    if (!(dataBind instanceof ConnectionTypeFieldDataBind connectionTypeFieldDataBind))
+                        break;
+                    ModelItem conServField = fields.stream().filter(mi -> Objects.equals(mi.getId(), connectionTypeFieldDataBind.getConnectionServicesInnerFieldId())).findFirst().orElse(null);
+                    if (conServField == null) break;
+                    try {
+                        ConnectionType connectionType = ConnectionType.valueOf(modelItem.getStringData());
+                        List<DataConnectionService> connectionServicesData = conServField.getConnectionServicesData();
+                        if (connectionServicesData == null || connectionServicesData.isEmpty()) {
+                            result.add(new OldTrackerRequestFactory.FieldData(connectionTypeFieldDataBind.getCtFieldDataBind(), TaskFieldOT.Type.CONNECTION_TYPE, "2"));
+                            break;
+                        }
+                        List<ConnectionService> connectionServices = connectionServicesData.stream().map(DataConnectionService::getConnectionService).toList();
+                        switch (connectionType) {
+                            case NEW -> {
+                                if (connectionServices.contains(ConnectionService.INTERNET) && connectionServices.contains(ConnectionService.CTV)) {
+                                    result.add(new OldTrackerRequestFactory.FieldData(connectionTypeFieldDataBind.getCtFieldDataBind(), TaskFieldOT.Type.CONNECTION_TYPE, "1"));
+                                } else if (connectionServices.contains(ConnectionService.INTERNET)) {
+                                    result.add(new OldTrackerRequestFactory.FieldData(connectionTypeFieldDataBind.getCtFieldDataBind(), TaskFieldOT.Type.CONNECTION_TYPE, "2"));
+                                } else if (connectionServices.contains(ConnectionService.CTV)) {
+                                    result.add(new OldTrackerRequestFactory.FieldData(connectionTypeFieldDataBind.getCtFieldDataBind(), TaskFieldOT.Type.CONNECTION_TYPE, "3"));
+                                }
+                            }
+                            case RESUMPTION -> {
+                                result.add(new OldTrackerRequestFactory.FieldData(connectionTypeFieldDataBind.getCtFieldDataBind(), TaskFieldOT.Type.CONNECTION_TYPE, "5"));
+                            }
+                            case TRANSFER -> {
+                                result.add(new OldTrackerRequestFactory.FieldData(connectionTypeFieldDataBind.getCtFieldDataBind(), TaskFieldOT.Type.CONNECTION_TYPE, "4"));
+                            }
+                        }
+                    } catch (IllegalArgumentException e) {
+                        break;
+                    }
+                case PASSPORT_DETAILS:
+                    if (!(dataBind instanceof PassportDetailsFieldDataBind passportDetailsFieldDataBind))
+                        break;
+                    if (passportDetailsFieldDataBind.getPassportSeriesFieldId() != null)
+                        result.add(
+                                new OldTrackerRequestFactory.FieldData(passportDetailsFieldDataBind.getPassportSeriesFieldId(),
+                                        TaskFieldOT.Type.TEXT,
+                                        Utils.stringConvertor(modelItem.getPassportDetailsData().getPassportSeries()).orElse("")
+                                )
+                        );
+                    if(passportDetailsFieldDataBind.getPassportNumberFieldId() != null)
+                        result.add(
+                                new OldTrackerRequestFactory.FieldData(passportDetailsFieldDataBind.getPassportNumberFieldId(),
+                                        TaskFieldOT.Type.TEXT,
+                                        Utils.stringConvertor(modelItem.getPassportDetailsData().getPassportNumber()).orElse(""))
+                        );
+                    if(passportDetailsFieldDataBind.getPassportIssuedByFieldId() != null)
+                        result.add(
+                                new OldTrackerRequestFactory.FieldData(passportDetailsFieldDataBind.getPassportIssuedByFieldId(),
+                                        TaskFieldOT.Type.TEXT,
+                                        Utils.stringConvertor(modelItem.getPassportDetailsData().getPassportIssuedBy()).orElse(""))
+                        );
+                    if(passportDetailsFieldDataBind.getPassportIssuedDateFieldId() != null)
+                        result.add(
+                                new OldTrackerRequestFactory.FieldData(passportDetailsFieldDataBind.getPassportIssuedDateFieldId(),
+                                        TaskFieldOT.Type.TEXT,
+                                        Utils.stringConvertor(modelItem.getPassportDetailsData().getPassportIssuedDate()).orElse(""))
+                        );
+                    if(passportDetailsFieldDataBind.getRegistrationAddressFieldId() != null)
+                        result.add(
+                                new OldTrackerRequestFactory.FieldData(passportDetailsFieldDataBind.getRegistrationAddressFieldId(),
+                                        TaskFieldOT.Type.TEXT,
+                                        Utils.stringConvertor(modelItem.getPassportDetailsData().getRegistrationAddress()).orElse(""))
+                        );
+                    break;
+                default:
+                    if (dataBind instanceof TextFieldDataBind textFieldDataBind) {
+                        result.add(new OldTrackerRequestFactory.FieldData(textFieldDataBind.getTextFieldId(), TaskFieldOT.Type.TEXT, Utils.stringConvertor(modelItem.getTextRepresentation()).orElse("-")));
+                    } else if (dataBind instanceof FullNameFieldDataBind fullNameFieldDataBind) {
+                        List<String> split = List.of(modelItem.getStringData().split(" "));
+
+                        String lastName = null;
+                        try {
+                            lastName = split.get(0);
+                        } catch (IndexOutOfBoundsException ignore) {
+                        }
+
+                        String firstName = null;
+                        try {
+                            firstName = split.get(1);
+                        } catch (IndexOutOfBoundsException ignore) {
+                        }
+
+                        String patronymic = null;
+                        try {
+                            patronymic = split.get(2);
+                        } catch (IndexOutOfBoundsException ignore) {
+                        }
+
+                        if (fullNameFieldDataBind.getLastNameFieldId() != null) {
+                            result.add(new OldTrackerRequestFactory.FieldData(fullNameFieldDataBind.getLastNameFieldId(), TaskFieldOT.Type.TEXT, Utils.stringConvertor(lastName).orElse("-")));
+                        }
+                        if (fullNameFieldDataBind.getFirstNameFieldId() != null) {
+                            result.add(new OldTrackerRequestFactory.FieldData(fullNameFieldDataBind.getFirstNameFieldId(), TaskFieldOT.Type.TEXT, Utils.stringConvertor(firstName).orElse("-")));
+                        }
+                        if (fullNameFieldDataBind.getPatronymicFieldId() != null) {
+                            result.add(new OldTrackerRequestFactory.FieldData(fullNameFieldDataBind.getPatronymicFieldId(), TaskFieldOT.Type.TEXT, Utils.stringConvertor(patronymic).orElse("-")));
+                        }
+                    }
+                    break;
+            }
+            if (addressBackup != null) {
+                Integer fieldId = addressBackup.getValue0();
+                String houseName = addressBackup.getValue1();
+                result.forEach(fieldData -> {
+                    if (Objects.equals(fieldData.getId(), fieldId))
+                        fieldData.setData(fieldData.getData() + " - " + houseName);
+                });
+            }
+        }
+        return result;
+    }
+
+    public Optional<ModelItem> getFieldByIdAndType(String fieldId, WireframeFieldType type) {
+        return fields.stream().filter(mi -> Objects.equals(mi.getId(), fieldId) && Objects.equals(mi.getWireframeFieldType(), type)).findFirst();
+    }
+
     /**
      * Объект для получения информации о задаче для создания
      */
     @Getter
     @Setter
-    public static class CreationBody{
+    public static class CreationBody {
         private Long wireframeId;
         private List<ModelItem> fields;
         @Nullable
@@ -235,5 +426,7 @@ public class Task {
         private String initialComment;
         @Nullable
         private String type;
+        @Nullable
+        private Boolean isDuplicateInOldTracker;
     }
 }

@@ -9,6 +9,7 @@ import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.misc.*;
+import com.microel.trackerbackend.misc.accounting.ConnectionAgreement;
 import com.microel.trackerbackend.misc.accounting.MonthlySalaryReportTable;
 import com.microel.trackerbackend.misc.accounting.TDocumentFactory;
 import com.microel.trackerbackend.misc.network.NetworkRemoteControl;
@@ -26,6 +27,8 @@ import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.*;
 import com.microel.trackerbackend.services.external.billing.BillingPayType;
 import com.microel.trackerbackend.services.external.billing.BillingRequestController;
+import com.microel.trackerbackend.services.external.oldtracker.OldTrackerService;
+import com.microel.trackerbackend.services.external.oldtracker.task.TaskClassOT;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dispatchers.*;
@@ -42,7 +45,6 @@ import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
-import com.microel.trackerbackend.storage.entities.chat.MessageData;
 import com.microel.trackerbackend.storage.entities.chat.SuperMessage;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
@@ -60,13 +62,13 @@ import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskFieldsSnapshot;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
-import com.microel.trackerbackend.storage.entities.task.WorkReport;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.Observer;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.entities.team.util.*;
 import com.microel.trackerbackend.storage.entities.templating.*;
+import com.microel.trackerbackend.storage.entities.templating.documents.DocumentTemplate;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
@@ -143,6 +145,7 @@ public class PrivateRequestController {
     private final ClientEquipmentDispatcher clientEquipmentDispatcher;
     private final FilesWatchService filesWatchService;
     private final PhyPhoneService phyPhoneService;
+    private final OldTrackerService oldTrackerService;
 
     public PrivateRequestController(WireframeDispatcher wireframeDispatcher, TaskDispatcher taskDispatcher,
                                     StreetDispatcher streetDispatcher, HouseDispatcher houseDispatcher, CityDispatcher cityDispatcher,
@@ -154,7 +157,7 @@ public class PrivateRequestController {
                                     NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher,
                                     ChatDispatcher chatDispatcher, TelegramController telegramController,
                                     OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, BillingRequestController billingRequestController, AcpClient acpClient, ClientEquipmentDispatcher clientEquipmentDispatcher, FilesWatchService filesWatchService, PhyPhoneService phyPhoneService,
-                                    PhyPhoneInfoRepository phyPhoneInfoRepository) {
+                                    PhyPhoneInfoRepository phyPhoneInfoRepository, OldTrackerService oldTrackerService) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.streetDispatcher = streetDispatcher;
@@ -188,6 +191,7 @@ public class PrivateRequestController {
         this.filesWatchService = filesWatchService;
         this.phyPhoneService = phyPhoneService;
         this.phyPhoneInfoRepository = phyPhoneInfoRepository;
+        this.oldTrackerService = oldTrackerService;
     }
 
     // Получает список доступных наблюдателей из базы данных
@@ -211,13 +215,32 @@ public class PrivateRequestController {
         return ResponseEntity.ok(observers);
     }
 
-
     // Создание шаблона задачи
     @PostMapping("wireframe")
-    public ResponseEntity<Wireframe> createWireframe(@RequestBody Wireframe body, HttpServletRequest request) {
+    public ResponseEntity<Wireframe> createWireframe(@RequestBody Wireframe.Form body, HttpServletRequest request) {
         Wireframe wireframe = wireframeDispatcher.createWireframe(body, getEmployeeFromRequest(request));
         stompController.createWireframe(wireframe);
         return ResponseEntity.ok(wireframe);
+    }
+
+    // Редактирование шаблона задачи
+    @PatchMapping("wireframe/{id}")
+    public ResponseEntity<Wireframe> updateWireframe(@PathVariable Long id, @RequestBody Wireframe.Form body) {
+        Wireframe wireframe = wireframeDispatcher.updateWireframe(id, body);
+        stompController.updateWireframe(wireframe);
+        return ResponseEntity.ok(wireframe);
+    }
+
+    // Удаление шаблона задачи
+    @DeleteMapping("wireframe/{id}")
+    public ResponseEntity<Void> deleteWireframe(@PathVariable Long id) {
+        try {
+            Wireframe wireframe = wireframeDispatcher.deleteWireframe(id);
+            stompController.deleteWireframe(wireframe);
+            return ResponseEntity.ok().build();
+        } catch (EntryNotFound e) {
+            throw new ResponseException(e.getMessage());
+        }
     }
 
     // Получение списка шаблонов
@@ -250,26 +273,6 @@ public class PrivateRequestController {
         List<FieldItem> fields = new ArrayList<>();
         wireframe.getSteps().forEach(step -> fields.addAll(step.getFields()));
         return ResponseEntity.ok(fields);
-    }
-
-    // Редактирование шаблона задачи
-    @PatchMapping("wireframe")
-    public ResponseEntity<Wireframe> updateWireframe(@RequestBody Wireframe body) {
-        Wireframe wireframe = wireframeDispatcher.updateWireframe(body);
-        stompController.updateWireframe(wireframe);
-        return ResponseEntity.ok(wireframe);
-    }
-
-    // Удаление шаблона задачи
-    @DeleteMapping("wireframe/{id}")
-    public ResponseEntity<Void> deleteWireframe(@PathVariable Long id) {
-        try {
-            Wireframe wireframe = wireframeDispatcher.deleteWireframe(id);
-            stompController.deleteWireframe(wireframe);
-            return ResponseEntity.ok().build();
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
     }
 
     // Получение всех городов
@@ -361,7 +364,7 @@ public class PrivateRequestController {
 
         try {
             // Создаём задачу в базе данных
-            Task createdTask = taskDispatcher.createTask(body, getEmployeeFromRequest(request));
+            Task createdTask = taskDispatcher.createTask(body, employee);
 
             Set<Employee> observers = createdTask.getAllEmployeesObservers(employee);
             // Создаем оповещение о новой задаче
@@ -421,12 +424,12 @@ public class PrivateRequestController {
     // Удаление задачи
     @DeleteMapping("task/{id}")
     public ResponseEntity<?> deleteTask(@PathVariable Long id, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
         try {
-            Employee employeeFromRequest = getEmployeeFromRequest(request);
-            Task task = taskDispatcher.deleteTask(id);
-            Set<Employee> observers = task.getAllEmployeesObservers(employeeFromRequest);
+            Task task = taskDispatcher.deleteTask(id, employee);
+            Set<Employee> observers = task.getAllEmployeesObservers(employee);
             stompController.updateTask(task);
-            notificationDispatcher.createNotification(observers, Notification.taskDeleted(task, employeeFromRequest));
+            notificationDispatcher.createNotification(observers, Notification.taskDeleted(task, employee));
         } catch (EntryNotFound e) {
             throw new ResponseException("Задача с идентификатором " + id + " не найдена в базе данных");
         }
@@ -460,35 +463,23 @@ public class PrivateRequestController {
     }
 
     // Получение страницу с задачами используя фильтрацию
-    @GetMapping("tasks/{page}")
-    public ResponseEntity<Page<TaskDto>> getTasks(@PathVariable Integer page, @Nullable TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
+    @PostMapping("tasks/{page}")
+    public ResponseEntity<Page<TaskDto>> getTasks(@PathVariable Integer page, @Nullable @RequestBody TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         if (condition == null) {
-            return ResponseEntity.ok(taskDispatcher.getTasks(page, 15, null, condition.getStage(), null, null,
+            return ResponseEntity.ok(taskDispatcher.getTasks(page, 15, null, null, null, null,
                     null, null, null, null, null, null).map(TaskMapper::toListObject));
         }
         condition.clean();
-        List<FilterModelItem> filtersList = null;
-        try {
-            if (condition.getTemplateFilter() != null) {
-                ObjectMapper om = new ObjectMapper();
-                filtersList = om.readValue(condition.getTemplateFilter(), new TypeReference<>() {
-                });
-                filtersList = filtersList.stream().filter(filter -> filter.getValue() != null).collect(Collectors.toList());
-            }
-        } catch (JsonProcessingException e) {
-            throw new ResponseException(e.getMessage());
-        } catch (IllegalArgumentException ignore) {
-        }
 
         Instant startDBRequest = Instant.now();
 
         Page<Task> tasks;
         if (condition.getOnlyMy() != null && condition.getOnlyMy()) {
-            tasks = taskDispatcher.getTasks(page, 15, null, condition.getStage(), condition.getTemplate(), filtersList,
+            tasks = taskDispatcher.getTasks(page, 15, null, condition.getStage(), condition.getTemplate(), condition.getTemplateFilter(),
                     condition.getSearchPhrase(), condition.getAuthor(), condition.getDateOfCreation(), condition.getTags(), condition.getExclusionIds(), employee);
         } else {
-            tasks = taskDispatcher.getTasks(page, 15, condition.getStatus(), condition.getStage(), condition.getTemplate(), filtersList,
+            tasks = taskDispatcher.getTasks(page, 15, condition.getStatus(), condition.getStage(), condition.getTemplate(),  condition.getTemplateFilter(),
                     condition.getSearchPhrase(), condition.getAuthor(), condition.getDateOfCreation(), condition.getTags(), condition.getExclusionIds(), null);
         }
 
@@ -498,6 +489,39 @@ public class PrivateRequestController {
         return ResponseEntity.ok()
                 .header("Server-Timing", "db;desc=\"DB Reading\";dur=" + dbDuration.toMillis())
                 .body(tasks.map(TaskMapper::toListObject));
+    }
+
+    @GetMapping("task/{taskId}/check-compatibility/{otTaskId}")
+    public ResponseEntity<Map<String,Object>> checkCompatibility(@PathVariable Long taskId, @PathVariable Long otTaskId, HttpServletRequest  request) {
+        Employee employee = getEmployeeFromRequest(request);
+        try{
+            taskDispatcher.checkCompatibility(taskId, otTaskId, employee);
+            return ResponseEntity.ok(null);
+        }catch (ResponseException e){
+            return ResponseEntity.ok(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PatchMapping("task/{taskId}/connect-to/{otTaskId}")
+    public ResponseEntity<Void> connectToOldTracker(@PathVariable Long taskId, @PathVariable Long otTaskId, HttpServletRequest  request) {
+        Employee employee = getEmployeeFromRequest(request);
+        taskDispatcher.connectToOldTracker(taskId, otTaskId, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    //changeTaskStageInOldTracker(taskId: number, taskStageId: number) {
+    //        return this.sendPatch(`api/private/task/${taskId}/old-tracker-stage/${taskStageId}/change`, {});
+    //    }
+    @PatchMapping("task/{taskId}/old-tracker-stage/{taskStageId}/change")
+    public ResponseEntity<Void> changeTaskStageInOldTracker(@PathVariable Long taskId, @PathVariable Integer taskStageId, HttpServletRequest  request) {
+        Employee employee = getEmployeeFromRequest(request);
+        taskDispatcher.changeTaskStageInOldTracker(taskId, taskStageId, employee);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("wireframe/{id}/filter-fields")
+    public ResponseEntity<List<FilterModelItem>> getFiltrationFields(@PathVariable Long id){
+        return ResponseEntity.ok(wireframeDispatcher.getFiltrationFields(id));
     }
 
     @GetMapping("tasks/by-login/{login}")
@@ -1194,19 +1218,19 @@ public class PrivateRequestController {
     // Назначает монтажников на задачу
     @PostMapping("task/{taskId}/assign-installers")
     public ResponseEntity<Void> assignInstallers(@PathVariable Long taskId, @RequestBody WorkLog.AssignBody body, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
         try {
-            Employee employeeFromRequest = getEmployeeFromRequest(request);
-            WorkLog workLog = taskDispatcher.assignInstallers(taskId, body, employeeFromRequest);
-            telegramController.assignInstallers(workLog, employeeFromRequest);
+            WorkLog workLog = taskDispatcher.assignInstallers(taskId, body, employee);
+            telegramController.assignInstallers(workLog, employee);
             stompController.updateTask(workLog.getTask());
             stompController.createWorkLog(workLog);
             stompController.createChat(Objects.requireNonNull(ChatMapper.toDto(workLog.getChat())));
-            Set<Employee> observers = workLog.getTask().getAllEmployeesObservers(employeeFromRequest);
+            Set<Employee> observers = workLog.getTask().getAllEmployeesObservers(employee);
             notificationDispatcher.createNotification(observers, Notification.taskProcessed(workLog));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.createdWorkLog(workLog.getTask(), workLog, employeeFromRequest));
+            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.createdWorkLog(workLog.getTask(), workLog, employee));
             stompController.createTaskEvent(taskId, taskEvent);
         } catch (Throwable e) {
-            taskDispatcher.abortAssignation(taskId);
+            taskDispatcher.abortAssignation(taskId, employee);
             throw new ResponseException(e.getMessage());
         }
         return ResponseEntity.ok().build();
@@ -1272,13 +1296,13 @@ public class PrivateRequestController {
     // Закрывает задачу
     @PatchMapping("task/{taskId}/close")
     public ResponseEntity<Task> closeTask(@PathVariable Long taskId, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
         try {
-            Employee employeeFromRequest = getEmployeeFromRequest(request);
-            Task task = taskDispatcher.close(taskId);
+            Task task = taskDispatcher.close(taskId, employee);
             stompController.updateTask(task);
-            Set<Employee> observers = task.getAllEmployeesObservers(employeeFromRequest);
-            notificationDispatcher.createNotification(observers, Notification.taskClosed(task, employeeFromRequest));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.close(task, employeeFromRequest));
+            Set<Employee> observers = task.getAllEmployeesObservers(employee);
+            notificationDispatcher.createNotification(observers, Notification.taskClosed(task, employee));
+            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.close(task, employee));
             stompController.createTaskEvent(taskId, taskEvent);
             return ResponseEntity.ok(task);
         } catch (EntryNotFound | IllegalFields e) {
@@ -1289,13 +1313,13 @@ public class PrivateRequestController {
     // Вновь открывает задачу
     @PatchMapping("task/{taskId}/reopen")
     public ResponseEntity<Task> reopenTask(@PathVariable Long taskId, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
         try {
-            Employee employeeFromRequest = getEmployeeFromRequest(request);
-            Task task = taskDispatcher.reopen(taskId);
+            Task task = taskDispatcher.reopen(taskId, employee);
             stompController.updateTask(task);
-            Set<Employee> observers = task.getAllEmployeesObservers(employeeFromRequest);
-            notificationDispatcher.createNotification(observers, Notification.taskReopened(task, employeeFromRequest));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.reopen(task, employeeFromRequest));
+            Set<Employee> observers = task.getAllEmployeesObservers(employee);
+            notificationDispatcher.createNotification(observers, Notification.taskReopened(task, employee));
+            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.reopen(task, employee));
             stompController.createTaskEvent(taskId, taskEvent);
             return ResponseEntity.ok(task);
         } catch (EntryNotFound | IllegalFields e) {
@@ -1307,14 +1331,14 @@ public class PrivateRequestController {
     @PatchMapping("task/{taskId}/edit-fields")
     public ResponseEntity<Task> editTask(@PathVariable Long taskId, @RequestBody List<ModelItem> modelItems, HttpServletRequest request) {
         try {
-            Employee employeeFromRequest = getEmployeeFromRequest(request);
-            TaskFieldsSnapshotDispatcher.SnapshotBuilder snapshotBuilder = taskFieldsSnapshotDispatcher.builder().beforeEditing(taskId, employeeFromRequest);
-            Task task = taskDispatcher.edit(taskId, modelItems);
+            Employee employee = getEmployeeFromRequest(request);
+            TaskFieldsSnapshotDispatcher.SnapshotBuilder snapshotBuilder = taskFieldsSnapshotDispatcher.builder().beforeEditing(taskId, employee);
+            Task task = taskDispatcher.edit(taskId, modelItems, employee);
             snapshotBuilder.afterEditing().flush();
             stompController.updateTask(task);
-            Set<Employee> observers = task.getAllEmployeesObservers(employeeFromRequest);
-            notificationDispatcher.createNotification(observers, Notification.taskEdited(task, employeeFromRequest));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.editFields(task, employeeFromRequest));
+            Set<Employee> observers = task.getAllEmployeesObservers(employee);
+            notificationDispatcher.createNotification(observers, Notification.taskEdited(task, employee));
+            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.editFields(task, employee));
             stompController.createTaskEvent(taskId, taskEvent);
             return ResponseEntity.ok(task);
         } catch (EntryNotFound | IllegalFields e) {
@@ -1458,7 +1482,7 @@ public class PrivateRequestController {
         try {
             Employee employee = employeeDispatcher.create(body.getFirstName(), body.getLastName(), body.getSecondName(),
                     body.getLogin(), body.getPassword(), body.getAccess(), body.getInternalPhoneNumber(),
-                    body.getTelegramUserId(), body.getDepartment(), body.getPosition(), body.getOffsite());
+                    body.getTelegramUserId(), body.getDepartment(), body.getPosition(), body.getOffsite(), body.getOldTrackerCredentials());
             stompController.createEmployee(employee);
             return ResponseEntity.ok(employee);
         } catch (AlreadyExists e) {
@@ -1480,7 +1504,8 @@ public class PrivateRequestController {
         if (body.getPosition() == null) throw new ResponseException("Сотруднику не присвоена должность");
         try {
             Employee employee = employeeDispatcher.edit(body.getFirstName(), body.getLastName(), body.getSecondName(), login, body.getPassword(),
-                    body.getAccess(), body.getInternalPhoneNumber(), body.getTelegramUserId(), body.getTelegramGroupChatId(), body.getDepartment(), body.getPosition(), body.getOffsite());
+                    body.getAccess(), body.getInternalPhoneNumber(), body.getTelegramUserId(), body.getTelegramGroupChatId(),
+                    body.getDepartment(), body.getPosition(), body.getOffsite(), body.getOldTrackerCredentials());
             stompController.updateEmployee(employee);
             return ResponseEntity.ok(employee);
         } catch (EntryNotFound e) {
@@ -2169,6 +2194,16 @@ public class PrivateRequestController {
         return NetworkRemoteControl.of(ip).map(ResponseEntity::ok);
     }
 
+    @GetMapping("types/document-template")
+    public ResponseEntity<List<Map<String, String>>> getDocumentTemplateTypes() {
+        return ResponseEntity.ok(DocumentTemplate.getDocumentTypes());
+    }
+
+    @GetMapping("types/field-display")
+    public ResponseEntity<List<Map<String, String>>> getFieldDisplayTypes() {
+        return ResponseEntity.ok(FieldItem.DisplayType.getList());
+    }
+
     @GetMapping("types/wireframe-field")
     public ResponseEntity<List<Map<String, String>>> getWireframeFieldTypes() {
         return ResponseEntity.ok(WireframeFieldType.getList());
@@ -2423,6 +2458,16 @@ public class PrivateRequestController {
         Map<Date, List<WorkingDay>> workingDaysByOffsiteEmployees = workingDayDispatcher.getWorkingDaysByOffsiteEmployees(monthBoundaries.getValue0(), monthBoundaries.getValue1());
         MonthlySalaryReportTable document = TDocumentFactory.createMonthlySalaryReportTable(workingDaysByOffsiteEmployees, monthBoundaries.getValue0(), monthBoundaries.getValue1());
         document.sendByResponse(response);
+    }
+
+    @GetMapping("document-template")
+    public void getConnectionAgreement(@RequestParam Long taskId, @RequestParam Long documentTemplateId, HttpServletResponse response) {
+        taskDispatcher.getDocumentTemplate(taskId, documentTemplateId, response);
+    }
+
+    @GetMapping("ot/classes")
+    public ResponseEntity<List<TaskClassOT>> getTaskClassesOT() {
+        return ResponseEntity.ok(oldTrackerService.getTaskClasses());
     }
 
     private Employee getEmployeeFromRequest(HttpServletRequest request) {

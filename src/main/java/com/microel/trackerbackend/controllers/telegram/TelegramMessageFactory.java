@@ -131,7 +131,7 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> currentActiveTask(Task task) {
-        List<ModelItem> fields = task.getFields().stream().filter(ModelItem::nonEmpty).toList();
+        List<ModelItem> fields = task.getFields().stream().filter(ModelItem::nonEmpty).filter(ModelItem::isDisplayToTelegram).toList();
 
         KeyboardRow keyboardRowMenu = new KeyboardRow(List.of(new KeyboardButton("ℹ️ Меню задачи")));
         KeyboardRow keyboardRowClose = new KeyboardRow(List.of(new KeyboardButton("\uD83D\uDC4C Завершить задачу")));
@@ -151,7 +151,7 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> currentActiveTaskForGroupChat(Task task) {
-        List<ModelItem> fields = task.getFields().stream().filter(ModelItem::nonEmpty).toList();
+        List<ModelItem> fields = task.getFields().stream().filter(ModelItem::nonEmpty).filter(ModelItem::isDisplayToTelegram).toList();
         ReplyKeyboardRemove clearKeyboardMarkup = ReplyKeyboardRemove.builder().removeKeyboard(true).build();
 
         StringBuilder messageBuilder = new StringBuilder();

@@ -4,6 +4,9 @@ import com.microel.trackerbackend.misc.BypassWorkCalculationForm;
 import com.microel.trackerbackend.misc.WireframeTaskCounter;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
+import com.microel.trackerbackend.services.external.oldtracker.OldTrackerRequestFactory;
+import com.microel.trackerbackend.services.external.oldtracker.OldTrackerService;
+import com.microel.trackerbackend.services.external.oldtracker.task.TaskClassOT;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.mapper.WorkLogMapper;
 import com.microel.trackerbackend.storage.dto.task.WorkLogDto;
@@ -16,6 +19,7 @@ import com.microel.trackerbackend.storage.entities.task.WorkReport;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
+import com.microel.trackerbackend.storage.entities.templating.TaskStage;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.AlreadyClosed;
@@ -48,9 +52,10 @@ public class WorkLogDispatcher {
     private final StompController stompController;
     private final NotificationDispatcher notificationDispatcher;
     private final WorkReportRepository workReportRepository;
+    private final OldTrackerService oldTrackerService;
 
     public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher, TaskEventDispatcher taskEventDispatcher, @Lazy TaskDispatcher taskDispatcher, StompController stompController, @Lazy NotificationDispatcher notificationDispatcher,
-                             WorkReportRepository workReportRepository) {
+                             WorkReportRepository workReportRepository, OldTrackerService oldTrackerService) {
         this.workLogRepository = workLogRepository;
         this.employeeDispatcher = employeeDispatcher;
         this.taskEventDispatcher = taskEventDispatcher;
@@ -58,6 +63,7 @@ public class WorkLogDispatcher {
         this.stompController = stompController;
         this.notificationDispatcher = notificationDispatcher;
         this.workReportRepository = workReportRepository;
+        this.oldTrackerService = oldTrackerService;
     }
 
     @Transactional
@@ -315,8 +321,8 @@ public class WorkLogDispatcher {
         if (isHasUnclosedWorkLogs(workLogs, employee))
             throw new IllegalFields("Чтобы принять задачу, нужно завершить текущую активную");
         if(workLog.getGangLeader() != null){
-            if(Objects.equals(employee.getLogin(), workLog.getGangLeader())){
-                throw new IllegalFields("Вы не являетесь лидером бригадиром по данной задаче");
+            if(!Objects.equals(employee.getLogin(), workLog.getGangLeader())){
+                throw new IllegalFields("Вы не являетесь бригадиром по данной задаче");
             }
             if(!workLog.getEmployees().stream().map(Employee::getLogin).toList().contains(workLog.getGangLeader())){
                 throw new IllegalFields("Бригадира нет среди монтажников по данной задаче");
@@ -398,6 +404,7 @@ public class WorkLogDispatcher {
             Task task = workLog.getTask();
             task.setTaskStatus(TaskStatus.CLOSE);
             task.setUpdated(timestamp);
+
             workLog.getChat().setClosed(timestamp);
             stompController.updateTask(workLog.getTask());
 
@@ -422,6 +429,19 @@ public class WorkLogDispatcher {
             stompController.closeWorkLog(workLog);
             stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
             notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.worksCompleted(workLog));
+
+            Employee assignator = workLog.getCreator();
+            if(assignator.isHasOldTrackerCredentials()){
+                TaskStage taskStage = task.getCurrentStage();
+                if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
+                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(assignator.getOldTrackerCredentials().getUsername(), assignator.getOldTrackerCredentials().getPassword());
+                    TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                    List<OldTrackerRequestFactory.FieldData> dataList = taskClassOT.getStandardFieldsOnReport().get(workLog.getWorkReports().toArray(WorkReport[]::new));
+                    requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getAutoCloseStageId(), dataList).execute();
+                    requestFactory.close().execute();
+                    task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getAutoCloseStageId());
+                }
+            }
         }
         return workLogRepository.save(workLog);
     }

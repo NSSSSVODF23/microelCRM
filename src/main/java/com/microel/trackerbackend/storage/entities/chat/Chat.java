@@ -9,6 +9,7 @@ import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import java.sql.Timestamp;
+import java.util.Objects;
 import java.util.Set;
 
 @Getter
@@ -54,5 +55,17 @@ public class Chat {
     public static class UnreadCounter {
         private Long chatId;
         private Long count;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Chat chat)) return false;
+        return Objects.equals(getChatId(), chat.getChatId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getChatId());
     }
 }

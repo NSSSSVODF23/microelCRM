@@ -4,7 +4,9 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.storage.dto.address.AddressDto;
 import com.microel.trackerbackend.storage.entities.equipment.ClientEquipmentRealization;
 import com.microel.trackerbackend.storage.entities.templating.DataConnectionService;
+import com.microel.trackerbackend.storage.entities.templating.PassportDetails;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
+import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import lombok.*;
 
 import java.sql.Timestamp;
@@ -23,6 +25,7 @@ public class ModelItemDto {
     private String name;
     private WireframeFieldType wireframeFieldType;
     private String variation;
+    private FieldItem.DisplayType displayType;
     private AddressDto addressData;
     private Boolean booleanData;
     private Float floatData;
@@ -32,6 +35,7 @@ public class ModelItemDto {
     private Map<String, String> phoneData;
     private List<DataConnectionService> connectionServicesData;
     private List<ClientEquipmentRealization> equipmentRealizationsData;
+    private PassportDetails passportDetailsData;
     private String textRepresentation;
     private String textRepresentationForTlg;
 
@@ -48,6 +52,7 @@ public class ModelItemDto {
             case PHONE_ARRAY -> phoneData;
             case CONNECTION_SERVICES -> connectionServicesData;
             case EQUIPMENTS -> equipmentRealizationsData;
+            case PASSPORT_DETAILS -> passportDetailsData;
         };
     }
 }

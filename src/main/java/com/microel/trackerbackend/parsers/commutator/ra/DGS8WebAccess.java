@@ -142,6 +142,11 @@ public class DGS8WebAccess extends CommutatorCredentials implements AbstractRemo
 
     @Override
     public void close() {
-
+        try {
+            Jsoup.connect("http://" + getIp() + "/cgi/logout.cgi")
+                    .cookies(sessionCookie).method(Connection.Method.POST).ignoreContentType(true).execute();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

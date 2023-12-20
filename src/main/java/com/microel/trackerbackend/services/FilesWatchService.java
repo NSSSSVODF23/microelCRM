@@ -100,7 +100,7 @@ public class FilesWatchService {
     }
 
     @Transactional
-    public void moveFiles(Set<Long> movingFiles, @Nullable Long targetDirectory){ //FIXME Защита от копирования в себя
+    public void moveFiles(Set<Long> movingFiles, @Nullable Long targetDirectory){
 
         Set<Long> directoriesUpdated = new HashSet<>();
         directoriesUpdated.add(targetDirectory != null ? targetDirectory : 0L);
@@ -302,7 +302,6 @@ public class FilesWatchService {
                 sendUpdateDirectorySignal(tFile.getParent());
             }
         }
-        System.out.println("Синхронизация директории " + path + " завершена"); // TODO Убрать принт
     }
 
     @Transactional

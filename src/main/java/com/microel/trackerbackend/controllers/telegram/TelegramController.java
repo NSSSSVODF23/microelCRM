@@ -68,6 +68,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.lang.Thread.sleep;
+import static java.util.Comparator.comparingInt;
 
 @Slf4j
 @Component
@@ -326,7 +327,7 @@ public class TelegramController {
                         .map(AcceptingEntry::getLogin)
                         .filter(login -> !Objects.equals(login, employee.getLogin()))
                         .anyMatch(employeesWithEqualGroups::contains);
-                if(!alreadySentTaskInfoToGroup) {
+                if(!alreadySentTaskInfoToGroup || workLog.getGangLeader() != null) {
                     TelegramMessageFactory groupChatFactory = TelegramMessageFactory.create(employee.getTelegramGroupChatId(), mainBot);
                     groupChatFactory.currentActiveTaskForGroupChat(workLog.getTask()).execute();
                 }
@@ -338,6 +339,7 @@ public class TelegramController {
 
         mainBot.subscribe(new TelegramCallbackReactor("send_report", (update, data) -> {
             Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            String callbackId = update.getCallbackQuery().getId();
             try{
                 Employee employee = getEmployeeByChat(chatId);
 
@@ -346,12 +348,10 @@ public class TelegramController {
 
                 if (operatingModes.get(employee) == null) {
                     factory.deleteMessage(messageId).execute();
-                    factory.simpleMessage("\uD83D\uDEAB Вы не можете отправить отчет, нужно быть в режиме закрытия задачи.")
-                            .execute();
+                    factory.answerCallback(callbackId, "Вы не можете отправить отчет, нужно быть в режиме закрытия задачи.").execute();
                     return true;
                 } else if (reportMessages.get(employee).isEmpty()) {
-                    factory.simpleMessage("Перед закрытием нужно отправить сообщение (или несколько), с отчетом. Отчет о выполненных работах не может быть пуст.")
-                            .execute();
+                    factory.answerCallback(callbackId, "Перед закрытием нужно отправить сообщение (или несколько), с отчетом. Отчет о выполненных работах не может быть пуст.").execute();
                     return false;
                 }
                 try {
@@ -463,7 +463,8 @@ public class TelegramController {
                     messageFactory.simpleMessage(calculateCountingLives).execute();
                     operatingModes.remove(employee);
                 }catch (Exception e){
-                    messageFactory.simpleMessage("Не удалось преобразовать адрес из callback").execute();
+                    messageFactory.answerCallback(callbackId, null).execute();
+                    messageFactory.simpleMessage("Ошибка: "+e.getMessage()).execute();
                     return false;
                 }
                 return true;
@@ -502,7 +503,8 @@ public class TelegramController {
                     messageFactory.sessionPage(lastBindings, buildingId).execute();
                     operatingModes.remove(employee);
                 }catch (Exception e){
-                    messageFactory.simpleMessage("Не удалось преобразовать адрес из callback").execute();
+                    messageFactory.answerCallback(callbackId, null).execute();
+                    messageFactory.simpleMessage("Ошибка: "+e.getMessage()).execute();
                     return false;
                 }
                 return true;
@@ -535,7 +537,8 @@ public class TelegramController {
                     messageFactory.sessionCommutatorPage(lastBindings, data.getInt()).execute();
                     operatingModes.remove(employee);
                 }catch (Exception e){
-                    messageFactory.simpleMessage("Не удалось преобразовать адрес из callback").execute();
+                    messageFactory.answerCallback(callbackId, null).execute();
+                    messageFactory.simpleMessage("Ошибка: "+e.getMessage()).execute();
                     return false;
                 }
                 return true;
@@ -568,7 +571,8 @@ public class TelegramController {
                     messageFactory.commutatorSessions(commutators).execute();
                     operatingModes.remove(employee);
                 }catch (Exception e){
-                    messageFactory.simpleMessage("Не удалось преобразовать адрес из callback").execute();
+                    messageFactory.answerCallback(callbackId, null).execute();
+                    messageFactory.simpleMessage("Ошибка: "+e.getMessage()).execute();
                     return false;
                 }
                 return true;
@@ -989,7 +993,7 @@ public class TelegramController {
     public Attachment getAttachmentFromMessage(Message message) {
         try {
             if (message.hasPhoto()) {
-                PhotoSize bigPhoto = message.getPhoto().stream().max(Comparator.comparingInt(a -> (a.getWidth() + a.getHeight()))).orElse(null);
+                PhotoSize bigPhoto = message.getPhoto().stream().max(comparingInt(a -> (a.getWidth() + a.getHeight()))).orElse(null);
                 if (bigPhoto != null) {
                     byte[] fileBytes = downloadFile(bigPhoto.getFileId());
                     return attachmentDispatcher.saveAttachment(FileData.of(bigPhoto.getFileUniqueId() + ".jpg", "image/jpeg", fileBytes));

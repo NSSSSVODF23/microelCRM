@@ -7,14 +7,13 @@ import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.equipment.ClientEquipmentRealization;
 import com.microel.trackerbackend.storage.entities.task.Task;
-import com.microel.trackerbackend.storage.entities.templating.AdvertisingSource;
-import com.microel.trackerbackend.storage.entities.templating.ConnectionType;
-import com.microel.trackerbackend.storage.entities.templating.DataConnectionService;
-import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
+import com.microel.trackerbackend.storage.entities.templating.*;
+import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
+import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import java.sql.Timestamp;
@@ -46,6 +45,9 @@ public class ModelItem {
     @Enumerated(EnumType.STRING)
     private WireframeFieldType wireframeFieldType;
     private String variation;
+    @Enumerated(EnumType.STRING)
+    @Nullable
+    private FieldItem.DisplayType displayType;
     @ManyToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @JoinColumn(name = "f_address_id")
     private Address addressData;
@@ -66,6 +68,9 @@ public class ModelItem {
     @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @BatchSize(size = 25)
     private List<ClientEquipmentRealization> equipmentRealizationsData;
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    @JoinColumn(name = "f_passport_details_id")
+    private PassportDetails passportDetailsData;
 
     @Override
     public boolean equals(Object o) {
@@ -102,6 +107,7 @@ public class ModelItem {
             case CONNECTION_SERVICES -> connectionServicesData;
             case PHONE_ARRAY -> phoneData;
             case EQUIPMENTS -> equipmentRealizationsData;
+            case PASSPORT_DETAILS -> passportDetailsData;
         };
     }
     // todo Для добавления типа поля, нужно добавить сюда5
@@ -115,6 +121,7 @@ public class ModelItem {
             case CONNECTION_SERVICES -> connectionServicesData = (List<DataConnectionService>) value;
             case PHONE_ARRAY -> phoneData = (Map<String, String>) value;
             case EQUIPMENTS -> equipmentRealizationsData = (List<ClientEquipmentRealization>) value;
+            case PASSPORT_DETAILS -> passportDetailsData = (PassportDetails) value;
             default -> {
             }
         }
@@ -181,6 +188,8 @@ public class ModelItem {
                 return connectionServicesData == null || connectionServicesData.isEmpty() ? "-" : connectionServicesData.stream().map(val->val.getConnectionService().getLabel()).collect(Collectors.joining(", "));
             case EQUIPMENTS:
                 return equipmentRealizationsData == null || equipmentRealizationsData.isEmpty() ? "-" : equipmentRealizationsData.stream().map(val->val.getEquipment().getName()+" "+val.getCount()+" шт.").collect(Collectors.joining(", "));
+            case PASSPORT_DETAILS:
+                return passportDetailsData == null ? "-" : passportDetailsData.toString();
             default:
                 return null;
         }
@@ -249,12 +258,21 @@ public class ModelItem {
                 return connectionServicesData == null || connectionServicesData.isEmpty() ? "-" : connectionServicesData.stream().map(val->val.getConnectionService().getLabel()).collect(Collectors.joining(", "));
             case EQUIPMENTS:
                 return equipmentRealizationsData == null || equipmentRealizationsData.isEmpty() ? "-" : equipmentRealizationsData.stream().map(val->val.getEquipment().getName() + " " + val.getCount() + " шт.").collect(Collectors.joining(", "));
+            case PASSPORT_DETAILS:
+                return passportDetailsData == null ? "-" : passportDetailsData.toString();
             default:
                 return null;
         }
     }
 
+    @JsonIgnore
     public boolean nonEmpty() {
         return !(getTextRepresentation() == null || getTextRepresentation().equals("-") || getTextRepresentation().isBlank());
+    }
+
+    @JsonIgnore
+    public boolean isDisplayToTelegram(){
+        if(displayType == null) return true;
+        return displayType.equals(FieldItem.DisplayType.TELEGRAM_ONLY) || displayType.equals(FieldItem.DisplayType.LIST_AND_TELEGRAM);
     }
 }

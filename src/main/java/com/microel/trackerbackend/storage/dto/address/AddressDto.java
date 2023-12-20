@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.dto.address;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
@@ -14,6 +15,7 @@ import java.util.Map;
 @NoArgsConstructor
 @Builder
 @ToString
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AddressDto {
     private Long addressId;
     private CityDto city;
