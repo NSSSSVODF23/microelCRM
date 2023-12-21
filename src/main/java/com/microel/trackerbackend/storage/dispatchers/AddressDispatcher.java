@@ -99,6 +99,7 @@ public class AddressDispatcher {
     }
 
     public Address findIdentical(Address addressData) {
+        if(addressData == null) return new Address();
         // Пробуем найти в базе данных адрес с такими же данными как у addressData кроме id
         try {
             return addressRepository.findAll((root, query, cb) -> {

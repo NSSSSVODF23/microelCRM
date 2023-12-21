@@ -250,7 +250,7 @@ public class Task {
             if (modelItem == null) continue;
             switch (modelItem.getWireframeFieldType()) {
                 case ADDRESS:
-                    if (!(dataBind instanceof AddressFieldDataBind addressDataBind))
+                    if (!(dataBind instanceof AddressFieldDataBind addressDataBind) || modelItem.getAddressData() == null || modelItem.getAddressData().getStreet() == null || modelItem.getAddressData().getHouseNum() == null)
                         break;
                     StreetFieldOT streetDropdownField = (StreetFieldOT) taskClassOT.getFieldById(addressDataBind.getStreetFieldId());
                     Long internalStreetId = modelItem.getAddressData().getStreet().getStreetId();
@@ -279,15 +279,15 @@ public class Task {
                         break;
                     if (adSourceDataBind.getAdSourceFieldId() != null) {
                         try {
-                            AdvertisingSource advertisingSource = AdvertisingSource.valueOf(modelItem.getStringData());
-                            result.add(new OldTrackerRequestFactory.FieldData(adSourceDataBind.getAdSourceFieldId(), TaskFieldOT.Type.AD_SOURCE, Utils.stringConvertor(advertisingSource.ordinal()).orElse("1")));
+                            AdvertisingSource advertisingSource = modelItem.getStringData() == null ? null : AdvertisingSource.valueOf(modelItem.getStringData());
+                            result.add(new OldTrackerRequestFactory.FieldData(adSourceDataBind.getAdSourceFieldId(), TaskFieldOT.Type.AD_SOURCE, Utils.stringConvertor(advertisingSource == null ? null : advertisingSource.ordinal()).orElse("1")));
                         } catch (IllegalArgumentException e) {
                             break;
                         }
                     }
                     break;
                 case CONNECTION_TYPE:
-                    if (!(dataBind instanceof ConnectionTypeFieldDataBind connectionTypeFieldDataBind))
+                    if (!(dataBind instanceof ConnectionTypeFieldDataBind connectionTypeFieldDataBind) || modelItem.getStringData() == null)
                         break;
                     ModelItem conServField = fields.stream().filter(mi -> Objects.equals(mi.getId(), connectionTypeFieldDataBind.getConnectionServicesInnerFieldId())).findFirst().orElse(null);
                     if (conServField == null) break;
@@ -320,7 +320,7 @@ public class Task {
                         break;
                     }
                 case PASSPORT_DETAILS:
-                    if (!(dataBind instanceof PassportDetailsFieldDataBind passportDetailsFieldDataBind))
+                    if (!(dataBind instanceof PassportDetailsFieldDataBind passportDetailsFieldDataBind) || modelItem.getPassportDetailsData() == null)
                         break;
                     if (passportDetailsFieldDataBind.getPassportSeriesFieldId() != null)
                         result.add(
@@ -358,6 +358,7 @@ public class Task {
                     if (dataBind instanceof TextFieldDataBind textFieldDataBind) {
                         result.add(new OldTrackerRequestFactory.FieldData(textFieldDataBind.getTextFieldId(), TaskFieldOT.Type.TEXT, Utils.stringConvertor(modelItem.getTextRepresentation()).orElse("-")));
                     } else if (dataBind instanceof FullNameFieldDataBind fullNameFieldDataBind) {
+                        if(modelItem.getStringData() == null) break;
                         List<String> split = List.of(modelItem.getStringData().split(" "));
 
                         String lastName = null;
@@ -390,14 +391,14 @@ public class Task {
                     }
                     break;
             }
-            if (addressBackup != null) {
-                Integer fieldId = addressBackup.getValue0();
-                String houseName = addressBackup.getValue1();
-                result.forEach(fieldData -> {
-                    if (Objects.equals(fieldData.getId(), fieldId))
-                        fieldData.setData(fieldData.getData() + " - " + houseName);
-                });
-            }
+        }
+        if (addressBackup != null) {
+            Integer fieldId = addressBackup.getValue0();
+            String houseName = addressBackup.getValue1();
+            result.forEach(fieldData -> {
+                if (Objects.equals(fieldData.getId(), fieldId))
+                    fieldData.setData(fieldData.getData() + " - " + houseName);
+            });
         }
         return result;
     }

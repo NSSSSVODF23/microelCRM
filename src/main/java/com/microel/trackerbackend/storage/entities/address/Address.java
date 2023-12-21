@@ -103,6 +103,7 @@ public class Address implements Comparable<Address> {
     }
 
     public String getBillingAddress(Boolean withFraction){
+        if(getStreet() == null) return "";
         String billingStreetName = getStreet().getBillingAlias();
         if(billingStreetName == null) billingStreetName = getStreet().getName();
         StringBuilder billingAddress = new StringBuilder(billingStreetName);

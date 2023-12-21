@@ -40,8 +40,8 @@ public class AddressDto {
     public String getTelegramCallback() throws JsonProcessingException {
         ObjectMapper mapper = new ObjectMapper();
         Map<String, String> strMap = new HashMap<>();
-        strMap.put("streetBillingAlias", street.getBillingAlias());
-        strMap.put("streetName", street.getName());
+        if(street != null) strMap.put("streetBillingAlias", street.getBillingAlias());
+        if(street != null) strMap.put("streetName", street.getName());
         if(houseNum != null) strMap.put("houseNum", houseNum.toString());
         if(fraction != null) strMap.put("fraction", fraction.toString());
         if(letter != null) strMap.put("letter", letter.toString());
