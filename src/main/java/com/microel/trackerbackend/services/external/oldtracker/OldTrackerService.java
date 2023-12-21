@@ -421,7 +421,7 @@ public class OldTrackerService {
 //        connectionPSRomaTaskFields.add(new CurrentDateTimeFieldOT(1883, "Отдано в работу"));
 //        connectionPSRomaTaskFields.add(new TextFieldOT(1884, "Кому отдано"));
 
-        TaskClassOT connectionPSRomaTaskClass = new TaskClassOT(121, "ЧС Романовская", connectionPSRomaTaskStages, connectionPSRomaTaskFields, ArrayList::new, employees -> {
+        TaskClassOT connectionPSRomaTaskClass = new TaskClassOT(121, "ЧС Романовская (Микроэл)", connectionPSRomaTaskStages, connectionPSRomaTaskFields, ArrayList::new, employees -> {
             List<OldTrackerRequestFactory.FieldData> dataList = new ArrayList<>();
             String employeesNames = Stream.of(employees).map(Employee::getFullName).collect(Collectors.joining(", "));
             dataList.add(new OldTrackerRequestFactory.FieldData(1884, TaskFieldOT.Type.TEXT, employeesNames));

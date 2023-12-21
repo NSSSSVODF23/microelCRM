@@ -1253,7 +1253,7 @@ public class TaskDispatcher {
         if(foundedDocumentTemplate instanceof ConnectionAgreementTemplate connectionAgreementTemplate){
             AtomicReference<String> loginData = new AtomicReference<>();
             AtomicReference<String> fullNameData = new AtomicReference<>();
-            AtomicReference<Timestamp> dateOfBirthData = new AtomicReference<>();
+            AtomicReference<String> dateOfBirthData = new AtomicReference<>();
             AtomicReference<String> regionOfBirthData = new AtomicReference<>();
             AtomicReference<String> cityOfBirthData = new AtomicReference<>();
             AtomicReference<PassportDetails> passportDetailsData = new AtomicReference<>();
@@ -1270,9 +1270,9 @@ public class TaskDispatcher {
                     fullNameData.set(modelItem.getTextRepresentation());
                 });
                 // TODO Добавить поле даты
-//                task.getFieldByIdAndType(connectionAgreementTemplate.getDateOfBirthFieldId(), WireframeFieldType.SMALL_TEXT).ifPresent(modelItem -> {
-//                    dateOfBirthData = modelItem.getTextRepresentation();
-//                });
+                task.getFieldByIdAndType(connectionAgreementTemplate.getDateOfBirthFieldId(), WireframeFieldType.SMALL_TEXT).ifPresent(modelItem -> {
+                    dateOfBirthData.set(modelItem.getTextRepresentation());
+                });
                 task.getFieldByIdAndType(connectionAgreementTemplate.getRegionOfBirthFieldId(), WireframeFieldType.SMALL_TEXT).ifPresent(modelItem -> {
                     regionOfBirthData.set(modelItem.getTextRepresentation());
                 });

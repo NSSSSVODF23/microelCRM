@@ -25,6 +25,7 @@ import org.xhtmlrenderer.pdf.ITextRenderer;
 import java.io.*;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
@@ -186,19 +187,17 @@ public class TDocumentFactory {
         return new MonthlySalaryReportTable("Otchet po montajnikam "+fileNameFormatter.format(startDate)+" - "+fileNameFormatter.format(endDate)+".xlsx", DocumentMimeType.XLSX.value, b);
     }
 
-    public static ConnectionAgreement createConnectionAgreement(@Nullable String login, @Nullable String fullName, @Nullable Timestamp dateOfBirth,
+    public static ConnectionAgreement createConnectionAgreement(@Nullable String login, @Nullable String fullName, @Nullable String dateOfBirth,
                                                                 @Nullable String regionOfBirth, @Nullable String cityOfBirth,
                                                                 @Nullable PassportDetails passportDetails, @Nullable Address address,
                                                                 @Nullable String phone, @Nullable String password, @Nullable String tariff) {
         try {
-            URL template = TDocumentFactory.class.getResource("/ConnectionAgreementTemplate.html");
-            if(template == null) throw new ResponseException("Ресурс шаблона документа не найден");
-            URL font = TDocumentFactory.class.getResource("/Arial.ttf");
-            if(font == null) throw new ResponseException("Ресурс шрифта документа не найден");
-            Document document = Jsoup.parse(new File(template.toURI()), "UTF-8");
+            InputStream streamTemplate = TDocumentFactory.class.getResourceAsStream("/ConnectionAgreementTemplate.html");
+            if(streamTemplate == null) throw new ResponseException("Ресурс шаблона документа не найден");
+            Path font = Path.of("./Arial.ttf");
+            if(!font.toFile().exists()) throw new ResponseException("Ресурс шрифта документа не найден");
+            Document document = Jsoup.parse(streamTemplate, "UTF-8", "");
             document.outputSettings().syntax(Document.OutputSettings.Syntax.xml);
-
-            SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy");
 
             String lastName = "";
             String firstName = "";
@@ -270,16 +269,13 @@ public class TDocumentFactory {
             sharedContext.setPrint(true);
             sharedContext.setInteractive(false);
 
-            renderer.getFontResolver().addFont(new File(font.toURI()).getAbsolutePath(), BaseFont.IDENTITY_H, true);
+            renderer.getFontResolver().addFont(Path.of("./Arial.ttf").toString(), BaseFont.IDENTITY_H, true);
             renderer.setDocumentFromString(document.html());
 
             renderer.layout();
             renderer.createPDF(ms);
             byte b[] = ms.toByteArray();
             return new ConnectionAgreement("Dogovor na podkluchenie.pdf", DocumentMimeType.PDF.value, b);
-
-        } catch (URISyntaxException e) {
-            throw new ResponseException("Не удалось получить ресурс шаблона документа");
         } catch (IOException e) {
             throw new ResponseException("Не удалось прочитать шаблон документа");
         }

@@ -56,43 +56,43 @@ public class CommutatorsAvailabilityCheckService {
     @Async
     @Transactional
     @Scheduled(fixedDelay = 40000L, initialDelay = 10000L)
-    public void getAllCommutators() { // TODO Заглушил пинг
-//        ExecutorService executorService = Executors.newFixedThreadPool(3);
-//        for (Switch comm : cachedCommutators) {
-//            executorService.execute(() -> {
-//                try {
-//                    Thread.currentThread().setName("AVAILABILITY CHECK");
-//                    AcpCommutator updatedCommutator = null;
-//                    try {
-//                        boolean isReach = false;
-//                        for (int i = 0; i < 5; i++) {
-//                            boolean reachable = InetAddress.getByName(comm.getIpaddr()).isReachable(500);
-//                            if (reachable) {
-//                                updatedCommutator = this.acpCommutatorDispatcher.updateStatus(comm.getId(), true);
-//                                isReach = true;
-//                                break;
-//                            }
-//                        }
-//                        if (!isReach) {
-//                            updatedCommutator = this.acpCommutatorDispatcher.updateStatus(comm.getId(), false);
-//                        }
-//                    } catch (IOException e) {
-//                        updatedCommutator = this.acpCommutatorDispatcher.updateStatus(comm.getId(), false);
-//                    }
-//                    if (updatedCommutator != null) {
-//                        comm.setAdditionalInfo(updatedCommutator); // TODO Придумать систему обновления коммутаторов в Фронте
-////                        stompController.updateAcpCommutator(updatedCommutator);
-////                        stompController.updateBaseCommutator(SwitchBaseInfo.from(comm, cachedModels.get(comm.getSwmodelId().intValue())));
-//                    }
-//                }catch (Exception e){
-//                    System.out.println("Ошибка в потоке обновления статуса: " + e.getMessage());
-//                }
-//            });
-//        }
-//        executorService.shutdown();
-//        try {
-//            executorService.awaitTermination(10, TimeUnit.SECONDS);
-//        } catch (InterruptedException ignore) {
-//        }
+    public void getAllCommutators() {
+        ExecutorService executorService = Executors.newFixedThreadPool(3);
+        for (Switch comm : cachedCommutators) {
+            executorService.execute(() -> {
+                try {
+                    Thread.currentThread().setName("AVAILABILITY CHECK");
+                    AcpCommutator updatedCommutator = null;
+                    try {
+                        boolean isReach = false;
+                        for (int i = 0; i < 5; i++) {
+                            boolean reachable = InetAddress.getByName(comm.getIpaddr()).isReachable(500);
+                            if (reachable) {
+                                updatedCommutator = this.acpCommutatorDispatcher.updateStatus(comm.getId(), true);
+                                isReach = true;
+                                break;
+                            }
+                        }
+                        if (!isReach) {
+                            updatedCommutator = this.acpCommutatorDispatcher.updateStatus(comm.getId(), false);
+                        }
+                    } catch (IOException e) {
+                        updatedCommutator = this.acpCommutatorDispatcher.updateStatus(comm.getId(), false);
+                    }
+                    if (updatedCommutator != null) {
+                        comm.setAdditionalInfo(updatedCommutator); // TODO Придумать систему обновления коммутаторов в Фронте
+//                        stompController.updateAcpCommutator(updatedCommutator);
+//                        stompController.updateBaseCommutator(SwitchBaseInfo.from(comm, cachedModels.get(comm.getSwmodelId().intValue())));
+                    }
+                }catch (Exception e){
+                    System.out.println("Ошибка в потоке обновления статуса: " + e.getMessage());
+                }
+            });
+        }
+        executorService.shutdown();
+        try {
+            executorService.awaitTermination(10, TimeUnit.SECONDS);
+        } catch (InterruptedException ignore) {
+        }
     }
 }
