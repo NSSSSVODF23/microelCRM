@@ -74,13 +74,14 @@ public class TaskDispatcher {
     private final NotificationDispatcher notificationDispatcher;
     private final StompController stompController;
     private final OldTrackerService oldTrackerService;
+    private final AddressDispatcher addressDispatcher;
 
     public TaskDispatcher(TaskRepository taskRepository, ModelItemDispatcher modelItemDispatcher,
                           WireframeDispatcher wireframeDispatcher, CommentDispatcher commentDispatcher,
                           TaskStageRepository taskStageRepository, DepartmentDispatcher departmentDispatcher,
                           EmployeeDispatcher employeeDispatcher, WorkLogDispatcher workLogDispatcher,
                           TaskTagDispatcher taskTagDispatcher, AddressDispatcher addressDispatcher,
-                          @Lazy NotificationDispatcher notificationDispatcher, StompController stompController, OldTrackerService oldTrackerService) {
+                          @Lazy NotificationDispatcher notificationDispatcher, StompController stompController, OldTrackerService oldTrackerService, AddressDispatcher addressDispatcher1) {
         this.taskRepository = taskRepository;
         this.modelItemDispatcher = modelItemDispatcher;
         this.wireframeDispatcher = wireframeDispatcher;
@@ -93,6 +94,7 @@ public class TaskDispatcher {
         this.notificationDispatcher = notificationDispatcher;
         this.stompController = stompController;
         this.oldTrackerService = oldTrackerService;
+        this.addressDispatcher = addressDispatcher1;
     }
 
     @Async
@@ -287,6 +289,7 @@ public class TaskDispatcher {
             if (commonFilteringString != null && !commonFilteringString.isBlank()) {
                 CriteriaBuilder.In<Long> inCauseTaskId = cb.in(root.get("taskId"));
                 modelItemDispatcher.getTaskIdsByGlobalSearch(commonFilteringString).forEach(inCauseTaskId::value);
+                modelItemDispatcher.getTaskIdsByAddresses(addressDispatcher.getAddressInDBByQuery(commonFilteringString)).forEach(inCauseTaskId::value);
                 commentDispatcher.getTaskIdsByGlobalSearch(commonFilteringString).forEach(inCauseTaskId::value);
                 predicates.add(inCauseTaskId);
             }
@@ -315,6 +318,45 @@ public class TaskDispatcher {
             query.distinct(true);
             return cb.and(predicates.toArray(Predicate[]::new));
         }, PageRequest.of(page, limit, Sort.by(Sort.Direction.DESC, "created")));
+    }
+
+    public Page<Task> getIncomingTasks(Integer page, @Nullable FiltrationConditions conditions, Employee employee) {
+        return taskRepository.findAll((root, query, cb) -> {
+            ArrayList<Predicate> predicates = new ArrayList<>();
+            if(conditions != null) {
+                if (conditions.searchPhrase != null && !conditions.searchPhrase.isBlank()) {
+                    CriteriaBuilder.In<Long> inCauseTaskId = cb.in(root.get("taskId"));
+                    modelItemDispatcher.getTaskIdsByGlobalSearch(conditions.searchPhrase).forEach(inCauseTaskId::value);
+                    modelItemDispatcher.getTaskIdsByAddresses(addressDispatcher.getAddressInDBByQuery(conditions.searchPhrase)).forEach(inCauseTaskId::value);
+                    commentDispatcher.getTaskIdsByGlobalSearch(conditions.searchPhrase).forEach(inCauseTaskId::value);
+                    predicates.add(inCauseTaskId);
+                }
+                if (conditions.template != null && !conditions.template.isEmpty()) {
+                    Join<Object, Object> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
+                    CriteriaBuilder.In<Object> inModelWireframe = cb.in(joinWfrm.get("wireframeId"));
+                    conditions.template.forEach(inModelWireframe::value);
+                    predicates.add(inModelWireframe);
+                }
+                if (conditions.stage != null && (conditions.template != null && conditions.template.size() == 1)) {
+                    Join<Task, TaskStage> joinStage = root.join("currentStage", JoinType.LEFT);
+                    predicates.add(cb.equal(joinStage.get("stageId"), conditions.stage));
+                }
+                if (conditions.tags != null && !conditions.tags.isEmpty()) {
+                    Join<Task, TaskTag> joinTag = root.join("tags", JoinType.LEFT);
+                    predicates.add(joinTag.get("taskTagId").in(conditions.tags));
+                }
+            }
+            Join<Object, Object> joinDep = root.join("departmentsObservers", JoinType.LEFT);
+            Join<Object, Object> joinEmp = root.join("employeesObservers", JoinType.LEFT);
+
+            predicates.add(cb.or(joinEmp.in(employee), joinDep.join("employees", JoinType.LEFT).in(employee)));
+
+            predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
+            predicates.add(cb.equal(root.get("deleted"), false));
+            query.distinct(true);
+
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }, PageRequest.of(page, (conditions == null || conditions.limit == null) ? 15 : conditions.limit, Sort.by(Sort.Order.desc("updated").nullsLast())));
     }
 
     public Task getTask(Long id) throws EntryNotFound {
@@ -834,38 +876,6 @@ public class TaskDispatcher {
         }
         task.setUpdated(Timestamp.from(Instant.now()));
         return taskRepository.save(task);
-    }
-
-    public Page<Task> getIncomingTasks(Integer page, @Nullable FiltrationConditions conditions, Employee employee) {
-        return taskRepository.findAll((root, query, cb) -> {
-            ArrayList<Predicate> predicates = new ArrayList<>();
-            if(conditions != null) {
-                if (conditions.template != null && !conditions.template.isEmpty()) {
-                    Join<Object, Object> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
-                    CriteriaBuilder.In<Object> inModelWireframe = cb.in(joinWfrm.get("wireframeId"));
-                    conditions.template.forEach(inModelWireframe::value);
-                    predicates.add(inModelWireframe);
-                }
-                if (conditions.stage != null && (conditions.template != null && conditions.template.size() == 1)) {
-                    Join<Task, TaskStage> joinStage = root.join("currentStage", JoinType.LEFT);
-                    predicates.add(cb.equal(joinStage.get("stageId"), conditions.stage));
-                }
-                if (conditions.tags != null && !conditions.tags.isEmpty()) {
-                    Join<Task, TaskTag> joinTag = root.join("tags", JoinType.LEFT);
-                    predicates.add(joinTag.get("taskTagId").in(conditions.tags));
-                }
-            }
-            Join<Object, Object> joinDep = root.join("departmentsObservers", JoinType.LEFT);
-            Join<Object, Object> joinEmp = root.join("employeesObservers", JoinType.LEFT);
-
-            predicates.add(cb.or(joinEmp.in(employee), joinDep.join("employees", JoinType.LEFT).in(employee)));
-
-            predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
-            predicates.add(cb.equal(root.get("deleted"), false));
-            query.distinct(true);
-
-            return cb.and(predicates.toArray(Predicate[]::new));
-        }, PageRequest.of(page, (conditions == null || conditions.limit == null) ? 15 : conditions.limit, Sort.by(Sort.Order.desc("updated").nullsLast())));
     }
 
     public Long getIncomingTasksCount(Employee employee) {

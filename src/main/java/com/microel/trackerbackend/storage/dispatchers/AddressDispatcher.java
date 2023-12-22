@@ -28,6 +28,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Component
+@Transactional(readOnly = true)
 public class AddressDispatcher {
     private final AddressRepository addressRepository;
     private final CityDispatcher cityDispatcher;
@@ -98,6 +99,37 @@ public class AddressDispatcher {
         return founded.stream().map(Address::getAddressId).collect(Collectors.toList());
     }
 
+    public List<Address> getAddressInDBByQuery(String stringQuery){
+        List<AddressDto> suggestions = getSuggestions(stringQuery, null, null);
+        List<Address> founded = addressRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            for (AddressDto suggestion : suggestions) {
+                List<Predicate> currentAddressPredicates = new ArrayList<>();
+                if (suggestion.getCity() != null)
+                    currentAddressPredicates.add(cb.equal(root.join("city", JoinType.LEFT).get("cityId"), suggestion.getCity().getCityId()));
+                if (suggestion.getStreet() != null)
+                    currentAddressPredicates.add(cb.equal(root.join("street", JoinType.LEFT).get("streetId"), suggestion.getStreet().getStreetId()));
+                if (suggestion.getHouseNum() != null)
+                    currentAddressPredicates.add(cb.equal(root.get("houseNum"), suggestion.getHouseNum()));
+                if (suggestion.getFraction() != null)
+                    currentAddressPredicates.add(cb.equal(root.get("fraction"), suggestion.getFraction()));
+                if (suggestion.getLetter() != null)
+                    currentAddressPredicates.add(cb.equal(root.get("letter"), suggestion.getLetter()));
+                if (suggestion.getBuild() != null)
+                    currentAddressPredicates.add(cb.equal(root.get("build"), suggestion.getBuild()));
+                if (suggestion.getApartmentNum() != null)
+                    currentAddressPredicates.add( cb.equal(root.get("apartmentNum"), suggestion.getApartmentNum()));
+
+                predicates.add(cb.and(currentAddressPredicates.toArray(Predicate[]::new)));
+            }
+
+            query.distinct(true);
+            return cb.or(predicates.toArray(Predicate[]::new));
+        });
+
+        return founded;
+    }
+
     public Address findIdentical(Address addressData) {
         if(addressData == null) return new Address();
         // Пробуем найти в базе данных адрес с такими же данными как у addressData кроме id
@@ -153,7 +185,6 @@ public class AddressDispatcher {
         }
     }
 
-    @Transactional
     public List<AddressDto> getSuggestions(String query, @Nullable Boolean isAcpConnected, @Nullable Boolean isHouseOnly) {
         List<Address> suggestions = new ArrayList<>();
         query = CharacterTranslation.translate(query);
@@ -266,7 +297,6 @@ public class AddressDispatcher {
         return suggestions.stream().distinct().sorted(Comparator.comparingInt(o->levenshteinDistance.apply(finalQuery, o.getAddressName()))).limit(30).map(AddressMapper::toDto).toList();
     }
 
-    @Transactional
     public List<House> getSuggestionsHouse(String query, @Nullable Boolean isAcpConnected) {
         query = CharacterTranslation.translate(query);
         LevenshteinDistance levenshteinDistance = new LevenshteinDistance();

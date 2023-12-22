@@ -150,38 +150,7 @@ public class ModelItem {
                 if(addressData == null) {
                     return "-";
                 }
-                StringBuilder addressResult = new StringBuilder();
-                if (addressData.getCity() != null) {
-                    addressResult.append(addressData.getCity().getName());
-                }
-                if (addressData.getStreet() != null) {
-                    addressResult.append(" ").append(addressData.getStreet().getName());
-                }
-                if (addressData.getHouseNum() != null) {
-                    addressResult.append(" ").append(addressData.getHouseNum());
-                }
-                if (addressData.getFraction() != null) {
-                    addressResult.append("/").append(addressData.getFraction());
-                }
-                if (addressData.getLetter() != null) {
-                    addressResult.append(addressData.getLetter());
-                }
-                if (addressData.getBuild() != null) {
-                    addressResult.append(" стр.").append(addressData.getBuild());
-                }
-                if (addressData.getEntrance() != null) {
-                    addressResult.append(" под.").append(addressData.getEntrance());
-                }
-                if (addressData.getFloor() != null) {
-                    addressResult.append(" эт.").append(addressData.getFloor());
-                }
-                if (addressData.getApartmentNum() != null) {
-                    addressResult.append(" кв.").append(addressData.getApartmentNum());
-                }
-                if (addressData.getApartmentMod() != null) {
-                    addressResult.append(" ").append(addressData.getApartmentMod());
-                }
-                return addressResult.toString();
+                return addressData.getAddressName();
             case PHONE_ARRAY:
                 return phoneData == null || phoneData.isEmpty() ? "-" : String.join(", ", phoneData.values());
             case CONNECTION_SERVICES:
@@ -220,40 +189,13 @@ public class ModelItem {
                 if(addressData == null) {
                     return "-";
                 }
-                StringBuilder addressResult = new StringBuilder();
-                if (addressData.getCity() != null) {
-                    addressResult.append(addressData.getCity().getName());
-                }
-                if (addressData.getStreet() != null) {
-                    addressResult.append(" ").append(addressData.getStreet().getName());
-                }
-                if (addressData.getHouseNum() != null) {
-                    addressResult.append(" ").append(addressData.getHouseNum());
-                }
-                if (addressData.getFraction() != null) {
-                    addressResult.append("/").append(addressData.getFraction());
-                }
-                if (addressData.getLetter() != null) {
-                    addressResult.append(addressData.getLetter());
-                }
-                if (addressData.getBuild() != null) {
-                    addressResult.append(" стр.").append(addressData.getBuild());
-                }
-                if (addressData.getEntrance() != null) {
-                    addressResult.append(" под.").append(addressData.getEntrance());
-                }
-                if (addressData.getFloor() != null) {
-                    addressResult.append(" эт.").append(addressData.getFloor());
-                }
-                if (addressData.getApartmentNum() != null) {
-                    addressResult.append(" кв.").append(addressData.getApartmentNum());
-                }
-                if (addressData.getApartmentMod() != null) {
-                    addressResult.append(" ").append(addressData.getApartmentMod());
-                }
-                return addressResult.toString();
+                return addressData.getAddressName();
             case PHONE_ARRAY:
-                return  phoneData == null || phoneData.isEmpty() ? "-" : phoneData.values().stream().map(phone-> "+7"+phone.substring(1).replaceAll(" ","")).map(Decorator::phone).collect(Collectors.joining("\n"));
+                return  phoneData == null || phoneData.isEmpty() ? "-" : phoneData.values().stream()
+                        .filter(Objects::nonNull)
+                        .filter(phone->!phone.isBlank())
+                        .map(phone-> "+7"+phone.substring(1).replaceAll(" ",""))
+                        .map(Decorator::phone).collect(Collectors.joining("\n"));
             case CONNECTION_SERVICES:
                 return connectionServicesData == null || connectionServicesData.isEmpty() ? "-" : connectionServicesData.stream().map(val->val.getConnectionService().getLabel()).collect(Collectors.joining(", "));
             case EQUIPMENTS:

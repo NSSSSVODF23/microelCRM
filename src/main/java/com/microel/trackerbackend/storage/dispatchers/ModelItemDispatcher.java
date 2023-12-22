@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.microel.trackerbackend.services.api.ResponseException;
+import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.storehouse.EquipmentRealization;
 import com.microel.trackerbackend.storage.entities.templating.ConnectionService;
 import com.microel.trackerbackend.storage.entities.templating.PassportDetails;
@@ -184,10 +185,20 @@ public class ModelItemDispatcher {
     public List<Long> getTaskIdsByGlobalSearch(String globalSearchValue) {
 
         // Фильтруем таблицу с данными по задачам
-        Page<ModelItem> modelItems = modelItemRepository.findAll((root, query, cb) ->
+        List<ModelItem> modelItems = modelItemRepository.findAll((root, query, cb) ->
                 cb.and(cb.isTrue(
                         cb.function("fts", Boolean.class, root.get("stringData"), cb.literal(globalSearchValue))
-                )), Pageable.unpaged());
+                )));
+
+        return modelItems.stream().map(modelItem -> modelItem.getTask().getTaskId()).collect(Collectors.toList());
+    }
+
+    public List<Long> getTaskIdsByAddresses(List<Address> addresses) {
+
+        List<ModelItem> modelItems = modelItemRepository.findAll((root, query, cb) -> {
+            Join<ModelItem, Address> addressJoin = root.join("addressData", JoinType.LEFT);
+            return cb.and(addressJoin.in(addresses));
+        });
 
         return modelItems.stream().map(modelItem -> modelItem.getTask().getTaskId()).collect(Collectors.toList());
     }

@@ -34,6 +34,7 @@ import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dispatchers.*;
 import com.microel.trackerbackend.storage.dto.address.AddressDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
+import com.microel.trackerbackend.storage.dto.mapper.AddressMapper;
 import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
 import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
 import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
@@ -491,6 +492,14 @@ public class PrivateRequestController {
                 .body(tasks.map(TaskMapper::toListObject));
     }
 
+    // Получает страницу с задачами принадлежащими текущему наблюдателю
+    @GetMapping("tasks/incoming/{page}")
+    public ResponseEntity<Page<Task>> getIncomingTasks(@PathVariable Integer page, TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        condition.clean();
+        return ResponseEntity.ok(taskDispatcher.getIncomingTasks(page, condition, employee));
+    }
+
     @GetMapping("task/{taskId}/check-compatibility/{otTaskId}")
     public ResponseEntity<Map<String,Object>> checkCompatibility(@PathVariable Long taskId, @PathVariable Long otTaskId, HttpServletRequest  request) {
         Employee employee = getEmployeeFromRequest(request);
@@ -527,15 +536,6 @@ public class PrivateRequestController {
     @GetMapping("tasks/by-login/{login}")
     public ResponseEntity<Page<Task>> getTasksByLogin(@PathVariable String login, @RequestParam Integer page) {
         return ResponseEntity.ok(taskDispatcher.getTasksByLogin(login, page, 5));
-    }
-
-
-    // Получает страницу с задачами принадлежащими текущему наблюдателю
-    @GetMapping("tasks/incoming/{page}")
-    public ResponseEntity<Page<Task>> getIncomingTasks(@PathVariable Integer page, TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        condition.clean();
-        return ResponseEntity.ok(taskDispatcher.getIncomingTasks(page, condition, employee));
     }
 
     @GetMapping("wireframe/{id}/stages")
@@ -1761,7 +1761,7 @@ public class PrivateRequestController {
     public ResponseEntity<List<AddressDto>> getAddressSuggestions(@RequestParam String query,
                                                                   @RequestParam @Nullable Boolean isAcpConnected,
                                                                   @RequestParam @Nullable Boolean isHouseOnly) {
-        return ResponseEntity.ok(addressDispatcher.getSuggestions(query, isAcpConnected, isHouseOnly));
+        return ResponseEntity.ok(addressDispatcher.getSuggestions(query, isAcpConnected, isHouseOnly).stream().filter(Objects::nonNull).toList());
     }
 
     // Получает объект парсера трекера
