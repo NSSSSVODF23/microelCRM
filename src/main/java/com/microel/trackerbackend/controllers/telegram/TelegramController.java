@@ -330,6 +330,7 @@ public class TelegramController {
                 if(!alreadySentTaskInfoToGroup || workLog.getGangLeader() != null) {
                     TelegramMessageFactory groupChatFactory = TelegramMessageFactory.create(employee.getTelegramGroupChatId(), mainBot);
                     groupChatFactory.currentActiveTaskForGroupChat(workLog.getTask()).execute();
+                    groupChatFactory.simpleMessage("Текущая цель:\n" + workLog.getTargetDescription()).execute();
                 }
             }
             if (workLog.getTargetDescription() != null && !workLog.getTargetDescription().isBlank())

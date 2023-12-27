@@ -2051,6 +2051,11 @@ public class PrivateRequestController {
         return ResponseEntity.ok(acpClient.getBindingsByLogin(login));
     }
 
+    @GetMapping("acp/dhcp/binding/{login}/logs/{page}")
+    public ResponseEntity<LogsRequest> getDhcpBindingsLogs(@PathVariable String login, @PathVariable Integer page) {
+        return ResponseEntity.ok(acpClient.getLogsByLogin(login, page));
+    }
+
     @GetMapping("acp/vlan/{id}/dhcp/bindings/{page}")
     public ResponseEntity<Page<DhcpBinding>> getDhcpBindingsByVlan(@PathVariable Integer page, @PathVariable Integer id, @RequestParam String excludeLogin) {
         return ResponseEntity.ok(acpClient.getDhcpBindingsByVlan(page, id, excludeLogin));

@@ -77,7 +77,11 @@ public class AcpClient {
         this.stompController = stompController;
     }
 
-    @Transactional
+    public LogsRequest getLogsByLogin(String login, Integer page) {
+        return get(LogsRequest.class, Map.of(), "dhcp", "binding", login, "logs", page.toString());
+    }
+
+    @Transactional(readOnly = true)
     public List<DhcpBinding> getBindingsByLogin(String login) {
         DhcpBinding[] dhcpBindings = get(DhcpBinding[].class, Map.of("login", login), "dhcp", "bindings");
         if (dhcpBindings == null) return Collections.emptyList();
@@ -102,7 +106,7 @@ public class AcpClient {
         return binding;
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public RestPage<DhcpBinding> getLastBindings(Integer page, @Nullable Short state, @Nullable String macaddr,
                                                  @Nullable String login, @Nullable String ip, @Nullable Integer vlan,
                                                  @Nullable Integer buildingId, @Nullable List<Integer> targetIds) {
@@ -126,7 +130,7 @@ public class AcpClient {
         return pageResponse;
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public RestPage<DhcpBinding> getLastBindings(Integer page, @Nullable Short state, @Nullable String macaddr,
                                                  @Nullable String login, @Nullable String ip, @Nullable Integer vlan,
                                                  @Nullable Integer buildingId, Integer commutator, @Nullable Integer port) {
@@ -196,7 +200,7 @@ public class AcpClient {
         return get(SwitchModel.class, Map.of(), "commutator", "model", id.toString());
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public Page<SwitchBaseInfo> getCommutators(Integer page, @Nullable String name, @Nullable String ip, @Nullable Integer buildingId, @Nullable Integer pageSize) {
         Map<String, String> query = new HashMap<>();
         if (name != null) query.put("name", name);
@@ -421,7 +425,7 @@ public class AcpClient {
         remoteUpdateCommutators(commutatorsByVlan, 60L);
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     @Async
     @Scheduled(cron = "0 0 */3 * * *")
     public void getAllCommutatorsRemoteUpdate() {
@@ -445,7 +449,7 @@ public class AcpClient {
                     appendCommutatorInUpdatePool(commutator);
                     connectToCommutatorAndUpdate(commutator, commutatorModels);
                 }catch (Throwable e){
-                    System.out.println("Ошибка в потоке: " + e.getMessage());
+//                    System.out.println("Ошибка в потоке: " + e.getMessage());
                 }
                 removeCommutatorFromUpdatePool(commutator);
             });
