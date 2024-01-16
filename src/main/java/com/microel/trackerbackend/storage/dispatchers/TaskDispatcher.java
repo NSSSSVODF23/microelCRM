@@ -38,6 +38,7 @@ import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.TaskRepository;
 import com.microel.trackerbackend.storage.repositories.TaskStageRepository;
 import lombok.*;
+import org.hibernate.Hibernate;
 import org.javatuples.Triplet;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
@@ -137,6 +138,20 @@ public class TaskDispatcher {
                 updateTasksCountWorker.appendPath(save).execute(this);
                 stompController.updateTask(save);
             }*/
+        }
+    }
+
+    @Transactional
+    public void initializeLastComments(){
+        List<Task> activeTasks = taskRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("taskStatus"), TaskStatus.ACTIVE));
+            predicates.add(cb.isFalse(root.get("deleted")));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        });
+        for (Task task : activeTasks) {
+            Hibernate.initialize(task.getLastComments());
+            commentDispatcher.setLastCommentsToTask(task);
         }
     }
 

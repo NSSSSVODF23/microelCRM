@@ -56,7 +56,8 @@ public class Task {
     @OneToMany(cascade = {CascadeType.MERGE, CascadeType.REFRESH})
     @JoinColumn(name = "f_last_comment_id")
     @OrderBy("created asc")
-    @Fetch(FetchMode.SUBSELECT)
+    @BatchSize(size = 15)
+//    @Fetch(FetchMode.SUBSELECT)
     private List<Comment> lastComments;
 
     @ManyToOne
@@ -74,8 +75,8 @@ public class Task {
 
     @ManyToMany()
     @OrderBy(value = "name")
-//    @BatchSize(size = 25)
-    @Fetch(FetchMode.SUBSELECT)
+    @BatchSize(size = 25)
+//    @Fetch(FetchMode.SUBSELECT)
     private Set<TaskTag> tags;
 
     @ManyToOne
@@ -85,18 +86,18 @@ public class Task {
 
     @OneToMany(mappedBy = "task", targetEntity = ModelItem.class, cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE})
     @JsonManagedReference
-//    @BatchSize(size = 25)
-    @Fetch(FetchMode.SUBSELECT)
+    @BatchSize(size = 25)
+//    @Fetch(FetchMode.SUBSELECT)
     private List<ModelItem> fields;
     @JsonIgnore
     @OneToMany(mappedBy = "parent", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE})
-//    @BatchSize(size = 25)
-    @Fetch(FetchMode.SUBSELECT)
+    @BatchSize(size = 25)
+//    @Fetch(FetchMode.SUBSELECT)
     private List<Comment> comments;
     @JsonIgnore
     @OneToMany(mappedBy = "task", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE})
-//    @BatchSize(size = 25)
-    @Fetch(FetchMode.SUBSELECT)
+    @BatchSize(size = 25)
+//    @Fetch(FetchMode.SUBSELECT)
     private List<TaskEvent> taskEvents;
     @ManyToOne
     @OnDelete(action = OnDeleteAction.NO_ACTION)
@@ -104,13 +105,13 @@ public class Task {
     private Employee responsible;
     @ManyToMany()
     @OnDelete(action = OnDeleteAction.NO_ACTION)
-//    @BatchSize(size = 25)
-    @Fetch(FetchMode.SUBSELECT)
+    @BatchSize(size = 25)
+//    @Fetch(FetchMode.SUBSELECT)
     private List<Employee> employeesObservers;
     @ManyToMany()
     @OnDelete(action = OnDeleteAction.NO_ACTION)
-//    @BatchSize(size = 25)
-    @Fetch(FetchMode.SUBSELECT)
+    @BatchSize(size = 25)
+//    @Fetch(FetchMode.SUBSELECT)
     private List<Department> departmentsObservers;
     @ManyToOne()
     @OnDelete(action = OnDeleteAction.NO_ACTION)
@@ -128,8 +129,8 @@ public class Task {
     @OneToMany(cascade = {CascadeType.MERGE, CascadeType.REMOVE})
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JoinColumn(name = "f_parent_id")
-//    @BatchSize(size = 25)
-    @Fetch(FetchMode.SUBSELECT)
+    @BatchSize(size = 25)
+//    @Fetch(FetchMode.SUBSELECT)
     private List<Task> children;
 
     @Nullable
@@ -141,7 +142,8 @@ public class Task {
 
     @Nullable
     @OneToMany(mappedBy = "task")
-    @Fetch(FetchMode.SUBSELECT)
+//    @Fetch(FetchMode.SUBSELECT)
+    @BatchSize(size = 25)
     @JsonIgnore
     private List<WorkLog> workLogs;
 

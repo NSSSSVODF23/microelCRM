@@ -26,6 +26,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -178,17 +179,22 @@ public class CommentDispatcher {
 
         Comment save = commentRepository.save(comment);
 
-        Page<Comment> taskComments = commentRepository.findAll((root, query, cb) -> {
-            return cb.and(cb.equal(root.get("parent"), comment.getParent()), cb.isFalse(root.get("deleted")));
-        }, PageRequest.of(0, 5, Sort.by(Sort.Direction.DESC, "created")));
-
-        comment.getParent().getLastComments().clear();
-        List<Comment> subList = Stream.of(taskComments.getContent().toArray(Comment[]::new)).collect(Collectors.toList());
-        Collections.reverse(subList);
-        comment.getParent().getLastComments().addAll(subList);
-        stompController.updateTask(taskDispatcher.unsafeSave(comment.getParent()));
+        setLastCommentsToTask(comment.getParent());
 
         return save;
+    }
+
+    @Transactional
+    public void setLastCommentsToTask(Task task){
+        Page<Comment> taskComments = commentRepository.findAll((root, query, cb) -> {
+            return cb.and(cb.equal(root.get("parent"), task), cb.isFalse(root.get("deleted")));
+        }, PageRequest.of(0, 5, Sort.by(Sort.Direction.DESC, "created")));
+
+        task.getLastComments().clear();
+        List<Comment> subList = Stream.of(taskComments.getContent().toArray(Comment[]::new)).collect(Collectors.toList());
+        Collections.reverse(subList);
+        task.getLastComments().addAll(subList);
+        stompController.updateTask(taskDispatcher.unsafeSave(task));
     }
 
     public void attach(Long chatId, List<Attachment> attachments, String description, Employee employee) {
