@@ -2,6 +2,7 @@ HELP.md
 target/
 files/
 attachments/
+work-log-targets/
 configurations/!.mvn/wrapper/maven-wrapper.jar
 *.service
 *.cmd

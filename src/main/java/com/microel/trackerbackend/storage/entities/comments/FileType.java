@@ -1,11 +1,11 @@
 package com.microel.trackerbackend.storage.entities.comments;
 
-public enum AttachmentType {
+public enum FileType {
     PHOTO("PHOTO"), VIDEO("VIDEO"), DOCUMENT("DOCUMENT"), AUDIO("AUDIO"), FILE("FILE");
 
     private final String type;
 
-    AttachmentType(String type) {
+    FileType(String type) {
         this.type = type;
     }
 

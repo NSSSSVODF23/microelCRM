@@ -43,7 +43,12 @@ public class TaskTag {
     @BatchSize(size = 25)
     private Set<Task> task;
     @Column(columnDefinition = "boolean default false")
+    @Nullable
     private Boolean unbindAfterClose;
+
+    public Boolean getUnbindAfterClose(){
+        return unbindAfterClose != null && unbindAfterClose;
+    }
 
     @Override
     public boolean equals(Object o) {

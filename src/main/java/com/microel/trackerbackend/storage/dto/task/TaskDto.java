@@ -7,6 +7,7 @@ import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
 import com.microel.trackerbackend.storage.dto.templating.TaskStageDto;
 import com.microel.trackerbackend.storage.dto.templating.WireframeDto;
 import com.microel.trackerbackend.storage.entities.task.TaskStatus;
+import com.microel.trackerbackend.storage.entities.templating.TaskTypeDirectory;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import lombok.*;
 import org.springframework.lang.Nullable;
@@ -25,7 +26,7 @@ public class TaskDto {
     private Long taskId;
     private Timestamp created;
     private Timestamp updated;
-    private CommentDto lastComment;
+    private List<CommentDto> lastComments;
     private EmployeeDto creator;
     private Timestamp actualFrom;
     private Timestamp actualTo;
@@ -40,6 +41,7 @@ public class TaskDto {
     private List<EmployeeDto> employeesObservers;
     private List<DepartmentDto> departmentsObservers;
     private TaskStageDto currentStage;
+    private TaskTypeDirectory currentDirectory;
     private TaskGroupDto group;
     private Long parent;
     private List<TaskDto> children;

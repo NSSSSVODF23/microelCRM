@@ -15,7 +15,8 @@ public enum NotificationType {
     TASK_EXPIRED("TASK_EXPIRED"),
     WORKS_COMPLETED("WORKS_COMPLETED"),
     REPORT_RECEIVED("REPORT_RECEIVED"),
-    MENTIONED_IN_TASK("MENTIONED_IN_TASK"),;
+    MENTIONED_IN_TASK("MENTIONED_IN_TASK"),
+    TASK_MOVED_TO_DIRECTORY("TASK_MOVED_TO_DIRECTORY");
 
     private String value;
     NotificationType(String value) {

@@ -1,6 +1,5 @@
 package com.microel.trackerbackend.services.filemanager;
 
-import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
 import lombok.Getter;
 import lombok.Setter;
 

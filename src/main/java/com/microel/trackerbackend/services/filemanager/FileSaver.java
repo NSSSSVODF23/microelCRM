@@ -2,55 +2,57 @@ package com.microel.trackerbackend.services.filemanager;
 
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
-import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
-import io.metaloom.video4j.Video;
-import io.metaloom.video4j.Video4j;
+import com.microel.trackerbackend.storage.entities.comments.FileType;
 import io.metaloom.video4j.VideoFile;
 import io.metaloom.video4j.Videos;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.imgscalr.Scalr;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.UUID;
 
-@Service
 public class FileSaver {
 
-    static final String ROOT_PATH = "attachments";
+    private final String ROOT_PATH;
 
-    public static AttachmentType getAttachmentType(FileData fileData) {
+    public FileSaver(){
+        ROOT_PATH = "attachments";
+    }
+    public FileSaver(String rootPath) {
+        ROOT_PATH = rootPath;
+    }
+
+    public static FileType getFileType(FileData fileData) {
         String[] splitType = fileData.getType().split("\\/");
         switch (splitType[0]) {
             case "image":
-                return AttachmentType.PHOTO;
+                return FileType.PHOTO;
             case "video":
-                return AttachmentType.VIDEO;
+                return FileType.VIDEO;
             case "audio":
-                return AttachmentType.AUDIO;
+                return FileType.AUDIO;
             case "text":
-                return AttachmentType.DOCUMENT;
+                return FileType.DOCUMENT;
             case "application":
                 if (Objects.equals(splitType[1], "pdf")) {
-                    return AttachmentType.DOCUMENT;
+                    return FileType.DOCUMENT;
                 }
-                return AttachmentType.FILE;
+                return FileType.FILE;
             default:
-                return AttachmentType.FILE;
+                return FileType.FILE;
         }
     }
 
     public static String getFilesRoot(FileData fileData) {
-        switch (getAttachmentType(fileData)) {
+        switch (getFileType(fileData)) {
             case PHOTO:
                 return "photos";
             case AUDIO:
@@ -65,19 +67,19 @@ public class FileSaver {
         }
     }
 
-    public static AttachmentType getTypeFromRoot(String root) {
+    public static FileType getTypeFromRoot(String root) {
         switch (root) {
             case "photos":
-                return AttachmentType.PHOTO;
+                return FileType.PHOTO;
             case "audios":
-                return AttachmentType.AUDIO;
+                return FileType.AUDIO;
             case "videos":
-                return AttachmentType.VIDEO;
+                return FileType.VIDEO;
             case "documents":
-                return AttachmentType.DOCUMENT;
+                return FileType.DOCUMENT;
             case "files":
             default:
-                return AttachmentType.FILE;
+                return FileType.FILE;
         }
     }
 
@@ -96,9 +98,9 @@ public class FileSaver {
 
             Files.write(filePath, fileData.getData());
 
-            AttachmentType attachmentType = getAttachmentType(fileData);
+            FileType fileType = getFileType(fileData);
 
-            if (attachmentType == AttachmentType.PHOTO) {
+            if (fileType == FileType.PHOTO) {
                 Files.createDirectories(thumbnailsPath);
                 BufferedImage bufferedImage = ImageIO.read(filePath.toFile());
                 BufferedImage newImage = new BufferedImage( bufferedImage.getWidth(), bufferedImage.getHeight(), BufferedImage.TYPE_INT_RGB);
@@ -106,7 +108,7 @@ public class FileSaver {
                 BufferedImage resized = Scalr.resize(newImage, 250);
                 thumbnailPath = thumbnailsPath.resolve(UUID.randomUUID() + ".jpg");
                 ImageIO.write(resized, "jpg", thumbnailPath.toFile());
-            } else if (attachmentType == AttachmentType.VIDEO) {
+            } else if (fileType == FileType.VIDEO) {
                 try(VideoFile videoFile = Videos.open(filePath.toString())){
                     Files.createDirectories(thumbnailsPath);
                     BufferedImage bufferedImage = videoFile.frameToImage();

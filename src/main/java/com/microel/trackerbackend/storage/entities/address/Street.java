@@ -75,7 +75,11 @@ public class Street implements Comparable<Street> {
 
     public String getStreetName() {
         if(this.city == null) return "";
-        return city.getName() + " " + getNameWithPrefix();
+        return city.getName().substring(0,3) + ". " + getNameWithPrefix();
+    }
+
+    public Suggestion toSuggestion(){
+        return new Suggestion(city.getCityId(), streetId, getStreetName());
     }
 
     @Override
@@ -102,5 +106,15 @@ public class Street implements Comparable<Street> {
         public boolean isValid() {
             return name != null && !name.isBlank() && prefix != null && !prefix.isBlank();
         }
+    }
+
+    @Data
+    public static class Suggestion{
+        @NonNull
+        private Long cityId;
+        @NonNull
+        private Long streetId;
+        @NonNull
+        private String name;
     }
 }

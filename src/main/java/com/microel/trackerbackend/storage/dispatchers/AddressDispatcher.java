@@ -194,7 +194,7 @@ public class AddressDispatcher {
 
         String specialRegex = "^(?<hn>\\d{1,3})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(( с\\.?| стр\\.?| строение|_)(?<hb>\\d{1,3}))?-(?<an>\\d{1,3})";
 
-        List<String> cityParts = List.of("^(?<city>[а-я]{4})\\. ([а-я\\-]{2,10}\\.)?", "");
+        List<String> cityParts = List.of("^(?<city>[а-я]{3})\\. ([а-я\\-]{2,10}\\.)?", "");
         List<String> streetParts = List.of(
                 "(?<street>\\d{1,2}-?[а-я]{1,2} [а-я]+)",
                 "(?<street>\\d{1,2} [а-я]{1,5} [а-я]+)",
@@ -294,7 +294,63 @@ public class AddressDispatcher {
         }
 
         String finalQuery = query;
-        return suggestions.stream().distinct().sorted(Comparator.comparingInt(o->levenshteinDistance.apply(finalQuery, o.getAddressName()))).limit(30).map(AddressMapper::toDto).toList();
+        return suggestions
+                .stream()
+                .distinct()
+                .sorted(Comparator.comparingInt(o->levenshteinDistance.apply(finalQuery, o.getAddressName())))
+                .limit(30)
+                .map(AddressMapper::toDto)
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    public List<Address> getSuggestions(Long streetId, String houseQuery, @Nullable Boolean isAcpConnected, @Nullable Boolean isHouseOnly) {
+        List<Address> suggestions = new ArrayList<>();
+        houseQuery = CharacterTranslation.translate(houseQuery);
+
+        int matchSetting = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
+
+        List<String> houseParts = List.of(
+                "(?<hn>\\d{1,4})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(( с\\.?| стр\\.?| строение|_)(?<hb>\\d{1,3}))?"
+        );
+        List<String> apartParts = List.of(
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                ""
+        );
+
+        for (String housePart : houseParts) {
+            for (String apartPart : apartParts) {
+                String rexp = housePart + apartPart;
+                Pattern pattern = Pattern.compile(rexp, matchSetting);
+                Matcher matcher = pattern.matcher(houseQuery);
+                AddressLookupRequest request = AddressLookupRequest.of(matcher);
+                if (request == null) {
+                    continue;
+                }
+                if (request.houseNum != null) {
+                    List<House> foundHouses = houseDispatcher.getHouse(streetId, request.getHouseNum(), request.getLetter(), request.getFraction(), request.getBuild(), isAcpConnected);
+                            //houseDispatcher.lookup(request, isAcpConnected);
+                    List<Address> collect = foundHouses.stream().filter(house -> !house.isSomeDeleted())
+                            .filter(house -> request.apartment == null | (request.apartment != null && house.getIsApartmentHouse()))
+                            .map(house -> {
+                                if(isHouseOnly != null && isHouseOnly){
+                                    return house.getAddress();
+                                }
+                                return house.getAddress(request.entrance, request.floor, request.apartment, request.apartmentMod);
+                            })
+                            .toList();
+                    suggestions.addAll(collect);
+                }
+                if(!suggestions.isEmpty()) break;
+            }
+            if(!suggestions.isEmpty()) break;
+        }
+
+        return suggestions;
     }
 
     public List<House> getSuggestionsHouse(String query, @Nullable Boolean isAcpConnected) {
@@ -303,7 +359,7 @@ public class AddressDispatcher {
 
         int matchSetting = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
 
-        List<String> cityParts = List.of("^(?<city>[а-я]{4})\\. ([а-я\\-]{2,10}\\.)?", "");
+        List<String> cityParts = List.of("^(?<city>[а-я]{3})\\. ([а-я\\-]{2,10}\\.)?", "");
         List<String> streetParts = List.of(
                 "(?<street>\\d{1,2}-?[а-я]{1,2} [а-я]+)",
                 "(?<street>\\d{1,2} [а-я]{1,5} [а-я]+)",

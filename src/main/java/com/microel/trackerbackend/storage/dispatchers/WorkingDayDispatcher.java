@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.misc.SalaryTable;
+import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
@@ -11,14 +12,19 @@ import org.javatuples.Pair;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.criteria.Predicate;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Timestamp;
+import java.text.DecimalFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Component
+@Transactional(readOnly = true)
 public class WorkingDayDispatcher {
     private final WorkingDayRepository workingDayRepository;
     private final EmployeeDispatcher employeeDispatcher;
@@ -30,6 +36,7 @@ public class WorkingDayDispatcher {
         this.stompController = stompController;
     }
 
+    @Transactional
     public void addCalculation(String login, Date date, WorkCalculation calculation) {
         List<WorkingDay> all = workingDayRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -184,5 +191,18 @@ public class WorkingDayDispatcher {
             return cb.and(predicates.toArray(Predicate[]::new));
         }, Sort.by(Sort.Direction.ASC, "employee"));
         return workingDays.stream().collect(Collectors.groupingBy(WorkingDay::getDate));
+    }
+
+    public Integer getSalarySumByDateRange(Employee employee, DateRange dateRange) {
+        Float sum = workingDayRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("employee"), employee));
+            predicates.add(cb.between(root.get("date"), dateRange.getStart(), dateRange.getEnd()));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }).stream()
+                .map(WorkingDay::toPoint)
+                .map(SalaryTable.SalaryTableCell::getSumWithoutNDFL)
+                .reduce(0f, Float::sum);
+        return Math.round(sum);
     }
 }

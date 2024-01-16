@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.entities.filesys;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.services.api.ResponseException;
+import com.microel.trackerbackend.storage.entities.task.WorkLogTargetFile;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.OnDelete;
@@ -30,6 +31,7 @@ public class FileSystemItem {
     private String path;
     private Long size;
     private Timestamp createdAt;
+    @Nullable
     private Timestamp modifiedAt;
     @ManyToOne
     @JoinColumn(name = "f_parent_id")
@@ -57,4 +59,5 @@ public class FileSystemItem {
     public int hashCode() {
         return Objects.hash(getFileSystemItemId());
     }
+
 }

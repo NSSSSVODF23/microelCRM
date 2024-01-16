@@ -171,4 +171,9 @@ public class TaskEvent implements TaskJournalItem {
         TaskEvent event = new TaskEvent(task, TaskEventType.REPORT_CREATED, employee, report);
         return event;
     }
+
+    public static TaskEvent movedToDirectory(Task task, Employee employee) {
+        TaskEvent event = new TaskEvent(task, TaskEventType.MOVED_TO_DIRECTORY, employee, task.getCurrentDirectory().getName());
+        return event;
+    }
 }

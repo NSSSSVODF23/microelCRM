@@ -3,7 +3,9 @@ package com.microel.trackerbackend.storage.entities.task;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.microel.trackerbackend.services.api.ResponseException;
+import com.microel.trackerbackend.services.filemanager.FileData;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
+import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
@@ -49,6 +51,11 @@ public class WorkLog {
     private String forceClosedReason;
     @Column(columnDefinition = "text default ''")
     private String targetDescription;
+    @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    @Fetch(FetchMode.SUBSELECT)
+    @JoinColumn(name = "f_work_log_id")
+    @JsonIgnore
+    private List<WorkLogTargetFile> targetFiles;
     @ManyToMany()
     @BatchSize(size = 25)
     private Set<Employee> employees;
@@ -198,6 +205,10 @@ public class WorkLog {
         private String gangLeader;
         private Boolean deferredReport;
         private String description;
+        @Nullable
+        private List<FileData> files;
+        @Nullable
+        private List<TFile.FileSuggestion> serverFiles;
     }
 
     @Getter

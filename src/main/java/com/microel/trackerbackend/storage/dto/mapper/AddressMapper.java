@@ -24,6 +24,8 @@ public class AddressMapper {
                 .apartmentMod(address.getApartmentMod())
                 .addressName(address.getAddressName())
                 .acpHouseBind(address.getAcpHouseBind())
+                .streetNamePart(address.getStreetNamePart())
+                .tailPart(address.getTailPart())
                 .build();
     }
     @Nullable

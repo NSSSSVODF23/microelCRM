@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.services.api;
 
 import com.microel.trackerbackend.misc.*;
+import com.microel.trackerbackend.misc.task.counting.*;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
 import com.microel.trackerbackend.storage.configurations.StompConfig;
@@ -35,7 +36,6 @@ import com.microel.trackerbackend.storage.entities.team.notification.Notificatio
 import com.microel.trackerbackend.storage.entities.team.util.Department;
 import com.microel.trackerbackend.storage.entities.team.util.Position;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
-import org.springframework.lang.Nullable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
@@ -71,6 +71,36 @@ public class StompController {
     public void updateTask(Task task) {
         sendAll(task, "task", task.getTaskId().toString(), "update");
         sendAll(task, "task", "update");
+    }
+
+    public void updateTaskCounter(Long count, AbstractTaskCounterPath path){
+        if (path instanceof TaskTagPath tagPath)
+            sendAll(count, "task", "counter", tagPath.getSchedulingType(), tagPath.getTaskStatus(),
+                    tagPath.getTaskClassId(), tagPath.getTaskTypeId(), "dir", tagPath.getTaskDirectoryId(), tagPath.getTaskTagId());
+        else if (path instanceof TaskDirectoryPath directoryPath)
+            sendAll(count, "task", "counter", directoryPath.getSchedulingType(), directoryPath.getTaskStatus(),
+                    directoryPath.getTaskClassId(), directoryPath.getTaskTypeId(), "dir", directoryPath.getTaskDirectoryId());
+        else if(path instanceof TaskScheduleDatePath scheduleDatePath)
+            sendAll(count, "task", "counter", scheduleDatePath.getSchedulingType(), scheduleDatePath.getTaskStatus(),
+                    scheduleDatePath.getTaskClassId(), scheduleDatePath.getTaskTypeId(), "actual-time", scheduleDatePath.getActualFrom());
+        else if(path instanceof TaskTermDatePath termDatePath)
+            sendAll(count, "task", "counter", termDatePath.getSchedulingType(), termDatePath.getTaskStatus(),
+                    termDatePath.getTaskClassId(), termDatePath.getTaskTypeId(), "term-time", termDatePath.getActualTo());
+        else if (path instanceof TaskClosingDatePath closingDatePath)
+            sendAll(count, "task", "counter", closingDatePath.getSchedulingType(), closingDatePath.getTaskStatus(),
+                    closingDatePath.getTaskClassId(), closingDatePath.getTaskTypeId(), "close-time", closingDatePath.getDateOfClose());
+        else if (path instanceof TaskTypePath typePath)
+            sendAll(count, "task", "counter", typePath.getSchedulingType(), typePath.getTaskStatus(),
+                    typePath.getTaskClassId(), typePath.getTaskTypeId());
+        else if (path instanceof TaskClassPath classPath)
+            sendAll(count, "task", "counter", classPath.getSchedulingType(), classPath.getTaskStatus(),
+                    classPath.getTaskClassId());
+        else if (path instanceof TaskStatusPath statusPath)
+            sendAll(count, "task", "counter", statusPath.getSchedulingType(), statusPath.getTaskStatus());
+    }
+
+    public void movedTask(){
+        sendAll(true, "task", "moved");
     }
 
     public void createIncomingTask(String login, Task task){

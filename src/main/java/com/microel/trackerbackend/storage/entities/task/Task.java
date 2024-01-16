@@ -4,11 +4,14 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.microel.trackerbackend.controllers.telegram.Utils;
+import com.microel.trackerbackend.misc.TimeFrame;
+import com.microel.trackerbackend.misc.task.counting.*;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.external.oldtracker.OldTrackerRequestFactory;
 import com.microel.trackerbackend.services.external.oldtracker.task.TaskClassOT;
 import com.microel.trackerbackend.services.external.oldtracker.task.TaskFieldOT;
 import com.microel.trackerbackend.services.external.oldtracker.task.fields.StreetFieldOT;
+import com.microel.trackerbackend.storage.dispatchers.TaskDispatcher.FiltrationConditions.SchedulingType;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskGroup;
@@ -20,13 +23,15 @@ import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import com.microel.trackerbackend.storage.entities.templating.oldtracker.fields.*;
 import lombok.*;
-import org.hibernate.annotations.BatchSize;
-import org.hibernate.annotations.OnDelete;
-import org.hibernate.annotations.OnDeleteAction;
+import org.hibernate.annotations.*;
 import org.javatuples.Pair;
 import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
+import javax.persistence.CascadeType;
+import javax.persistence.Entity;
+import javax.persistence.OrderBy;
+import javax.persistence.Table;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -46,9 +51,13 @@ public class Task {
 
     private Timestamp created;
     private Timestamp updated;
-    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    private Timestamp closed;
+
+    @OneToMany(cascade = {CascadeType.MERGE, CascadeType.REFRESH})
     @JoinColumn(name = "f_last_comment_id")
-    private Comment lastComment;
+    @OrderBy("created asc")
+    @Fetch(FetchMode.SUBSELECT)
+    private List<Comment> lastComments;
 
     @ManyToOne
     @OnDelete(action = OnDeleteAction.NO_ACTION)
@@ -58,14 +67,15 @@ public class Task {
     private Timestamp actualFrom;
 
     private Timestamp actualTo;
-
     private TaskStatus taskStatus;
 
     @Column(columnDefinition = "boolean default false")
     private Boolean deleted = false;
 
-    @ManyToMany(cascade = {CascadeType.MERGE, CascadeType.REFRESH})
-    @BatchSize(size = 25)
+    @ManyToMany()
+    @OrderBy(value = "name")
+//    @BatchSize(size = 25)
+    @Fetch(FetchMode.SUBSELECT)
     private Set<TaskTag> tags;
 
     @ManyToOne
@@ -75,15 +85,18 @@ public class Task {
 
     @OneToMany(mappedBy = "task", targetEntity = ModelItem.class, cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE})
     @JsonManagedReference
-    @BatchSize(size = 25)
+//    @BatchSize(size = 25)
+    @Fetch(FetchMode.SUBSELECT)
     private List<ModelItem> fields;
     @JsonIgnore
     @OneToMany(mappedBy = "parent", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE})
-    @BatchSize(size = 25)
+//    @BatchSize(size = 25)
+    @Fetch(FetchMode.SUBSELECT)
     private List<Comment> comments;
     @JsonIgnore
     @OneToMany(mappedBy = "task", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE})
-    @BatchSize(size = 25)
+//    @BatchSize(size = 25)
+    @Fetch(FetchMode.SUBSELECT)
     private List<TaskEvent> taskEvents;
     @ManyToOne
     @OnDelete(action = OnDeleteAction.NO_ACTION)
@@ -91,15 +104,20 @@ public class Task {
     private Employee responsible;
     @ManyToMany()
     @OnDelete(action = OnDeleteAction.NO_ACTION)
-    @BatchSize(size = 25)
+//    @BatchSize(size = 25)
+    @Fetch(FetchMode.SUBSELECT)
     private List<Employee> employeesObservers;
     @ManyToMany()
     @OnDelete(action = OnDeleteAction.NO_ACTION)
-    @BatchSize(size = 25)
+//    @BatchSize(size = 25)
+    @Fetch(FetchMode.SUBSELECT)
     private List<Department> departmentsObservers;
     @ManyToOne()
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     private TaskStage currentStage;
+    @ManyToOne()
+    @OnDelete(action = OnDeleteAction.NO_ACTION)
+    private TaskTypeDirectory currentDirectory;
     @ManyToOne
     @OnDelete(action = OnDeleteAction.CASCADE)
     @JoinColumn(name = "f_group_id")
@@ -110,7 +128,8 @@ public class Task {
     @OneToMany(cascade = {CascadeType.MERGE, CascadeType.REMOVE})
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JoinColumn(name = "f_parent_id")
-    @BatchSize(size = 25)
+//    @BatchSize(size = 25)
+    @Fetch(FetchMode.SUBSELECT)
     private List<Task> children;
 
     @Nullable
@@ -119,6 +138,101 @@ public class Task {
     private Integer oldTrackerTaskClassId;
     @Nullable
     private Integer oldTrackerCurrentStageId;
+
+    @Nullable
+    @OneToMany(mappedBy = "task")
+    @Fetch(FetchMode.SUBSELECT)
+    @JsonIgnore
+    private List<WorkLog> workLogs;
+
+    @JsonIgnore
+    public String getClassName(){
+        if(getModelWireframe() != null){
+            return getModelWireframe().getName();
+        }
+        return "Неизвестно";
+    }
+
+    @JsonIgnore
+    public String getTypeName(){
+        if(getCurrentStage() != null){
+            return getCurrentStage().getLabel();
+        }
+        return "Неизвестно";
+    }
+
+    @JsonIgnore
+    public List<AbstractTaskCounterPath> getListOfCounterPaths(){
+        TimeFrame[] closeTaskTimeFrames = new TimeFrame[]{TimeFrame.TODAY, TimeFrame.YESTERDAY, TimeFrame.LAST_WEEK,
+                TimeFrame.THIS_WEEK, TimeFrame.LAST_MONTH, TimeFrame.THIS_MONTH};
+        TimeFrame[] scheduledTaskTimeFrames = new TimeFrame[]{TimeFrame.TODAY, TimeFrame.TOMORROW, TimeFrame.THIS_WEEK,
+                TimeFrame.NEXT_WEEK, TimeFrame.THIS_MONTH, TimeFrame.NEXT_MONTH};
+        List<AbstractTaskCounterPath> collect = new ArrayList<>();
+        if(getTaskStatus() != null){
+            switch (getTaskStatus()){
+                case ACTIVE -> {
+                    if(getActualFrom() == null){
+                        collect.add(TaskStatusPath.of(SchedulingType.EXCEPT_PLANNED, getTaskStatus()));
+                        if(getModelWireframe() != null){
+                            collect.add(TaskClassPath.of(SchedulingType.EXCEPT_PLANNED, getTaskStatus(), getModelWireframe().getWireframeId()));
+                            if(getCurrentStage() != null){
+                                collect.add(TaskTypePath.of(SchedulingType.EXCEPT_PLANNED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId()));
+                                if(getCurrentDirectory() != null){
+                                    collect.add(TaskDirectoryPath.of(SchedulingType.EXCEPT_PLANNED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId(), getCurrentDirectory().getTaskTypeDirectoryId()));
+                                }
+                            }
+                        }
+                    }else{
+                        collect.add(TaskStatusPath.of(SchedulingType.PLANNED, getTaskStatus()));
+                        if(getModelWireframe() != null){
+                            collect.add(TaskClassPath.of(SchedulingType.PLANNED, getTaskStatus(), getModelWireframe().getWireframeId()));
+                            if(getCurrentStage() != null){
+                                collect.add(TaskTypePath.of(SchedulingType.PLANNED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId()));
+                                for(TimeFrame timeFrame : scheduledTaskTimeFrames){
+                                    collect.add(TaskScheduleDatePath.of(SchedulingType.PLANNED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId(), timeFrame));
+                                }
+                            }
+                        }
+                    }
+
+                    if(getActualTo() != null){
+                        collect.add(TaskStatusPath.of(SchedulingType.DEADLINE, getTaskStatus()));
+                        if(getModelWireframe() != null){
+                            collect.add(TaskClassPath.of(SchedulingType.DEADLINE, getTaskStatus(), getModelWireframe().getWireframeId()));
+                            if(getCurrentStage() != null){
+                                collect.add(TaskTypePath.of(SchedulingType.DEADLINE, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId()));
+                                for(TimeFrame timeFrame : scheduledTaskTimeFrames){
+                                    collect.add(TaskTermDatePath.of(SchedulingType.DEADLINE, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId(), timeFrame));
+                                }
+                            }
+                        }
+                    }
+                }
+                case PROCESSING -> {
+                    collect.add(TaskClassPath.of(SchedulingType.UNSCHEDULED, getTaskStatus()));
+                    if(getModelWireframe() != null){
+                        collect.add(TaskClassPath.of(SchedulingType.UNSCHEDULED, getTaskStatus(), getModelWireframe().getWireframeId()));
+                        if(getCurrentStage() != null){
+                            collect.add(TaskTypePath.of(SchedulingType.UNSCHEDULED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId()));
+                        }
+                    }
+                }
+                case CLOSE -> {
+                    collect.add(TaskClassPath.of(SchedulingType.UNSCHEDULED, getTaskStatus()));
+                    if(getModelWireframe() != null){
+                        collect.add(TaskClassPath.of(SchedulingType.UNSCHEDULED, getTaskStatus(), getModelWireframe().getWireframeId()));
+                        if(getCurrentStage() != null){
+                            collect.add(TaskTypePath.of(SchedulingType.UNSCHEDULED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId()));
+                            for(TimeFrame timeFrame : closeTaskTimeFrames){
+                                collect.add(TaskClosingDatePath.of(SchedulingType.UNSCHEDULED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId(), timeFrame));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return collect;
+    }
 
     /**
      * Создает отсортированный список полей для отображения в элементе списка
@@ -239,6 +353,7 @@ public class Task {
     }
 
     @JsonIgnore
+    @Transient
     public List<OldTrackerRequestFactory.FieldData> getFieldsForOldTracker(@NonNull TaskClassOT taskClassOT) {
         if (currentStage.getOldTrackerBind() == null)
             throw new ResponseException("Типу задачи не установлена конфигурация привязки");
@@ -427,6 +542,8 @@ public class Task {
         private String initialComment;
         @Nullable
         private String type;
+        @Nullable
+        private Long directory;
         @Nullable
         private Boolean isDuplicateInOldTracker;
     }

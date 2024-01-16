@@ -1,15 +1,12 @@
 package com.microel.trackerbackend.services.api;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.misc.*;
-import com.microel.trackerbackend.misc.accounting.ConnectionAgreement;
 import com.microel.trackerbackend.misc.accounting.MonthlySalaryReportTable;
 import com.microel.trackerbackend.misc.accounting.TDocumentFactory;
 import com.microel.trackerbackend.misc.network.NetworkRemoteControl;
@@ -34,11 +31,9 @@ import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dispatchers.*;
 import com.microel.trackerbackend.storage.dto.address.AddressDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
-import com.microel.trackerbackend.storage.dto.mapper.AddressMapper;
 import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
 import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
-import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
-import com.microel.trackerbackend.storage.dto.task.TaskDto;
+import com.microel.trackerbackend.storage.dto.task.TaskListDto;
 import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
 import com.microel.trackerbackend.storage.entities.acp.commutator.FdbItem;
 import com.microel.trackerbackend.storage.entities.address.Address;
@@ -48,7 +43,7 @@ import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.SuperMessage;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
-import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
+import com.microel.trackerbackend.storage.entities.comments.FileType;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.TaskJournalItem;
 import com.microel.trackerbackend.storage.entities.comments.dto.CommentData;
@@ -228,6 +223,7 @@ public class PrivateRequestController {
     @PatchMapping("wireframe/{id}")
     public ResponseEntity<Wireframe> updateWireframe(@PathVariable Long id, @RequestBody Wireframe.Form body) {
         Wireframe wireframe = wireframeDispatcher.updateWireframe(id, body);
+        taskDispatcher.restoreTasksToOriginalDirectory(wireframe);
         stompController.updateWireframe(wireframe);
         return ResponseEntity.ok(wireframe);
     }
@@ -310,6 +306,12 @@ public class PrivateRequestController {
         return ResponseEntity.ok(street);
     }
 
+    @GetMapping("suggestions/street")
+    public ResponseEntity<List<Street.Suggestion>> getStreetSuggestions(@RequestParam @Nullable String query) {
+        List<Street.Suggestion> suggestions = streetDispatcher.getSuggestions(query);
+        return ResponseEntity.ok(suggestions);
+    }
+
     // Редактирование улицы
     @PatchMapping("street/{id}")
     public ResponseEntity<Street> updateStreet(@PathVariable Long id, @RequestBody Street.Form form) {
@@ -339,9 +341,9 @@ public class PrivateRequestController {
 
     // Создание дома
     @PostMapping("street/{id}/house")
-    public ResponseEntity<House> createHouse(@PathVariable Long id, @RequestBody House.Form form) {
+    public ResponseEntity<Address> createHouse(@PathVariable Long id, @RequestBody House.Form form) {
         House house = houseDispatcher.create(id, form);
-        return ResponseEntity.ok(house);
+        return ResponseEntity.ok(house.getAddress());
     }
 
     // Редактирование дома
@@ -465,11 +467,10 @@ public class PrivateRequestController {
 
     // Получение страницу с задачами используя фильтрацию
     @PostMapping("tasks/{page}")
-    public ResponseEntity<Page<TaskDto>> getTasks(@PathVariable Integer page, @Nullable @RequestBody TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
+    public ResponseEntity<Page<TaskListDto>> getTasks(@PathVariable Integer page, @Nullable @RequestBody TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         if (condition == null) {
-            return ResponseEntity.ok(taskDispatcher.getTasks(page, 15, null, null, null, null,
-                    null, null, null, null, null, null).map(TaskMapper::toListObject));
+            return ResponseEntity.ok(taskDispatcher.getTasks(page, 15, null, null).map(TaskListDto::of));
         }
         condition.clean();
 
@@ -477,11 +478,9 @@ public class PrivateRequestController {
 
         Page<Task> tasks;
         if (condition.getOnlyMy() != null && condition.getOnlyMy()) {
-            tasks = taskDispatcher.getTasks(page, 15, null, condition.getStage(), condition.getTemplate(), condition.getTemplateFilter(),
-                    condition.getSearchPhrase(), condition.getAuthor(), condition.getDateOfCreation(), condition.getTags(), condition.getExclusionIds(), employee);
+            tasks = taskDispatcher.getTasks(page, 15, condition, employee);
         } else {
-            tasks = taskDispatcher.getTasks(page, 15, condition.getStatus(), condition.getStage(), condition.getTemplate(),  condition.getTemplateFilter(),
-                    condition.getSearchPhrase(), condition.getAuthor(), condition.getDateOfCreation(), condition.getTags(), condition.getExclusionIds(), null);
+            tasks = taskDispatcher.getTasks(page, 15, condition, null);
         }
 
         Instant endDBRequest = Instant.now();
@@ -489,7 +488,19 @@ public class PrivateRequestController {
 
         return ResponseEntity.ok()
                 .header("Server-Timing", "db;desc=\"DB Reading\";dur=" + dbDuration.toMillis())
-                .body(tasks.map(TaskMapper::toListObject));
+                .body(tasks.map(TaskListDto::of));
+    }
+
+    @GetMapping("task/{id}/type-list/available-to-change")
+    public ResponseEntity<List<TaskStage>> getAvailableTaskTypesToChange(@PathVariable Long id, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(taskDispatcher.getAvailableTaskTypesToChange(id));
+    }
+
+    @GetMapping("task/{id}/directory-list/available-to-change")
+    public ResponseEntity<List<TaskTypeDirectory>> getAvailableDirectoriesToChange(@PathVariable Long id, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(taskDispatcher.getAvailableTaskDirectoryToChange(id));
     }
 
     // Получает страницу с задачами принадлежащими текущему наблюдателю
@@ -539,13 +550,13 @@ public class PrivateRequestController {
     }
 
     @GetMapping("wireframe/{id}/stages")
-    public ResponseEntity<Set<TaskStage>> getStages(@PathVariable Long id, HttpServletRequest request) {
+    public ResponseEntity<List<TaskStage>> getStages(@PathVariable Long id, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         Wireframe wireframe = wireframeDispatcher.getWireframeById(id);
         if(wireframe == null) throw new EntryNotFound("Шаблон не найден");
-        Set<TaskStage> stages = wireframe.getStages();
+        List<TaskStage> stages = wireframe.getStages();
         taskDispatcher.getIncomingTasksCount(employee, id);
-        if(stages == null) return ResponseEntity.ok(Set.of());
+        if(stages == null) return ResponseEntity.ok(List.of());
         return ResponseEntity.ok(stages);
     }
 
@@ -588,6 +599,18 @@ public class PrivateRequestController {
     @GetMapping("tasks/wireframe/{wireframeId}/by-stages/count")
     public ResponseEntity<Map<String,Long>> getCountTasksByStages(@PathVariable Long wireframeId) {
         return ResponseEntity.ok(taskDispatcher.getTasksCountByStages(wireframeId));
+    }
+
+    @PostMapping("tasks/count")
+    public ResponseEntity<Long> getCountTasks(@RequestBody TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
+//        Employee employee = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(taskDispatcher.getTasksCount(condition));
+    }
+
+    @PostMapping("tags/catalog/list")
+    public ResponseEntity<List<TagWithTaskCountItem>> getTagsListFromCatalog(@RequestBody TaskDispatcher.FiltrationConditions condition, HttpServletRequest request){
+//       Employee employee = getEmployeeFromRequest(request);
+       return ResponseEntity.ok(taskDispatcher.getTagsListFromCatalog(condition));
     }
 
     // Получает количество всех не закрытых задач по шаблонам
@@ -811,6 +834,11 @@ public class PrivateRequestController {
         } catch (EntryNotFound e) {
             throw new ResponseException(e.getMessage());
         }
+    }
+
+    @GetMapping("task-tag/{id}")
+    public ResponseEntity<TaskTag> getTaskTag(@PathVariable Long id) {
+        return ResponseEntity.ok(taskTagDispatcher.get(id));
     }
 
     // Получает список доступных тегов задачи
@@ -1183,7 +1211,7 @@ public class PrivateRequestController {
             throw new ResponseException("Файл не найден");
         }
 
-        if (attachments.getType() == AttachmentType.PHOTO || attachments.getType() == AttachmentType.VIDEO) {
+        if (attachments.getType() == FileType.PHOTO || attachments.getType() == FileType.VIDEO) {
             if (attachments.getThumbnail() == null) {
                 response.setStatus(HttpStatus.NOT_FOUND.value());
                 return;
@@ -1221,7 +1249,8 @@ public class PrivateRequestController {
         Employee employee = getEmployeeFromRequest(request);
         try {
             WorkLog workLog = taskDispatcher.assignInstallers(taskId, body, employee);
-            telegramController.assignInstallers(workLog, employee);
+            List<Employee> acceptedEmployees = workLogDispatcher.getAcceptedEmployees(workLog.getEmployees());
+            telegramController.assignInstallers(workLog, employee, acceptedEmployees);
             stompController.updateTask(workLog.getTask());
             stompController.createWorkLog(workLog);
             stompController.createChat(Objects.requireNonNull(ChatMapper.toDto(workLog.getChat())));
@@ -1250,6 +1279,20 @@ public class PrivateRequestController {
 
         } catch (EntryNotFound e) {
             throw new ResponseException(e.getMessage());
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("task/move-to-directory")
+    public ResponseEntity<Void> moveTaskToDirectory(@RequestBody TaskDispatcher.MovingToDirectoryForm form, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
+        List<Task> tasks = taskDispatcher.moveToDirectory(form);
+        for (Task task : tasks) {
+            Set<Employee> observers = task.getAllEmployeesObservers(employee);
+            notificationDispatcher.createNotification(observers, Notification.taskMovedToDirectory(task, employee));
+            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.movedToDirectory(task, employee));
+            stompController.createTaskEvent(task.getTaskId(), taskEvent);
+            stompController.updateTask(task);
         }
         return ResponseEntity.ok().build();
     }
@@ -1761,7 +1804,15 @@ public class PrivateRequestController {
     public ResponseEntity<List<AddressDto>> getAddressSuggestions(@RequestParam String query,
                                                                   @RequestParam @Nullable Boolean isAcpConnected,
                                                                   @RequestParam @Nullable Boolean isHouseOnly) {
-        return ResponseEntity.ok(addressDispatcher.getSuggestions(query, isAcpConnected, isHouseOnly).stream().filter(Objects::nonNull).toList());
+        return ResponseEntity.ok(addressDispatcher.getSuggestions(query, isAcpConnected, isHouseOnly));
+    }
+
+    @GetMapping("suggestions/address/alt")
+    public ResponseEntity<List<Address>> getAddressSuggestions(@RequestParam String query,
+                                                                  @RequestParam Long streetId,
+                                                                  @RequestParam @Nullable Boolean isAcpConnected,
+                                                                  @RequestParam @Nullable Boolean isHouseOnly) {
+        return ResponseEntity.ok(addressDispatcher.getSuggestions(streetId, query, isAcpConnected, isHouseOnly));
     }
 
     // Получает объект парсера трекера
@@ -2335,6 +2386,11 @@ public class PrivateRequestController {
         return ResponseEntity.ok().build();
     }
 
+    @GetMapping("files/suggestions")
+    public ResponseEntity<List<TFile.FileSuggestion>> getFilesSuggestions(@Nullable @RequestParam String query) {
+        return ResponseEntity.ok(filesWatchService.getFileSuggestions(query));
+    }
+
     @GetMapping("files/root")
     public ResponseEntity<List<FileSystemItem>> getRootFiles(@Nullable @RequestParam FilesWatchService.FileSortingTypes sortingType) {
         return ResponseEntity.ok(filesWatchService.getRoot(sortingType));
@@ -2392,7 +2448,7 @@ public class PrivateRequestController {
     public void getTFile(@PathVariable Long id,
                                   @RequestHeader(value = "Range", required = false) String rangeHeader,
                                   HttpServletResponse response) {
-        TFile tFile = filesWatchService.getFileById(id);
+        TFile tFile = filesWatchService.getFileById(id).orElseThrow(()->new ResponseException("Файл не найден"));
 
         try {
             OutputStream os = response.getOutputStream();

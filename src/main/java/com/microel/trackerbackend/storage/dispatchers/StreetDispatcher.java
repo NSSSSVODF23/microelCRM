@@ -8,9 +8,13 @@ import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.address.Street;
+import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.StreetRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.text.similarity.LevenshteinDistance;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
@@ -19,6 +23,8 @@ import javax.persistence.criteria.Join;
 import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -122,7 +128,7 @@ public class StreetDispatcher {
             predicates.add(cb.like(cb.lower(root.get("billingAlias")), "%" + subQuery.toLowerCase() + "%"));
             predicates.add(cb.like(cb.lower(root.get("altNames")), "%" + subQuery.toLowerCase() + "%"));
             return cb.or(predicates.toArray(Predicate[]::new));
-        });
+        }, PageRequest.of(0, 30, Sort.by(Sort.Direction.ASC, "city.name"))).getContent();
     }
     public List<Street> containsInName(String subQuery, Short houseNum, @Nullable Character letter, @Nullable Short fraction, @Nullable Short build) {
         return streetRepository.findAll((root, query, cb) -> {
@@ -204,5 +210,35 @@ public class StreetDispatcher {
 
     public Street getById(Long streetId) {
         return streetRepository.findById(streetId).orElseThrow(() -> new IllegalFields("Улица не найдена"));
+    }
+
+    public List<Street.Suggestion> getSuggestions(@Nullable String stringQuery) {
+        if(stringQuery == null || stringQuery.isBlank()) return List.of();
+
+        final String translatedQuery = CharacterTranslation.translate(stringQuery);
+
+        final List<String> STRINGS = Arrays.stream(translatedQuery.trim().toLowerCase().split(" ")).toList();
+
+        Page<Street> streetPage = streetRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicatesName = new ArrayList<>();
+            for (String string : STRINGS) {
+                predicatesName.add(cb.like(cb.lower(root.get("name")), "%" + string + "%"));
+            }
+            List<Predicate> predicatesAltNames = new ArrayList<>();
+            for (String string : STRINGS) {
+                predicatesAltNames.add(cb.like(cb.lower(root.get("altNames")), "%" + string + "%"));
+            }
+
+            return cb.and(cb.or(cb.and(predicatesName.toArray(Predicate[]::new)), cb.and(predicatesAltNames.toArray(Predicate[]::new))),cb.isFalse(root.get("deleted")));
+        }, PageRequest.of(0, 20, Sort.by(Sort.Direction.ASC, "name")));
+
+        LevenshteinDistance levenshteinDistance = new LevenshteinDistance();
+
+        return streetPage.getContent()
+                .stream()
+                .sorted(Comparator.comparingInt(o->levenshteinDistance.apply(translatedQuery, o.getName())))
+                .sorted(Comparator.comparing(o->o.getCity().getName()))
+                .map(Street::toSuggestion)
+                .toList();
     }
 }

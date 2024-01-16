@@ -21,6 +21,7 @@ import com.microel.trackerbackend.storage.exceptions.NotOwner;
 import com.microel.trackerbackend.storage.repositories.CommentRepository;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
@@ -28,11 +29,12 @@ import org.springframework.stereotype.Component;
 
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
+import java.util.Collections;
+import java.util.Collections;
+import java.util.Collections;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Component
 public class CommentDispatcher {
@@ -92,12 +94,14 @@ public class CommentDispatcher {
                         .build()
         );
 
-        targetTask.setLastComment(comment);
+        targetTask.getLastComments().add(comment);
+        if(targetTask.getLastComments().size() > 5)
+            targetTask.getLastComments().remove(0);
 
-        taskDispatcher.unsafeSave(targetTask);
+        Task savedTask = taskDispatcher.unsafeSave(targetTask);
 
         stompController.createComment(Objects.requireNonNull(CommentMapper.toDto(comment), "Созданные комментарий равен null"), targetTask.getTaskId().toString());
-        stompController.updateTask(targetTask);
+        stompController.updateTask(savedTask);
 
         if(currentUser.isHasOldTrackerCredentials() && targetTask.getOldTrackerTaskId() != null){
             OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(currentUser.getOldTrackerCredentials().getUsername(), currentUser.getOldTrackerCredentials().getPassword());
@@ -149,7 +153,11 @@ public class CommentDispatcher {
         comment.setMessage(editedComment.getMessage());
         comment.setEdited(true);
 
-        return commentRepository.save(comment);
+        Comment save = commentRepository.save(comment);
+        stompController.updateComment(CommentMapper.toDto(save), comment.getParent().getTaskId().toString());
+        stompController.updateTask(comment.getParent());
+
+        return save;
     }
 
     public Comment delete(Long commentId, Employee currentUser) throws EntryNotFound, NotOwner {
@@ -166,19 +174,21 @@ public class CommentDispatcher {
             throw new NotOwner("Вы не являетесь владельцем этого комментария");
         }
 
-        List<Comment> taskComments = commentRepository.findAll((root, query, cb) -> {
-            return cb.and(cb.equal(root.get("parent"), comment.getParent()), cb.isFalse(root.get("deleted")));
-        }, Sort.by(Sort.Direction.DESC, "created"));
-        if (taskComments.size() > 1) {
-            Comment previousComment = taskComments.get(1);
-            previousComment.getParent().setLastComment(previousComment);
-            Task task = taskDispatcher.unsafeSave(previousComment.getParent());
-            stompController.updateTask(task);
-        }
-
         comment.setDeleted(true);
 
-        return commentRepository.save(comment);
+        Comment save = commentRepository.save(comment);
+
+        Page<Comment> taskComments = commentRepository.findAll((root, query, cb) -> {
+            return cb.and(cb.equal(root.get("parent"), comment.getParent()), cb.isFalse(root.get("deleted")));
+        }, PageRequest.of(0, 5, Sort.by(Sort.Direction.DESC, "created")));
+
+        comment.getParent().getLastComments().clear();
+        List<Comment> subList = Stream.of(taskComments.getContent().toArray(Comment[]::new)).collect(Collectors.toList());
+        Collections.reverse(subList);
+        comment.getParent().getLastComments().addAll(subList);
+        stompController.updateTask(taskDispatcher.unsafeSave(comment.getParent()));
+
+        return save;
     }
 
     public void attach(Long chatId, List<Attachment> attachments, String description, Employee employee) {

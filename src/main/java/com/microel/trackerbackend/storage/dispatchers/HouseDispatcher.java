@@ -9,6 +9,8 @@ import com.microel.trackerbackend.storage.exceptions.AlreadyExists;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.HouseRepository;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -252,5 +254,26 @@ public class HouseDispatcher {
     @Transactional
     public House get(Long id) {
         return houseRepository.findById(id).orElseThrow(() -> new EntryNotFound("Дом не найден"));
+    }
+
+    public List<House> getHouse(Long streetId, Short houseNum, @Nullable Character letter, @Nullable Short fraction, @Nullable Short build, @Nullable Boolean isAcpConnected) {
+        return houseRepository.findAll((root, query, cb) ->{
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("street"), streetId));
+            predicates.add(cb.equal(root.get("houseNum"), houseNum));
+            if (letter != null) {
+                predicates.add(cb.equal(root.get("letter"), letter));
+            }
+            if (fraction != null) {
+                predicates.add(cb.equal(root.get("fraction"), fraction));
+            }
+            if (build != null) {
+                predicates.add(cb.equal(root.get("build"), build));
+            }
+            if (isAcpConnected != null) {
+                predicates.add(cb.equal(root.get("isAcpConnected"), isAcpConnected));
+            }
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }, Sort.by(Sort.Direction.DESC, "houseId", "letter", "fraction", "build"));
     }
 }

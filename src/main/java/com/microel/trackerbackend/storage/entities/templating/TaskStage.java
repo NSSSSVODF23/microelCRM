@@ -2,10 +2,16 @@ package com.microel.trackerbackend.storage.entities.templating;
 
 import com.microel.trackerbackend.storage.entities.templating.oldtracker.OldTrackerBind;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import javax.persistence.CascadeType;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Getter
 @Setter
@@ -23,20 +29,28 @@ public class TaskStage {
     @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @JoinColumn(name = "f_old_tracker_bind_id")
     private OldTrackerBind oldTrackerBind;
+    @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    @BatchSize(size = 25)
+    @OrderBy(value = "orderIndex")
+    private List<TaskTypeDirectory> directories;
 
     @Data
     public static class Form {
         private String stageId;
         private String label;
         private Integer orderIndex;
+        @Nullable
         private OldTrackerBind.Form oldTrackerBind;
+        @Nullable
+        private List<TaskTypeDirectory.Form> directories;
 
         public TaskStage toEntity() {
             return TaskStage.builder()
                     .stageId(stageId)
                     .label(label)
                     .orderIndex(orderIndex)
-                    .oldTrackerBind(oldTrackerBind.toEntity())
+                    .oldTrackerBind(oldTrackerBind == null ? null : oldTrackerBind.toEntity())
+                    .directories(directories == null ? new ArrayList<>() : directories.stream().map(TaskTypeDirectory.Form::toEntity).collect(Collectors.toList()))
                     .build();
         }
     }

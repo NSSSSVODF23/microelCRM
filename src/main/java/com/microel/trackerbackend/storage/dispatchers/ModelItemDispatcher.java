@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.microel.trackerbackend.misc.task.filtering.fields.types.TaskFieldFilter;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.storehouse.EquipmentRealization;
@@ -34,6 +35,16 @@ public class ModelItemDispatcher {
     public ModelItemDispatcher(ModelItemRepository modelItemRepository, AddressDispatcher addressDispatcher) {
         this.modelItemRepository = modelItemRepository;
         this.addressDispatcher = addressDispatcher;
+    }
+
+    public List<Long> getTaskIdsByTaskFilters(List<TaskFieldFilter> filters){
+        List<ModelItem> modelItems = modelItemRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = filters.stream().map(filter -> filter.toPredicate(root, cb)).filter(Objects::nonNull).toList();
+            query.distinct(true);
+            return cb.or(predicates.toArray(Predicate[]::new));
+        });
+        Map<Long, Long> groupedByTask = modelItems.stream().collect(Collectors.groupingBy(mi -> mi.getTask().getTaskId(), Collectors.counting()));
+        return groupedByTask.entrySet().stream().filter(e -> e.getValue() == filters.stream().filter(TaskFieldFilter::nonEmpty).count()).map(Map.Entry::getKey).toList();
     }
 
     public List<Long> getTaskIdsByFilters(List<FilterModelItem> filters) {
@@ -223,4 +234,6 @@ public class ModelItemDispatcher {
     public static List<ModelItem> cleanToCreate(List<ModelItem> fields) {
         return fields.stream().peek(ModelItem::cleanToCreate).collect(Collectors.toList());
     }
+
+
 }

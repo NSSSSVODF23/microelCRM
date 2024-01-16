@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.persistence.*;
 import javax.persistence.CascadeType;
 import javax.persistence.Entity;
+import javax.persistence.OrderBy;
 import javax.persistence.Table;
 import java.sql.Timestamp;
 import java.util.*;
@@ -44,8 +45,9 @@ public class Wireframe {
     @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @JoinColumn(name = "f_wireframe_id")
     @BatchSize(size = 25)
-    private Set<TaskStage> stages;
-    @ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    @OrderBy(value="orderIndex")
+    private List<TaskStage> stages;
+    @ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @BatchSize(size = 25)
     private List<DefaultObserver> defaultObservers;
     private Timestamp created;
@@ -61,6 +63,15 @@ public class Wireframe {
     @JoinColumn(name = "f_wireframe_id")
     @BatchSize(size = 25)
     private List<DocumentTemplate> documentTemplates;
+
+    public void setDefaultObservers(List<DefaultObserver> newObservers) {
+        if(newObservers == null) return;
+        if(this.defaultObservers == null)
+            this.defaultObservers = new ArrayList<>();
+        this.defaultObservers.removeIf(defObs->newObservers.stream().noneMatch(nobs->Objects.equals(defObs, nobs)));
+        newObservers.removeIf(defObs->this.defaultObservers.contains(defObs));
+        this.defaultObservers.addAll(newObservers);
+    }
 
     /**
      * Создает список всех шаблонов полей из шаблона

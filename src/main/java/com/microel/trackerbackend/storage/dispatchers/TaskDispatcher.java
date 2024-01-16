@@ -1,9 +1,12 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.misc.DataPair;
+import com.microel.trackerbackend.misc.TagWithTaskCountItem;
 import com.microel.trackerbackend.misc.WireframeTaskCounter;
 import com.microel.trackerbackend.misc.accounting.ConnectionAgreement;
 import com.microel.trackerbackend.misc.accounting.TDocumentFactory;
+import com.microel.trackerbackend.misc.task.counting.AbstractTaskCounterPath;
+import com.microel.trackerbackend.misc.task.filtering.fields.types.TaskFieldFilter;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.modules.transport.IDuration;
 import com.microel.trackerbackend.services.api.ResponseException;
@@ -34,8 +37,7 @@ import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.TaskRepository;
 import com.microel.trackerbackend.storage.repositories.TaskStageRepository;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
 import org.javatuples.Triplet;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
@@ -81,7 +83,8 @@ public class TaskDispatcher {
                           TaskStageRepository taskStageRepository, DepartmentDispatcher departmentDispatcher,
                           EmployeeDispatcher employeeDispatcher, WorkLogDispatcher workLogDispatcher,
                           TaskTagDispatcher taskTagDispatcher, AddressDispatcher addressDispatcher,
-                          @Lazy NotificationDispatcher notificationDispatcher, StompController stompController, OldTrackerService oldTrackerService, AddressDispatcher addressDispatcher1) {
+                          @Lazy NotificationDispatcher notificationDispatcher, StompController stompController,
+                          OldTrackerService oldTrackerService, AddressDispatcher addressDispatcher1) {
         this.taskRepository = taskRepository;
         this.modelItemDispatcher = modelItemDispatcher;
         this.wireframeDispatcher = wireframeDispatcher;
@@ -108,7 +111,8 @@ public class TaskDispatcher {
 
         List<Task> tasks = taskRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.or(cb.lessThan(root.get("actualFrom"), endOfMinute), cb.lessThan(root.get("actualTo"), endOfMinute)));
+//            predicates.add(cb.or(cb.lessThan(root.get("actualFrom"), endOfMinute), cb.lessThan(root.get("actualTo"), endOfMinute)));
+            predicates.add(cb.or(cb.lessThan(root.get("actualFrom"), endOfMinute)));
             predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
             predicates.add(cb.equal(root.get("deleted"), false));
             return cb.and(predicates.toArray(Predicate[]::new));
@@ -118,13 +122,21 @@ public class TaskDispatcher {
             Set<Employee> recipient = task.getAllEmployeesObservers();
             if (task.getActualFrom() != null) {
                 notificationDispatcher.createNotification(recipient, Notification.taskHasBecomeActual(task));
+                UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+                updateTasksCountWorker.appendPath(task);
                 task.setActualFrom(null);
-                stompController.updateTask(taskRepository.save(task));
-            } else if (task.getActualTo() != null) {
+                Task save = taskRepository.save(task);
+                updateTasksCountWorker.appendPath(save).execute(this);
+                stompController.updateTask(save);
+            }/* else if (task.getActualTo() != null) {
                 notificationDispatcher.createNotification(recipient, Notification.taskExpired(task));
+                UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+                updateTasksCountWorker.appendPath(task);
                 task.setActualTo(null);
-                stompController.updateTask(taskRepository.save(task));
-            }
+                Task save = taskRepository.save(task);
+                updateTasksCountWorker.appendPath(save).execute(this);
+                stompController.updateTask(save);
+            }*/
         }
     }
 
@@ -167,7 +179,7 @@ public class TaskDispatcher {
         // Получаем список наблюдателей задачи по-умолчанию из шаблона
         List<DefaultObserver> defaultObservers = body.getObservers();
 
-        if(defaultObservers != null) {
+        if (defaultObservers != null) {
             // Выбираем из базы данных действующих наблюдателей задачи
             List<Employee> employeesObservers = employeeDispatcher.getByIdSet(DefaultObserver.getSetOfEmployees(defaultObservers).stream().map(Employee::getLogin).collect(Collectors.toSet()));
             List<Department> departmentsObservers = departmentDispatcher.getByIdSet(DefaultObserver.getSetOfDepartments(defaultObservers).stream().map(Department::getDepartmentId).collect(Collectors.toSet()));
@@ -178,20 +190,20 @@ public class TaskDispatcher {
             createdTask.setDepartmentsObservers(departmentsObservers);
         }
 
-        if(body.getType() == null){
+        if (body.getType() == null) {
             createdTask.setCurrentStage(wireframe.getFirstStage());
-        }else{
+        } else {
             TaskStage taskStage = taskStageRepository.findFirstByStageId(body.getType()).orElse(null);
-            if(taskStage == null){
+            if (taskStage == null) {
                 createdTask.setCurrentStage(wireframe.getFirstStage());
-            }else{
+            } else {
                 createdTask.setCurrentStage(taskStage);
-                if(
-                    employee.isHasOldTrackerCredentials()
-                    && body.getIsDuplicateInOldTracker() != null
-                    && body.getIsDuplicateInOldTracker()
-                    && taskStage.getOldTrackerBind() != null
-                ){
+                if (
+                        employee.isHasOldTrackerCredentials()
+                                && body.getIsDuplicateInOldTracker() != null
+                                && body.getIsDuplicateInOldTracker()
+                                && taskStage.getOldTrackerBind() != null
+                ) {
                     OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
                     Long newTaskId = requestFactory.getNewTaskId(taskStage.getOldTrackerBind().getClassId()).execute();
 
@@ -211,6 +223,18 @@ public class TaskDispatcher {
 
                     System.out.println("Новый идентификатор задачи: " + newTaskId);
                 }
+            }
+        }
+
+        if (createdTask.getCurrentStage() != null && createdTask.getCurrentStage().getDirectories() != null && !createdTask.getCurrentStage().getDirectories().isEmpty()) {
+            if (body.getDirectory() == null) {
+                createdTask.setCurrentDirectory(createdTask.getCurrentStage().getDirectories().get(0));
+            } else {
+                createdTask.getCurrentStage().getDirectories()
+                        .stream()
+                        .filter(taskTypeDirectory -> taskTypeDirectory.getTaskTypeDirectoryId().equals(body.getDirectory()))
+                        .findFirst()
+                        .ifPresent(createdTask::setCurrentDirectory);
             }
         }
 
@@ -245,10 +269,10 @@ public class TaskDispatcher {
                     .parent(null)
                     .build();
             createdTask.appendComment(initialComment);
-            createdTask.setLastComment(initialComment);
+            createdTask.setLastComments(List.of(initialComment));
         }
 
-        if(body.getTags() != null && taskTagDispatcher.valid(body.getTags()))
+        if (body.getTags() != null && taskTagDispatcher.valid(body.getTags()))
             createdTask.setTags(body.getTags());
 
         Task task = taskRepository.save(createdTask);
@@ -268,84 +292,32 @@ public class TaskDispatcher {
         Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
         stompController.updateTagTaskCounter(tasksCountByTags);
 
+        UpdateTasksCountWorker.of(task).execute(this);
+
         return task;
     }
 
-    public Page<Task> getTasks(Integer page, Integer limit, @Nullable List<TaskStatus> status, @Nullable String stage, @Nullable Set<Long> template,
-                               @Nullable List<FilterModelItem> filters, @Nullable String commonFilteringString, @Nullable String taskCreator,
-                               @Nullable DateRange creationRange, @Nullable Set<Long> filterTags, @Nullable Set<Long> exclusionIds, @Nullable Employee employeeTask) {
+    public Page<Task> getTasks(Integer page, Integer limit, @Nullable FiltrationConditions conditions, @Nullable Employee employeeTask) {
         return taskRepository.findAll((root, query, cb) -> {
-            ArrayList<Predicate> predicates = new ArrayList<>();
+            if(conditions == null) return cb.and(cb.equal(root.get("deleted"), false));
 
-            if (status != null && !status.isEmpty()) predicates.add(root.get("taskStatus").in(status));
-            if (stage != null && !stage.isBlank()) predicates.add(cb.equal(root.join("currentStage").get("stageId"), stage));
-            if (template != null && !template.isEmpty())
-                predicates.add(root.join("modelWireframe").get("wireframeId").in(template));
-            if (filters != null && !filters.isEmpty()) {
-                List<FilterModelItem> nonEmptyFilters = filters.stream().filter(FilterModelItem::isNotEmpty).toList();
-                if(!nonEmptyFilters.isEmpty())
-                    predicates.add(root.get("taskId").in(modelItemDispatcher.getTaskIdsByFilters(nonEmptyFilters)));
-            }
-            if (commonFilteringString != null && !commonFilteringString.isBlank()) {
-                CriteriaBuilder.In<Long> inCauseTaskId = cb.in(root.get("taskId"));
-                modelItemDispatcher.getTaskIdsByGlobalSearch(commonFilteringString).forEach(inCauseTaskId::value);
-                modelItemDispatcher.getTaskIdsByAddresses(addressDispatcher.getAddressInDBByQuery(commonFilteringString)).forEach(inCauseTaskId::value);
-                commentDispatcher.getTaskIdsByGlobalSearch(commonFilteringString).forEach(inCauseTaskId::value);
-                predicates.add(inCauseTaskId);
-            }
-
-            if (exclusionIds != null && !exclusionIds.isEmpty())
-                predicates.add(cb.not(root.get("taskId").in(exclusionIds)));
-            if (filterTags != null && !filterTags.isEmpty())
-                predicates.add(root.join("tags", JoinType.INNER).get("taskTagId").in(filterTags));
-
-            if (taskCreator != null && !taskCreator.isBlank())
-                predicates.add(cb.equal(root.join("creator").get("login"), taskCreator));
-            if (creationRange != null && creationRange.getStart() != null)
-                predicates.add(cb.greaterThanOrEqualTo(root.get("created"), creationRange.getStart()));
-            if (creationRange != null && creationRange.getEnd() != null)
-                predicates.add(cb.lessThanOrEqualTo(root.get("created"), creationRange.getEnd()));
-
-            if (employeeTask != null) {
-                predicates.add(cb.or(
-                        root.join("employeesObservers", JoinType.LEFT).get("login").in(employeeTask.getLogin()),
-                        root.join("departmentsObservers", JoinType.LEFT).join("employees", JoinType.LEFT).get("login").in(employeeTask.getLogin())));
-                predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
-            }
-
-            predicates.add(cb.equal(root.get("deleted"), false));
-
+            Predicate[] predicates = conditions.toPredicateList(root, query, cb, employeeTask, modelItemDispatcher, addressDispatcher, commentDispatcher);
             query.distinct(true);
-            return cb.and(predicates.toArray(Predicate[]::new));
+            return cb.and(predicates);
+
         }, PageRequest.of(page, limit, Sort.by(Sort.Direction.DESC, "created")));
     }
 
     public Page<Task> getIncomingTasks(Integer page, @Nullable FiltrationConditions conditions, Employee employee) {
         return taskRepository.findAll((root, query, cb) -> {
             ArrayList<Predicate> predicates = new ArrayList<>();
+
             if(conditions != null) {
-                if (conditions.searchPhrase != null && !conditions.searchPhrase.isBlank()) {
-                    CriteriaBuilder.In<Long> inCauseTaskId = cb.in(root.get("taskId"));
-                    modelItemDispatcher.getTaskIdsByGlobalSearch(conditions.searchPhrase).forEach(inCauseTaskId::value);
-                    modelItemDispatcher.getTaskIdsByAddresses(addressDispatcher.getAddressInDBByQuery(conditions.searchPhrase)).forEach(inCauseTaskId::value);
-                    commentDispatcher.getTaskIdsByGlobalSearch(conditions.searchPhrase).forEach(inCauseTaskId::value);
-                    predicates.add(inCauseTaskId);
-                }
-                if (conditions.template != null && !conditions.template.isEmpty()) {
-                    Join<Object, Object> joinWfrm = root.join("modelWireframe", JoinType.LEFT);
-                    CriteriaBuilder.In<Object> inModelWireframe = cb.in(joinWfrm.get("wireframeId"));
-                    conditions.template.forEach(inModelWireframe::value);
-                    predicates.add(inModelWireframe);
-                }
-                if (conditions.stage != null && (conditions.template != null && conditions.template.size() == 1)) {
-                    Join<Task, TaskStage> joinStage = root.join("currentStage", JoinType.LEFT);
-                    predicates.add(cb.equal(joinStage.get("stageId"), conditions.stage));
-                }
-                if (conditions.tags != null && !conditions.tags.isEmpty()) {
-                    Join<Task, TaskTag> joinTag = root.join("tags", JoinType.LEFT);
-                    predicates.add(joinTag.get("taskTagId").in(conditions.tags));
-                }
+                Predicate[] conditionPredicates = conditions.toPredicateList(root, query, cb, null, modelItemDispatcher, addressDispatcher, commentDispatcher);
+                query.distinct(true);
+                predicates.addAll(List.of(conditionPredicates));
             }
+
             Join<Object, Object> joinDep = root.join("departmentsObservers", JoinType.LEFT);
             Join<Object, Object> joinEmp = root.join("employeesObservers", JoinType.LEFT);
 
@@ -379,7 +351,9 @@ public class TaskDispatcher {
     public Task deleteTask(Long id, Employee employee) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound();
+        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         task.setDeleted(true);
+        task.setCurrentDirectory(null);
         task.setUpdated(Timestamp.from(Instant.now()));
 
         if(employee.isHasOldTrackerCredentials()){
@@ -390,8 +364,12 @@ public class TaskDispatcher {
                 requestFactory.close().execute();
             }
         }
-        
-        return taskRepository.save(task);
+
+        Task save = taskRepository.save(task);
+
+        updateTasksCountWorker.execute(this);
+
+        return save;
     }
 
     public Page<Task> getActiveTasksByStage(Long templateId, String stageId, Long offset, Integer limit) {
@@ -411,6 +389,9 @@ public class TaskDispatcher {
     public Task changeTaskStage(Long taskId, String stageId) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
+
+        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+
         TaskStage stage = taskStageRepository.findById(stageId).orElse(null);
         if (stage == null) throw new EntryNotFound("Не найден тип задачи с идентификатором " + stageId);
         if(task.getCurrentStage().getOldTrackerBind() != null){
@@ -418,8 +399,18 @@ public class TaskDispatcher {
             if(!Objects.equals(task.getCurrentStage().getOldTrackerBind().getClassId(), stage.getOldTrackerBind().getClassId())) throw new ResponseException("Невозможно изменить тип задачи, в привязках к старому трекеру заданы разные классы задач");
         }
         task.setCurrentStage(stage);
+        if(stage.getDirectories() != null && !stage.getDirectories().isEmpty()){
+            task.setCurrentDirectory(task.getCurrentStage().getDirectories().get(0));
+        }else {
+            task.setCurrentDirectory(null);
+        }
+
         task.setUpdated(Timestamp.from(Instant.now()));
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+
+        updateTasksCountWorker.appendPath(save).execute(this);
+
+        return save;
     }
 
     public List<Long> getActiveTaskIdsByStage(Long templateId, String stageId) {
@@ -442,11 +433,14 @@ public class TaskDispatcher {
         try {
             Task task = taskRepository.findByTaskId(taskId).orElse(null);
             if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
+            UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
             WorkLog existed = workLogDispatcher.getActiveWorkLogByTask(task).orElse(null);
             if (existed != null) throw new IllegalFields("Задаче уже назначены другие монтажники");
             workLog = workLogDispatcher.createWorkLog(task, body, creator);
             task.setTaskStatus(TaskStatus.PROCESSING);
             task.setUpdated(Timestamp.from(Instant.now()));
+            task.setActualFrom(null);
+            task.setActualTo(null);
 
             if(creator.isHasOldTrackerCredentials()){
                 TaskStage taskStage = task.getCurrentStage();
@@ -478,6 +472,8 @@ public class TaskDispatcher {
             Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
             stompController.updateTagTaskCounter(tasksCountByTags);
 
+            updateTasksCountWorker.appendPath(task).execute(this);
+
             return workLog;
         }catch (Exception e){
             if (workLog != null) workLogDispatcher.remove(workLog);
@@ -489,6 +485,7 @@ public class TaskDispatcher {
     public void abortAssignation(Long taskId, Employee employee) {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
+        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         workLogDispatcher.getActiveWorkLogByTask(task).ifPresent(workLogDispatcher::remove);
         task.setTaskStatus(TaskStatus.ACTIVE);
         task.setUpdated(Timestamp.from(Instant.now()));
@@ -520,12 +517,15 @@ public class TaskDispatcher {
         stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
         Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
         stompController.updateTagTaskCounter(tasksCountByTags);
+
+        updateTasksCountWorker.appendPath(task).execute(this);
     }
 
     @Transactional
     public WorkLog forceCloseWorkLog(Long taskId, String reasonOfClosing, Employee employee) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
+        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         WorkLog workLog = workLogDispatcher.getActiveWorkLogByTask(task).orElse(null);
 
         if (workLog == null) throw new EntryNotFound("Не найдено ни одного журнала работ для принудительного закрытия");
@@ -556,6 +556,7 @@ public class TaskDispatcher {
         }
 
         stompController.updateTask(taskRepository.save(task));
+        updateTasksCountWorker.appendPath(task).execute(this);
 
         Long wireframeId = task.getModelWireframe().getWireframeId();
 
@@ -703,11 +704,14 @@ public class TaskDispatcher {
     public Task modifyTags(Long taskId, Set<TaskTag> tags) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
+        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         // Check if tags are valid
         if (!taskTagDispatcher.valid(tags)) throw new EntryNotFound("Часть тегов не найдена в базе данных");
         task.setTags(tags);
         task.setUpdated(Timestamp.from(Instant.now()));
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+        updateTasksCountWorker.appendPath(save).execute(this);
+        return save;
     }
 
     @Transactional
@@ -738,54 +742,77 @@ public class TaskDispatcher {
     public Task changeTaskActualFrom(Long id, Instant datetime) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
+        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+        updateTasksCountWorker.appendPath(task);
         if (task.getActualTo() != null && datetime.isAfter(task.getActualTo().toInstant())) task.setActualTo(null);
         task.setActualFrom(Timestamp.from(datetime));
         task.setUpdated(Timestamp.from(Instant.now()));
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+        updateTasksCountWorker.appendPath(save).execute(this);
+        return save;
     }
 
     @Transactional
     public Task changeTaskActualTo(Long id, Instant datetime) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
+        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+        updateTasksCountWorker.appendPath(task);
         if (task.getActualFrom() != null && datetime.isBefore(task.getActualFrom().toInstant()))
             task.setActualFrom(null);
         task.setActualTo(Timestamp.from(datetime));
         task.setUpdated(Timestamp.from(Instant.now()));
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+        updateTasksCountWorker.appendPath(save).execute(this);
+        return save;
     }
 
     @Transactional
     public Task clearTaskActualFrom(Long id) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
+        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+        updateTasksCountWorker.appendPath(task);
         task.setActualFrom(null);
         task.setUpdated(Timestamp.from(Instant.now()));
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+        updateTasksCountWorker.appendPath(save).execute(this);
+        return save;
     }
 
     @Transactional
     public Task clearTaskActualTo(Long id) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
+        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+        updateTasksCountWorker.appendPath(task);
         task.setActualTo(null);
         task.setUpdated(Timestamp.from(Instant.now()));
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+        updateTasksCountWorker.appendPath(save).execute(this);
+        return save;
     }
 
     @Transactional
-    public Task close(Long id, Employee employee) throws EntryNotFound, IllegalFields {
+    public Task close(Long id, @Nullable Employee employee) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
+        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         if (task.getTaskStatus().equals(TaskStatus.CLOSE)) throw new IllegalFields("Задача уже закрыта");
-        if (task.getTaskStatus().equals(TaskStatus.PROCESSING))
+        if (employee != null && task.getTaskStatus().equals(TaskStatus.PROCESSING))
             throw new IllegalFields("Пока задача отдана монтажникам её нельзя закрыть");
         task.setTaskStatus(TaskStatus.CLOSE);
-        task.setUpdated(Timestamp.from(Instant.now()));
-        task.getTags().removeIf(TaskTag::getUnbindAfterClose);
+        final Timestamp NOW = Timestamp.from(Instant.now());
+        task.setUpdated(NOW);
+        task.setClosed(NOW);
+        if(task.getTags() != null) task.getTags().removeIf(TaskTag::getUnbindAfterClose);
+        task.setCurrentDirectory(null);
+        task.setActualFrom(null);
+        task.setActualTo(null);
         // Обновляем счетчики задач на странице
         Long wireframeId = task.getModelWireframe().getWireframeId();
 
+        if(employee == null) employee = task.getCreator();
         if(employee.isHasOldTrackerCredentials()){
             TaskStage taskStage = task.getCurrentStage();
             if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
@@ -811,19 +838,30 @@ public class TaskDispatcher {
         Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
         stompController.updateTagTaskCounter(tasksCountByTags);
 
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+        updateTasksCountWorker.appendPath(save).execute(this);
+        return save;
+    }
+
+    @Transactional
+    public Task close(Long id) throws EntryNotFound, IllegalFields {
+        return close(id, null);
     }
 
     @Transactional
     public Task reopen(Long taskId, Employee employee) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
+        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         if (task.getTaskStatus().equals(TaskStatus.ACTIVE)) throw new IllegalFields("Задача уже активна");
         if (task.getTaskStatus().equals(TaskStatus.PROCESSING))
             throw new IllegalFields("Невозможно активировать задачу");
         task.setTaskStatus(TaskStatus.ACTIVE);
         task.setUpdated(Timestamp.from(Instant.now()));
 
+        if(task.getCurrentStage() != null && task.getCurrentStage().getDirectories() != null && !task.getCurrentStage().getDirectories().isEmpty()){
+            task.setCurrentDirectory(task.getCurrentStage().getDirectories().get(0));
+        }
 
         if(employee.isHasOldTrackerCredentials()){
             TaskStage taskStage = task.getCurrentStage();
@@ -853,8 +891,30 @@ public class TaskDispatcher {
         stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
         Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
         stompController.updateTagTaskCounter(tasksCountByTags);
-
+        updateTasksCountWorker.appendPath(task).execute(this);
         return task;
+    }
+
+    @Transactional
+    public List<Task> moveToDirectory(MovingToDirectoryForm form) throws EntryNotFound {
+        List<Task> tasks = taskRepository.findAllById(form.taskIds);
+        if (tasks.size() != form.taskIds.size()) throw new EntryNotFound("Некоторые задачи не найдены");
+        UpdateTasksCountWorker updateTasksCountWorker = new UpdateTasksCountWorker();
+        for (Task task : tasks) {
+            updateTasksCountWorker.appendPath(task);
+            TaskStage currentStage = task.getCurrentStage();
+            if (currentStage == null || currentStage.getDirectories() == null || currentStage.getDirectories().isEmpty())
+                throw new ResponseException("Некоторые задачи не удалось переместить, отсутствует тип или категории");
+            TaskTypeDirectory currentDirectory = currentStage.getDirectories().stream().filter(taskTypeDirectory -> Objects.equals(taskTypeDirectory.getTaskTypeDirectoryId(), form.directoryId)).findFirst().orElse(null);
+            if (currentDirectory == null)
+                throw new ResponseException("Некоторые задачи не удалось переместить, не валидная целевая категория");
+            task.setCurrentDirectory(currentDirectory);
+            task.setUpdated(Timestamp.from(Instant.now()));
+            updateTasksCountWorker.appendPath(task);
+        }
+        List<Task> taskList = taskRepository.saveAll(tasks);
+        updateTasksCountWorker.execute(this);
+        return taskList;
     }
 
     @Transactional
@@ -1137,6 +1197,18 @@ public class TaskDispatcher {
         return taskRepository.countByModelWireframe_WireframeIdAndDeletedFalseAndTaskStatusNot(wireframeId, TaskStatus.CLOSE);
     }
 
+    public Long getTasksCount(TaskDispatcher.FiltrationConditions conditions) {
+        return taskRepository.count((root, query, cb) -> {
+            Predicate[] predicates = conditions.toPredicateList(root, query, cb, null, modelItemDispatcher, addressDispatcher, commentDispatcher);
+            query.distinct(true);
+            return cb.and(predicates);
+        });
+    }
+
+    public Long getTasksCount(AbstractTaskCounterPath path) {
+        return getTasksCount(path.toFiltrationCondition());
+    }
+
     public Long getTasksCount(Long wireframeId, TaskStatus taskStatus) {
         return taskRepository.countByModelWireframe_WireframeIdAndDeletedFalseAndTaskStatus(wireframeId, taskStatus);
     }
@@ -1171,22 +1243,13 @@ public class TaskDispatcher {
 
         List<DataPair> worksDone = new ArrayList<>();
 
-        YearMonth previousMonth = YearMonth.now();
-        previousMonth = previousMonth.minusMonths(1);
-        Timestamp startOfPreviousMonth = Timestamp.valueOf(previousMonth.atDay(1).atStartOfDay());
-        Timestamp endOfPreviousMonth = Timestamp.valueOf(previousMonth.atEndOfMonth().atTime(23,59,59));
+        DateRange lastMonth = DateRange.lastMonth();
+        DateRange lastWeek = DateRange.lastWeek();
+        DateRange today = DateRange.today();
 
-        LocalDate previousWeek = LocalDate.now();
-        previousWeek = previousWeek.minusWeeks(1).with(DayOfWeek.MONDAY);
-        Timestamp startOfPreviousWeek = Timestamp.valueOf(previousWeek.atStartOfDay());
-        Timestamp endOfPreviousWeek = Timestamp.valueOf(previousWeek.plusWeeks(1).atTime(23,59,59));
-
-        Timestamp todayStart = Timestamp.valueOf(LocalDate.now().atStartOfDay());
-        Timestamp todayEnd = Timestamp.valueOf(LocalDate.now().atTime(23,59,59));
-
-        worksDone.add(DataPair.of("Сегодня", workLogDispatcher.getDoneWorks(wireframeId, todayStart, todayEnd).size()));
-        worksDone.add(DataPair.of("Предыдущая неделя", workLogDispatcher.getDoneWorks(wireframeId, startOfPreviousWeek, endOfPreviousWeek).size()));
-        worksDone.add(DataPair.of("Предыдущий месяц", workLogDispatcher.getDoneWorks(wireframeId, startOfPreviousMonth, endOfPreviousMonth).size()));
+        worksDone.add(DataPair.of("Сегодня", workLogDispatcher.getDoneWorks(wireframeId, today.start(), today.end()).size()));
+        worksDone.add(DataPair.of("Предыдущая неделя", workLogDispatcher.getDoneWorks(wireframeId, lastWeek.start(), lastWeek.end()).size()));
+        worksDone.add(DataPair.of("Предыдущий месяц", workLogDispatcher.getDoneWorks(wireframeId, lastMonth.start(), lastMonth.end()).size()));
 
         List<DataPair> taskCountByTags = new ArrayList<>();
         Map<Long, Long> mapCountByTags = getTasksCountByTags(wireframeId);
@@ -1313,6 +1376,72 @@ public class TaskDispatcher {
         }
     }
 
+    public List<TagWithTaskCountItem> getTagsListFromCatalog(FiltrationConditions condition) {
+        List<Task> taskList = taskRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = Arrays.stream(condition.toPredicateList(root, query, cb, null, modelItemDispatcher, addressDispatcher, commentDispatcher)).collect(Collectors.toList());
+//            Join<Task, TaskTag> taskTagJoin = root.join("tags");
+//            predicates.add(cb.isNotNull(taskTagJoin));
+            predicates.add(cb.isNotEmpty(root.get("tags")));
+            query.distinct(true);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        });
+        Set<TaskTag> setOfTags = taskList.stream().flatMap(task -> task.getTags().stream()).collect(Collectors.toSet());
+        return setOfTags.stream().map(taskTag -> {
+            long count = taskList.stream().filter(task -> task.getTags().contains(taskTag)).count();
+            return new TagWithTaskCountItem(taskTag.getTaskTagId(), taskTag.getName(), taskTag.getColor(), count);
+        }).sorted((o1, o2) -> o1.getName().compareToIgnoreCase(o2.getName())).toList();
+    }
+
+    @Transactional
+    public void restoreTasksToOriginalDirectory(Wireframe wireframe){
+        if(wireframe.getStages() != null){
+            for(TaskStage taskStage : wireframe.getStages()){
+                if(taskStage.getDirectories() != null && !taskStage.getDirectories().isEmpty()){
+                    List<Task> tasks = taskRepository.findAll((root, query, cb) -> {
+                        query.distinct(true);
+                        return cb.and(
+                                cb.isNull(root.get("currentDirectory")),
+                                cb.isFalse(root.get("deleted")),
+                                cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE),
+                                cb.equal(root.join("currentStage").get("stageId"), taskStage.getStageId())
+                        );
+                    });
+                    UpdateTasksCountWorker updateTasksCountWorker = new UpdateTasksCountWorker();
+                    for (Task task : tasks) {
+                        updateTasksCountWorker.appendPath(task);
+                        task.setCurrentDirectory(taskStage.getDirectories().get(0));
+                        updateTasksCountWorker.appendPath(task);
+                    }
+                    taskRepository.saveAll(tasks);
+                    updateTasksCountWorker.execute(this);
+                }
+            }
+        }
+    }
+
+    @Transactional
+    public void removeLinksToDirectories(List<Long> removingDirectories) {
+        List<Task> tasks = taskRepository.findAll((root, query, cb) ->
+                cb.and(root.join("currentDirectory", JoinType.LEFT)
+                        .get("taskTypeDirectoryId")
+                        .in(removingDirectories))
+        );
+//        tasks.forEach(task -> task.setCurrentDirectory(null));
+        taskRepository.saveAll(tasks);
+    }
+
+    public List<TaskStage> getAvailableTaskTypesToChange(Long id) {
+        Task task = taskRepository.findByTaskId(id).orElse(null);
+        if(task == null) throw new ResponseException("Задача не найдена");
+        return task.getModelWireframe().getStages().stream().filter(taskStage -> !Objects.equals(taskStage.getStageId(), task.getCurrentStage().getStageId())).toList();
+    }
+
+    public List<TaskTypeDirectory> getAvailableTaskDirectoryToChange(Long id) {
+        Task task = taskRepository.findByTaskId(id).orElse(null);
+        if(task == null) throw new ResponseException("Задача не найдена");
+        return task.getCurrentStage().getDirectories().stream().filter(taskTypeDirectory -> !Objects.equals(taskTypeDirectory.getTaskTypeDirectoryId(), task.getCurrentDirectory().getTaskTypeDirectoryId())).toList();
+    }
+
     @Getter
     @Setter
     public static class WireframeDashboardStatistic{
@@ -1332,9 +1461,13 @@ public class TaskDispatcher {
         @Nullable
         private List<FilterModelItem> templateFilter;
         @Nullable
+        private List<TaskFieldFilter> fieldFilters;
+        @Nullable
         private String searchPhrase;
         @Nullable
         private String author;
+        @Nullable
+        private String assignedEmployee;
         @Nullable
         private DateRange dateOfCreation;
         @Nullable
@@ -1349,6 +1482,16 @@ public class TaskDispatcher {
         private Integer page;
         @Nullable
         private String stage;
+        @Nullable
+        private Long directory;
+        @Nullable
+        private SchedulingType schedulingType;
+        @Nullable
+        private DateRange dateOfClose;
+        @Nullable
+        private DateRange actualFrom;
+        @Nullable
+        private DateRange actualTo;
 
         public void clean() {
             Field[] fields = this.getClass().getDeclaredFields();
@@ -1366,6 +1509,140 @@ public class TaskDispatcher {
 
                 }
             }
+        }
+
+        public Predicate[] toPredicateList(Root<Task> root, CriteriaQuery<?> query, CriteriaBuilder cb, Employee employeeTask,
+                                           ModelItemDispatcher mid, AddressDispatcher adrd, CommentDispatcher comd){
+            ArrayList<Predicate> predicates = new ArrayList<>();
+
+            Join<Task, Wireframe> wireframeJoin = root.join("modelWireframe", JoinType.LEFT);
+            Join<Task, TaskStage> taskStageJoin = root.join("currentStage", JoinType.LEFT);
+            Join<Task, TaskTypeDirectory> taskTypeDirectoryJoin = root.join("currentDirectory", JoinType.LEFT);
+            Join<Task, WorkLog> workLogJoin = root.join("workLogs", JoinType.LEFT);
+            Join<WorkLog, Employee> workLogEmployeesJoin = workLogJoin.join("employees", JoinType.LEFT);
+            Join<Task, ModelItem> fieldJoin = root.join("fields", JoinType.INNER);
+
+            predicates.add(cb.isFalse(wireframeJoin.get("deleted")));
+
+            if (status != null && !status.isEmpty()) {
+                predicates.add(root.get("taskStatus").in(status));
+            }
+            if (stage != null && !stage.isBlank()) predicates.add(cb.equal(taskStageJoin.get("stageId"), stage));
+            if (template != null && !template.isEmpty())
+                predicates.add(wireframeJoin.get("wireframeId").in(template));
+            if (directory != null)
+                if(directory == 0L){
+                    predicates.add(cb.isNull(taskTypeDirectoryJoin));
+                }else{
+                    predicates.add(cb.equal(taskTypeDirectoryJoin.get("taskTypeDirectoryId"), directory));
+                }
+            if (templateFilter != null && !templateFilter.isEmpty()) {
+                List<FilterModelItem> nonEmptyFilters = templateFilter.stream().filter(FilterModelItem::isNotEmpty).toList();
+                if(!nonEmptyFilters.isEmpty())
+                    predicates.add(root.get("taskId").in(mid.getTaskIdsByFilters(nonEmptyFilters)));
+            }
+            if (fieldFilters != null && !fieldFilters.isEmpty() && !fieldFilters.stream().allMatch(TaskFieldFilter::isEmpty)) {
+                List<Long> taskIdsByTaskFilters = mid.getTaskIdsByTaskFilters(fieldFilters);
+                predicates.add(root.get("taskId").in(taskIdsByTaskFilters));
+            }
+            if (searchPhrase != null && !searchPhrase.isBlank()) {
+                CriteriaBuilder.In<Long> inCauseTaskId = cb.in(root.get("taskId"));
+                mid.getTaskIdsByGlobalSearch(searchPhrase).forEach(inCauseTaskId::value);
+                mid.getTaskIdsByAddresses(adrd.getAddressInDBByQuery(searchPhrase)).forEach(inCauseTaskId::value);
+                comd.getTaskIdsByGlobalSearch(searchPhrase).forEach(inCauseTaskId::value);
+                predicates.add(inCauseTaskId);
+            }
+
+            if (exclusionIds != null && !exclusionIds.isEmpty())
+                predicates.add(cb.not(root.get("taskId").in(exclusionIds)));
+            if (tags != null && !tags.isEmpty())
+                predicates.add(root.join("tags", JoinType.INNER).get("taskTagId").in(tags));
+
+            if (author != null && !author.isBlank())
+                predicates.add(cb.equal(root.join("creator").get("login"), author));
+            if (assignedEmployee != null && !assignedEmployee.isBlank())
+                predicates.add(cb.equal(workLogEmployeesJoin.get("login"), assignedEmployee));
+            if (dateOfCreation != null && dateOfCreation.start() != null)
+                predicates.add(cb.greaterThanOrEqualTo(root.get("created"), dateOfCreation.start()));
+            if (dateOfCreation != null && dateOfCreation.end() != null)
+                predicates.add(cb.lessThanOrEqualTo(root.get("created"), dateOfCreation.end()));
+            if (dateOfClose != null && dateOfClose.start() != null)
+                predicates.add(cb.greaterThanOrEqualTo(root.get("closed"), dateOfClose.start()));
+            if (dateOfClose != null && dateOfClose.end() != null)
+                predicates.add(cb.lessThanOrEqualTo(root.get("closed"), dateOfClose.end()));
+            if (actualFrom != null && actualFrom.start() != null)
+                predicates.add(cb.greaterThanOrEqualTo(root.get("actualFrom"), actualFrom.start()));
+            if (actualFrom != null && actualFrom.end() != null)
+                predicates.add(cb.lessThanOrEqualTo(root.get("actualFrom"), actualFrom.end()));
+            if (actualTo != null && actualTo.start() != null)
+                predicates.add(cb.greaterThanOrEqualTo(root.get("actualTo"), actualTo.start()));
+            if (actualTo != null && actualTo.end() != null)
+                predicates.add(cb.lessThanOrEqualTo(root.get("actualTo"), actualTo.end()));
+            if (schedulingType != null && schedulingType != SchedulingType.ALL)
+                switch (schedulingType){
+                    case SCHEDULED -> predicates.add(cb.or(cb.isNotNull(root.get("actualFrom")), cb.isNotNull(root.get("actualTo"))));
+                    case UNSCHEDULED -> predicates.add(cb.and(cb.isNull(root.get("actualFrom")),  cb.isNull(root.get("actualTo"))));
+                    case PLANNED -> predicates.add(cb.isNotNull(root.get("actualFrom")));
+                    case DEADLINE -> predicates.add(cb.and(cb.isNull(root.get("actualFrom")), cb.isNotNull(root.get("actualTo"))));
+                    case EXCEPT_PLANNED -> predicates.add(cb.isNull(root.get("actualFrom")));
+                }
+
+            if (employeeTask != null) {
+                predicates.add(cb.or(
+                        root.join("employeesObservers", JoinType.LEFT).get("login").in(employeeTask.getLogin()),
+                        root.join("departmentsObservers", JoinType.LEFT).join("employees", JoinType.LEFT).get("login").in(employeeTask.getLogin())));
+                predicates.add(cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE));
+            }
+
+            predicates.add(cb.equal(root.get("deleted"), false));
+
+            return predicates.toArray(Predicate[]::new);
+        }
+
+        public enum SchedulingType{
+            ALL("ALL"),
+            SCHEDULED("SCHEDULED"),
+            UNSCHEDULED("UNSCHEDULED"),
+            PLANNED("PLANNED"),
+            DEADLINE("DEADLINE"),
+            EXCEPT_PLANNED("EXCEPT_PLANNED");
+
+            private final String value;
+
+            SchedulingType(String value){
+                this.value = value;
+            }
+
+            public String getValue(){
+                return value;
+            }
+        }
+    }
+
+    @Data
+    public static class MovingToDirectoryForm{
+        private List<Long> taskIds;
+        private Long directoryId;
+    }
+
+    public static class UpdateTasksCountWorker{
+        private List<AbstractTaskCounterPath> paths = new ArrayList<>();
+        public static UpdateTasksCountWorker of(Task task){
+            UpdateTasksCountWorker worker = new UpdateTasksCountWorker();
+            worker.appendPath(task);
+            return worker;
+        }
+
+        public UpdateTasksCountWorker appendPath(Task task){
+            paths.addAll(task.getListOfCounterPaths());
+            return this;
+        }
+
+        public void execute(TaskDispatcher context){
+            for (AbstractTaskCounterPath path : paths) {
+                context.stompController.updateTaskCounter(context.getTasksCount(path), path);
+            }
+            context.stompController.movedTask();
         }
     }
 }

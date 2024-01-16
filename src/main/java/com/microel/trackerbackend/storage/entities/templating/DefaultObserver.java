@@ -7,6 +7,7 @@ import lombok.*;
 import javax.persistence.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Entity
@@ -22,6 +23,18 @@ public class DefaultObserver {
     private String name;
     @Enumerated(EnumType.STRING)
     private DefaultObserverTargetType targetType;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof DefaultObserver that)) return false;
+        return Objects.equals(getTargetId(), that.getTargetId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getTargetId());
+    }
 
     public static DefaultObserver from(Employee employee) {
         return DefaultObserver.builder()

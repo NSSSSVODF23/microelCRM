@@ -4,6 +4,7 @@ import com.microel.trackerbackend.storage.entities.templating.oldtracker.fields.
 import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.BatchSize;
 
 import javax.persistence.*;
 import java.util.List;
@@ -23,6 +24,7 @@ public class OldTrackerBind {
     private Integer manualCloseStageId;
     private Integer autoCloseStageId;
     @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    @BatchSize(size = 25)
     private List<FieldDataBind> fieldDataBinds;
 
     @Data

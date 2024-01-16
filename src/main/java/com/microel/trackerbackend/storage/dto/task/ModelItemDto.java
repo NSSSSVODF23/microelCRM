@@ -6,6 +6,7 @@ import com.microel.trackerbackend.storage.entities.equipment.ClientEquipmentReal
 import com.microel.trackerbackend.storage.entities.templating.DataConnectionService;
 import com.microel.trackerbackend.storage.entities.templating.PassportDetails;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
+import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import lombok.*;
 
@@ -54,5 +55,28 @@ public class ModelItemDto {
             case EQUIPMENTS -> equipmentRealizationsData;
             case PASSPORT_DETAILS -> passportDetailsData;
         };
+    }
+
+    public static ModelItemDto of(ModelItem modelItem){
+        return ModelItemDto.builder()
+                .modelItemId(modelItem.getModelItemId())
+                .id(modelItem.getId())
+                .name(modelItem.getName())
+                .wireframeFieldType(modelItem.getWireframeFieldType())
+                .variation(modelItem.getVariation())
+                .displayType(modelItem.getDisplayType())
+                .addressData(AddressDto.of(modelItem.getAddressData()))
+                .booleanData(modelItem.getBooleanData())
+                .floatData(modelItem.getFloatData())
+                .integerData(modelItem.getIntegerData())
+                .stringData(modelItem.getStringData())
+                .timestampData(modelItem.getTimestampData())
+                .phoneData(modelItem.getPhoneData())
+                .connectionServicesData(modelItem.getConnectionServicesData())
+                .equipmentRealizationsData(modelItem.getEquipmentRealizationsData())
+                .passportDetailsData(modelItem.getPassportDetailsData())
+                .textRepresentation(modelItem.getTextRepresentation())
+                .textRepresentationForTlg(modelItem.getTextRepresentationForTlg())
+                .build();
     }
 }

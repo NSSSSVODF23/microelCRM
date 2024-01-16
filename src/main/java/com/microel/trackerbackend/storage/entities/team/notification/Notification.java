@@ -68,6 +68,7 @@ public class Notification {
         private NotificationType type;
 
         private String message;
+
         public Notification getInstace(Employee recipient){
             return Notification.builder()
                     .type(type)
@@ -89,6 +90,18 @@ public class Notification {
                 .append(task.getCreator().getLogin());
 
         return new Factory(NotificationType.TASK_CREATED,  message.toString());
+    }
+    public static Factory taskMovedToDirectory(Task task, Employee employee) {
+        StringBuilder message =  new StringBuilder();
+
+        message.append("Задача #")
+                .append(task.getTaskId())
+                .append(" перемещена в каталог ")
+                .append(task.getCurrentDirectory().getName())
+                .append(" пользователем @")
+                .append(employee.getLogin());
+
+        return new Factory(NotificationType.TASK_MOVED_TO_DIRECTORY,  message.toString());
     }
     public static Factory taskHasBecomeActual(Task task) {
         StringBuilder message =  new StringBuilder();

@@ -2,6 +2,7 @@ package com.microel.trackerbackend.controllers.telegram;
 
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.external.RestPage;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
@@ -18,6 +19,7 @@ import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
+import com.microel.trackerbackend.storage.entities.task.WorkLogTargetFile;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
@@ -95,7 +97,7 @@ public class TelegramMessageFactory {
         Task task = workLog.getTask();
         String messageBuilder = "\uD83D\uDC77\u200D♂️ " +
                 Decorator.bold("Задача #" + task.getTaskId()) + "\n" +
-                "Тип: " + Decorator.bold(task.getModelWireframe().getName()) + "\n" +
+                Decorator.bold(task.getModelWireframe().getName()) +" - "+ Decorator.bold(task.getCurrentStage().getLabel()) + "\n" +
                 Decorator.mention(employeeName, employee.getTelegramUserId()) +
                 " назначил: " +
                 workLog.getEmployees().stream().map(e -> Decorator.mention(e.getFullName(), e.getTelegramUserId())).collect(Collectors.joining(", ")) +
@@ -137,7 +139,11 @@ public class TelegramMessageFactory {
         KeyboardRow keyboardRowClose = new KeyboardRow(List.of(new KeyboardButton("\uD83D\uDC4C Завершить задачу")));
         ReplyKeyboardMarkup keyboardMarkup = ReplyKeyboardMarkup.builder().keyboard(List.of(keyboardRowMenu, keyboardRowClose)).resizeKeyboard(true).build();
         StringBuilder messageBuilder = new StringBuilder();
-        messageBuilder.append("Задача #").append(task.getTaskId()).append("\n");
+        messageBuilder.append(Decorator.bold(task.getClassName()));
+        if (!task.getTypeName().equals("Неизвестно")){
+            messageBuilder.append(" - ").append(Decorator.bold(task.getTypeName()));
+        }
+        messageBuilder.append(" #").append(task.getTaskId()).append("\n");
         for (ModelItem field : fields) {
             messageBuilder.append(Decorator.underline(field.getName())).append(": ").append(field.getTextRepresentationForTlg()).append("\n");
         }
@@ -155,7 +161,11 @@ public class TelegramMessageFactory {
         ReplyKeyboardRemove clearKeyboardMarkup = ReplyKeyboardRemove.builder().removeKeyboard(true).build();
 
         StringBuilder messageBuilder = new StringBuilder();
-        messageBuilder.append("Новая задача #").append(task.getTaskId()).append("\n");
+        messageBuilder.append(Decorator.bold(task.getClassName()));
+        if (!task.getTypeName().equals("Неизвестно")){
+            messageBuilder.append(" - ").append(Decorator.bold(task.getTypeName()));
+        }
+        messageBuilder.append(" #").append(task.getTaskId()).append("\n");
         for (ModelItem field : fields) {
             messageBuilder.append(Decorator.underline(field.getName())).append(": ").append(field.getTextRepresentationForTlg()).append("\n");
         }
@@ -255,8 +265,12 @@ public class TelegramMessageFactory {
         } else if (isActive) {
             messageBuilder.append(Decorator.bold("✅ Текущая активная")).append("\n");
         }
-        messageBuilder.append("Задача #").append(task.getTaskId()).append("\n");
-        messageBuilder.append("Тип: ").append(task.getModelWireframe().getName());
+
+        messageBuilder.append(Decorator.bold(task.getClassName()));
+        if (!task.getTypeName().equals("Неизвестно")){
+            messageBuilder.append(" - ").append(Decorator.bold(task.getTypeName()));
+        }
+        messageBuilder.append(" #").append(task.getTaskId()).append("\n");
 
         InlineKeyboardButton acceptButton = InlineKeyboardButton.builder()
                 .text("Принять задачу")
@@ -726,8 +740,8 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(sendMessage, context);
     }
 
-    public AbstractExecutor<Message> fileSuggestions(List<TFile> files) {
-        List<List<InlineKeyboardButton>> keyboard = files.stream().map(TFile::toTelegramButton).map(List::of).toList();
+    public AbstractExecutor<Message> fileSuggestions(List<TFile.FileSuggestion> files) {
+        List<List<InlineKeyboardButton>> keyboard = files.stream().map(TFile.FileSuggestion::toTelegramButton).map(List::of).toList();
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
                 .text("Выберите нужный файл:")
@@ -769,6 +783,72 @@ public class TelegramMessageFactory {
                     .build(), context);
             default -> throw new IllegalMediaType("Не известный тип медиа вложения");
         };
+    }
+
+    public AbstractExecutor<Message> workTargetMessage(@Nullable String message, @Nullable WorkLogTargetFile file) {
+        if(message == null || message.isBlank()){
+            message = "Текущая цель";
+        }else{
+            message = "Текущая цель:\n" + message;
+        }
+        if(file != null){
+            switch (file.getType()) {
+                case PHOTO -> {
+                    return new PhotoMessageExecutor(SendPhoto.builder()
+                            .chatId(chatId)
+                            .caption(message)
+                            .photo(file.getInputFile())
+                            .parseMode("HTML")
+                            .build(), context);
+                }
+                case VIDEO -> {
+                    return new VideoMessageExecutor(SendVideo.builder()
+                            .chatId(chatId)
+                            .caption(message)
+                            .video(file.getInputFile())
+                            .parseMode("HTML")
+                            .build(), context);
+                }
+                case AUDIO -> {
+                    return new AudioMessageExecutor(SendAudio.builder()
+                            .chatId(chatId)
+                            .caption(message)
+                            .audio(file.getInputFile())
+                            .parseMode("HTML")
+                            .build(), context);
+                }
+                case DOCUMENT, FILE -> {
+                    return new DocumentMessageExecutor(SendDocument.builder()
+                            .chatId(chatId)
+                            .caption(message)
+                            .document(file.getInputFile())
+                            .parseMode("HTML")
+                            .build(), context);
+                }
+                default -> throw new IllegalMediaType("Не известный тип медиа вложения");
+            }
+        }else{
+            SendMessage sendMessage = SendMessage.builder()
+                    .chatId(chatId)
+                    .text(message)
+                    .parseMode("HTML")
+                    .build();
+            return new MessageExecutor<>(sendMessage, context);
+        }
+    }
+
+    public AbstractExecutor<List<Message>> workTargetGroupMessage(@Nullable String message, @Nullable List<WorkLogTargetFile> files) {
+        if(files == null || files.isEmpty())
+            throw new ResponseException("Нет файлов для отправки");
+        if(message == null || message.isBlank()){
+            message = "Текущая цель";
+        }else{
+            message = "Текущая цель:\n" + message;
+        }
+        List<InputMedia> mediaList = files.stream().map(WorkLogTargetFile::toInputMedia).filter(Objects::nonNull).collect(Collectors.toList());
+        mediaList.get(0).setCaption(message);
+        SendMediaGroup sendMediaGroup = new SendMediaGroup(chatId, mediaList);
+        return new GroupMessageExecutor(sendMediaGroup, context);
     }
 
     /**

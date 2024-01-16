@@ -1,11 +1,8 @@
 package com.microel.trackerbackend.storage.entities.chat;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.storage.dto.comment.AttachmentDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
-import com.microel.trackerbackend.storage.entities.comments.Attachment;
-import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
-import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.comments.FileType;
 import lombok.*;
 import org.springframework.lang.Nullable;
 
@@ -34,10 +31,10 @@ public class SuperMessage {
 
     @Nullable
     public ContentType getAttachmentType(){
-        Set<AttachmentType> attachmentTypeSet = attachments.stream().map(AttachmentDto::getType).collect(Collectors.toSet());
-        boolean isVisual = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.PHOTO || t == AttachmentType.VIDEO);
-        boolean isAudio = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.AUDIO);
-        boolean isDocument = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.DOCUMENT || t == AttachmentType.FILE);
+        Set<FileType> fileTypeSet = attachments.stream().map(AttachmentDto::getType).collect(Collectors.toSet());
+        boolean isVisual = fileTypeSet.stream().allMatch(t->t == FileType.PHOTO || t == FileType.VIDEO);
+        boolean isAudio = fileTypeSet.stream().allMatch(t->t == FileType.AUDIO);
+        boolean isDocument = fileTypeSet.stream().allMatch(t->t == FileType.DOCUMENT || t == FileType.FILE);
         if(isVisual) return ContentType.VISUAL;
         if(isAudio) return ContentType.AUDIO;
         if(isDocument) return ContentType.FILE;
@@ -47,13 +44,13 @@ public class SuperMessage {
     @Nullable
     public String getDescriptionOfAttachment(){
         if(attachments == null || attachments.isEmpty()) return null;
-        Set<AttachmentType> attachmentTypeSet = attachments.stream().map(AttachmentDto::getType).collect(Collectors.toSet());
+        Set<FileType> fileTypeSet = attachments.stream().map(AttachmentDto::getType).collect(Collectors.toSet());
 
-        boolean isPhoto = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.PHOTO);
-        boolean isVideo = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.VIDEO);
-        boolean isVisual = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.PHOTO || t == AttachmentType.VIDEO);
-        boolean isAudio = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.AUDIO);
-        boolean isDocument = attachmentTypeSet.stream().allMatch(t->t == AttachmentType.DOCUMENT || t == AttachmentType.FILE);
+        boolean isPhoto = fileTypeSet.stream().allMatch(t->t == FileType.PHOTO);
+        boolean isVideo = fileTypeSet.stream().allMatch(t->t == FileType.VIDEO);
+        boolean isVisual = fileTypeSet.stream().allMatch(t->t == FileType.PHOTO || t == FileType.VIDEO);
+        boolean isAudio = fileTypeSet.stream().allMatch(t->t == FileType.AUDIO);
+        boolean isDocument = fileTypeSet.stream().allMatch(t->t == FileType.DOCUMENT || t == FileType.FILE);
 
         if(isPhoto) return attachments.size()+" фотографий";
         if(isVideo) return attachments.size()+" видео";

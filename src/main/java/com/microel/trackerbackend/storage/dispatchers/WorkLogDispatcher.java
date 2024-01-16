@@ -1,25 +1,23 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.misc.BypassWorkCalculationForm;
-import com.microel.trackerbackend.misc.WireframeTaskCounter;
+import com.microel.trackerbackend.services.FilesWatchService;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
-import com.microel.trackerbackend.services.external.oldtracker.OldTrackerRequestFactory;
 import com.microel.trackerbackend.services.external.oldtracker.OldTrackerService;
-import com.microel.trackerbackend.services.external.oldtracker.task.TaskClassOT;
+import com.microel.trackerbackend.services.filemanager.FileData;
+import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
+import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.mapper.WorkLogMapper;
 import com.microel.trackerbackend.storage.dto.task.WorkLogDto;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
-import com.microel.trackerbackend.storage.entities.task.Task;
-import com.microel.trackerbackend.storage.entities.task.TaskStatus;
-import com.microel.trackerbackend.storage.entities.task.WorkLog;
-import com.microel.trackerbackend.storage.entities.task.WorkReport;
+import com.microel.trackerbackend.storage.entities.filesys.TFile;
+import com.microel.trackerbackend.storage.entities.task.*;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
-import com.microel.trackerbackend.storage.entities.templating.TaskStage;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.AlreadyClosed;
@@ -53,9 +51,10 @@ public class WorkLogDispatcher {
     private final NotificationDispatcher notificationDispatcher;
     private final WorkReportRepository workReportRepository;
     private final OldTrackerService oldTrackerService;
+    private final FilesWatchService filesWatchService;
 
     public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher, TaskEventDispatcher taskEventDispatcher, @Lazy TaskDispatcher taskDispatcher, StompController stompController, @Lazy NotificationDispatcher notificationDispatcher,
-                             WorkReportRepository workReportRepository, OldTrackerService oldTrackerService) {
+                             WorkReportRepository workReportRepository, OldTrackerService oldTrackerService, FilesWatchService filesWatchService) {
         this.workLogRepository = workLogRepository;
         this.employeeDispatcher = employeeDispatcher;
         this.taskEventDispatcher = taskEventDispatcher;
@@ -64,6 +63,7 @@ public class WorkLogDispatcher {
         this.notificationDispatcher = notificationDispatcher;
         this.workReportRepository = workReportRepository;
         this.oldTrackerService = oldTrackerService;
+        this.filesWatchService = filesWatchService;
     }
 
     @Transactional
@@ -85,7 +85,17 @@ public class WorkLogDispatcher {
 
 //        HashSet<Employee> chatMembers = new HashSet<>(employees);
 //        chatMembers.add(creator);
-        Chat chat = Chat.builder().creator(creator).title("Чат из задачи #" + task.getTaskId()).created(Timestamp.from(Instant.now())).members(Stream.of(creator).collect(Collectors.toSet())).deleted(false).updated(Timestamp.from(Instant.now())).build();
+        Chat chat = Chat.builder()
+                .creator(creator)
+                .title("Чат из задачи #" + task.getTaskId())
+                .created(Timestamp.from(Instant.now()))
+                .members(
+                        Stream.of(creator)
+                                .collect(Collectors.toSet())
+                )
+                .deleted(false)
+                .updated(Timestamp.from(Instant.now()))
+                .build();
 
         WorkLog workLog = WorkLog.builder()
                 .chat(chat)
@@ -102,6 +112,28 @@ public class WorkLogDispatcher {
                 .calculated(false)
                 .build();
 
+
+        List<WorkLogTargetFile> targetFiles = new ArrayList<>();
+        if(assignBody.getFiles() != null && !assignBody.getFiles().isEmpty()) {
+            for (FileData fileData : assignBody.getFiles()) {
+                try {
+                    targetFiles.add(WorkLogTargetFile.of(fileData));
+                } catch (EmptyFile e) {
+                    throw new ResponseException("Невозможно сохранить пустой файл");
+                } catch (WriteError e) {
+                    throw new ResponseException("Ошибка сохранения файла цели работы");
+                }
+            }
+        }
+        if(assignBody.getServerFiles() != null && !assignBody.getServerFiles().isEmpty()){
+            for (TFile.FileSuggestion fileSuggestion : assignBody.getServerFiles()){
+                filesWatchService.getFileById(fileSuggestion.getId()).ifPresent(file -> {
+                    targetFiles.add(file.toWorkLogTargetFile());
+                });
+            }
+        }
+
+        workLog.setTargetFiles(targetFiles);
         return workLogRepository.save(workLog);
     }
 
@@ -124,7 +156,19 @@ public class WorkLogDispatcher {
 
         Chat chat = Chat.builder().creator(creator).title("Чат из задачи #" + task.getTaskId()).created(creatingDate).members(Stream.of(creator).collect(Collectors.toSet())).deleted(false).updated(creatingDate).build();
 
-        WorkLog workLog = WorkLog.builder().chat(chat).created(creatingDate).task(task).isForceClosed(false).employees(installersReportForm.getInstallers()).creator(creator).closed(creatingDate).acceptedEmployees(installersReportForm.getInstallers().stream().map((e) -> AcceptingEntry.of(e, creatingDate)).collect(Collectors.toSet())).calculated(false).build();
+        WorkLog workLog = WorkLog.builder()
+                .chat(chat)
+                .created(creatingDate)
+                .task(task)
+                .isForceClosed(false)
+                .employees(installersReportForm.getInstallers())
+                .creator(creator)
+                .closed(creatingDate)
+                .acceptedEmployees(
+                        installersReportForm.getInstallers()
+                        .stream().map((e) -> AcceptingEntry.of(e, creatingDate))
+                        .collect(Collectors.toSet())
+                ).calculated(false).build();
 
         workLog.setWorkReports(
                 installersReportForm.getInstallers()
@@ -345,12 +389,16 @@ public class WorkLogDispatcher {
                 workLog.getChat().getMembers().add(installer);
             }
             stompController.updateWorkLog(workLog);
-            return workLogRepository.save(workLog);
+            WorkLog withGangLeader = workLogRepository.save(workLog);
+            Hibernate.initialize(withGangLeader.getTargetFiles());
+            return withGangLeader;
         }
         workLog.getAcceptedEmployees().add(acceptingEntry);
         workLog.getChat().getMembers().add(employee);
         stompController.updateWorkLog(workLog);
-        return workLogRepository.save(workLog);
+        WorkLog withoutGangLeader = workLogRepository.save(workLog);
+        Hibernate.initialize(withoutGangLeader.getTargetFiles());
+        return withoutGangLeader;
     }
 
     private boolean isHasUnclosedWorkLogs(List<WorkLog> workLogs, Employee targetEmployee){
@@ -401,49 +449,53 @@ public class WorkLogDispatcher {
         stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.reportCreated(workLog.getTask(), text.toString(), employee)));
         if (workLog.getWorkReports().size() == workLog.getEmployees().size()) {
             workLog.setClosed(timestamp);
-            Task task = workLog.getTask();
-            task.setTaskStatus(TaskStatus.CLOSE);
-            task.setUpdated(timestamp);
-
             workLog.getChat().setClosed(timestamp);
-            stompController.updateTask(workLog.getTask());
+            WorkLog save = workLogRepository.save(workLog);
+            taskDispatcher.close(workLog.getTask().getTaskId());
+            return save;
+//            Task task = workLog.getTask();
+//            task.setTaskStatus(TaskStatus.CLOSE);
+//            task.setUpdated(timestamp);
 
-            // Обновляем счетчики задач на странице
-            Long wireframeId = task.getModelWireframe().getWireframeId();
-
-            task.getAllEmployeesObservers().forEach(observer -> {
-                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
-                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
-                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
-                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
-                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
-            });
-
-            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
-            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
-            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
-            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
-            stompController.updateTagTaskCounter(tasksCountByTags);
-
-            stompController.closeChat(workLog.getChat());
-            stompController.closeWorkLog(workLog);
-            stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
-            notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.worksCompleted(workLog));
-
-            Employee assignator = workLog.getCreator();
-            if(assignator.isHasOldTrackerCredentials()){
-                TaskStage taskStage = task.getCurrentStage();
-                if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
-                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(assignator.getOldTrackerCredentials().getUsername(), assignator.getOldTrackerCredentials().getPassword());
-                    TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
-                    List<OldTrackerRequestFactory.FieldData> dataList = taskClassOT.getStandardFieldsOnReport().get(workLog.getWorkReports().toArray(WorkReport[]::new));
-                    requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getAutoCloseStageId(), dataList).execute();
-                    requestFactory.close().execute();
-                    task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getAutoCloseStageId());
-                }
-            }
+//            stompController.updateTask(workLog.getTask());
+//
+//            // Обновляем счетчики задач на странице
+//            Long wireframeId = task.getModelWireframe().getWireframeId();
+//
+//            task.getAllEmployeesObservers().forEach(observer -> {
+//                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
+//                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
+//                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+//                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
+//                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+//            });
+//
+//            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
+//            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
+//            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+//            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
+//            stompController.updateTagTaskCounter(tasksCountByTags);
+//
+//            stompController.closeChat(workLog.getChat());
+//            stompController.closeWorkLog(workLog);
+//            stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
+//            notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.worksCompleted(workLog));
+//
+//            Employee assignator = workLog.getCreator();
+//            if(assignator.isHasOldTrackerCredentials()){
+//                TaskStage taskStage = task.getCurrentStage();
+//                if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
+//                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(assignator.getOldTrackerCredentials().getUsername(), assignator.getOldTrackerCredentials().getPassword());
+//                    TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+//                    List<OldTrackerRequestFactory.FieldData> dataList = taskClassOT.getStandardFieldsOnReport().get(workLog.getWorkReports().toArray(WorkReport[]::new));
+//                    requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getAutoCloseStageId(), dataList).execute();
+//                    requestFactory.close().execute();
+//                    task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getAutoCloseStageId());
+//                }
+//            }
+        }else{
+            return workLogRepository.save(workLog);
         }
-        return workLogRepository.save(workLog);
     }
 
     @Transactional
@@ -474,35 +526,40 @@ public class WorkLogDispatcher {
 //        stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.reportCreated(workLog.getTask(), text.toString(), employee)));
         if (workLog.getWorkReports().size() == workLog.getEmployees().size()) {
             workLog.setClosed(timestamp);
-            Task task = workLog.getTask();
-            task.setTaskStatus(TaskStatus.CLOSE);
-            task.setUpdated(timestamp);
             workLog.getChat().setClosed(timestamp);
-            stompController.updateTask(workLog.getTask());
+            WorkLog save = workLogRepository.save(workLog);
+            taskDispatcher.close(workLog.getTask().getTaskId());
+            return save;
 
-            // Обновляем счетчики задач на странице
-            Long wireframeId = task.getModelWireframe().getWireframeId();
-
-            task.getAllEmployeesObservers().forEach(observer -> {
-                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
-                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
-                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
-                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
-                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
-            });
-
-            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
-            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
-            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
-            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
-            stompController.updateTagTaskCounter(tasksCountByTags);
-
-            stompController.closeChat(workLog.getChat());
-            stompController.closeWorkLog(workLog);
-            stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
-            notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.worksCompleted(workLog));
+//            Task task = workLog.getTask();
+//            task.setTaskStatus(TaskStatus.CLOSE);
+//            task.setUpdated(timestamp);
+//            stompController.updateTask(workLog.getTask());
+//
+//            // Обновляем счетчики задач на странице
+//            Long wireframeId = task.getModelWireframe().getWireframeId();
+//
+//            task.getAllEmployeesObservers().forEach(observer -> {
+//                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
+//                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
+//                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
+//                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
+//                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
+//            });
+//
+//            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
+//            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
+//            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
+//            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
+//            stompController.updateTagTaskCounter(tasksCountByTags);
+//
+//            stompController.closeChat(workLog.getChat());
+//            stompController.closeWorkLog(workLog);
+//            stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
+//            notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.worksCompleted(workLog));
+        }else{
+            return workLogRepository.save(workLog);
         }
-        return workLogRepository.save(workLog);
     }
 
     public List<WorkLog> getActive() {
@@ -582,5 +639,17 @@ public class WorkLogDispatcher {
         workLogRepository.save(workLog);
         stompController.updateWorkLog(workLog);
         stompController.updateChat(workLog.getChat());
+    }
+
+    public List<Employee> getAcceptedEmployees(Set<Employee> employees) {
+        List<Employee> acceptedEmployees = new ArrayList<>();
+        for (Employee employee : employees) {
+            try {
+                getAcceptedWorkLogByEmployee(employee);
+                acceptedEmployees.add(employee);
+            }catch (EntryNotFound ignored){
+            }
+        }
+        return acceptedEmployees;
     }
 }

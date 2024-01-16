@@ -157,7 +157,7 @@ public class Address implements Comparable<Address> {
     public String getStreetNamePart(){
         StringBuilder part = new StringBuilder();
         if(city != null) {
-            part.append(city.getName(), 0, 4).append(".");
+            part.append(city.getName(), 0, 3).append(".");
         }
         if(street  != null) {
             part.append(" ");
@@ -185,9 +185,6 @@ public class Address implements Comparable<Address> {
         if(build != null) {
             part.append(" стр.").append(build);
         }
-        if(apartmentMod != null) {
-            part.append(" (").append(apartmentMod).append(")");
-        }
         return part.toString();
     }
 
@@ -203,7 +200,18 @@ public class Address implements Comparable<Address> {
         if(floor != null) {
             part.append(" эт.").append(floor);
         }
+        if(apartmentMod != null) {
+            part.append(" (").append(apartmentMod).append(")");
+        }
         return part.toString();
+    }
+
+    public String getTailPart(){
+        if(!getHouseNamePart().equals("") && !getApartmentNamePart().equals(""))
+            return getHouseNamePart() + " " + getApartmentNamePart();
+        if(!getHouseNamePart().equals(""))
+            return getHouseNamePart();
+        return "";
     }
 
     public void setAddressName(String addressName) {

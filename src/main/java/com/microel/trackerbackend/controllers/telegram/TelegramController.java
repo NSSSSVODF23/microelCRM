@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.controllers.telegram;
 
+import com.microel.trackerbackend.CustomException;
 import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
 import com.microel.trackerbackend.controllers.configuration.FailedToReadConfigurationException;
 import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigurationException;
@@ -7,6 +8,7 @@ import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.services.FilesWatchService;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
@@ -22,15 +24,14 @@ import com.microel.trackerbackend.storage.dispatchers.*;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.chat.ChatMessageDto;
 import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
-import com.microel.trackerbackend.storage.dto.task.WorkLogDto;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.*;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
-import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
-import com.microel.trackerbackend.storage.entities.filesys.FileSystemItem;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
+import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
+import com.microel.trackerbackend.storage.entities.task.WorkLogTargetFile;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
@@ -85,6 +86,7 @@ public class TelegramController {
     private final BillingRequestController billingRequestController;
     private final AddressDispatcher addressDispatcher;
     private final HouseDispatcher houseDispatcher;
+    private final WorkingDayDispatcher workingDayDispatcher;
     private final AcpClient acpClient;
     private final FilesWatchService filesWatchService;
     private final Map<String, List<Message>> groupedMessagesFromTelegram = new ConcurrentHashMap<>();
@@ -101,7 +103,7 @@ public class TelegramController {
     public TelegramController(ConfigurationStorage configurationStorage, TaskDispatcher taskDispatcher, WorkLogDispatcher workLogDispatcher,
                               ChatDispatcher chatDispatcher, ChatMessageDispatcher chatMessageDispatcher, EmployeeDispatcher employeeDispatcher,
                               StompController stompController, AttachmentDispatcher attachmentDispatcher, BillingRequestController billingRequestController,
-                              AddressDispatcher addressDispatcher, HouseDispatcher houseDispatcher, AcpClient acpClient, FilesWatchService filesWatchService) {
+                              AddressDispatcher addressDispatcher, HouseDispatcher houseDispatcher, WorkingDayDispatcher workingDayDispatcher, AcpClient acpClient, FilesWatchService filesWatchService) {
         this.configurationStorage = configurationStorage;
         this.taskDispatcher = taskDispatcher;
         this.workLogDispatcher = workLogDispatcher;
@@ -113,6 +115,7 @@ public class TelegramController {
         this.billingRequestController = billingRequestController;
         this.addressDispatcher = addressDispatcher;
         this.houseDispatcher = houseDispatcher;
+        this.workingDayDispatcher = workingDayDispatcher;
         this.acpClient = acpClient;
         this.filesWatchService = filesWatchService;
         try {
@@ -306,13 +309,25 @@ public class TelegramController {
             if (data == null) return false;
             Long chatId = update.getCallbackQuery().getMessage().getChatId();
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+
+            WorkLog workLog = null;
+
+            try {
+                workLog = workLogDispatcher.acceptWorkLog(data.getLong(), chatId);
+            }catch (CustomException e){
+                TelegramMessageFactory.create(chatId, mainBot).answerCallback(callbackId, e.getMessage()).execute();
+                return false;
+            }
+
             EditMessageReplyMarkup clearMarkup = EditMessageReplyMarkup.builder().chatId(chatId).messageId(messageId)
                     .replyMarkup(InlineKeyboardMarkup.builder().clearKeyboard().build()).build();
             mainBot.send(clearMarkup);
             ChatDto chatFromWorkLog = workLogDispatcher.getChatByWorkLogId(data.getLong());
             Employee employee = employeeDispatcher.getByTelegramId(chatId).orElseThrow(() -> new EntryNotFound("Пользователь не найден по идентификатору Telegram Api"));
             SuperMessage systemMessage = chatDispatcher.createSystemMessage(chatFromWorkLog.getChatId(), "\uD83D\uDC77\uD83C\uDFFB\u200D♂️" + employee.getFullName() + " принял задачу и подключился к чату", this);
-            WorkLog workLog = workLogDispatcher.acceptWorkLog(data.getLong(), chatId);
+            String targetDescription = workLog.getTargetDescription();
+            List<WorkLogTargetFile> files = workLog.getTargetFiles();
             // Отправляем обновления в интерфейс пользователя
             broadcastUpdatesToWeb(systemMessage);
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
@@ -330,11 +345,26 @@ public class TelegramController {
                 if(!alreadySentTaskInfoToGroup || workLog.getGangLeader() != null) {
                     TelegramMessageFactory groupChatFactory = TelegramMessageFactory.create(employee.getTelegramGroupChatId(), mainBot);
                     groupChatFactory.currentActiveTaskForGroupChat(workLog.getTask()).execute();
-                    groupChatFactory.simpleMessage("Текущая цель:\n" + workLog.getTargetDescription()).execute();
+                    if (files != null && !files.isEmpty()) {
+                        if(files.size() == 1){
+                            groupChatFactory.workTargetMessage(targetDescription, files.get(0)).execute();
+                        }else{
+                            groupChatFactory.workTargetGroupMessage(targetDescription, files).execute();
+                        }
+                    }else if (targetDescription != null && !targetDescription.isBlank()){
+                        groupChatFactory.workTargetMessage(targetDescription, null).execute();
+                    }
                 }
             }
-            if (workLog.getTargetDescription() != null && !workLog.getTargetDescription().isBlank())
-                messageFactory.simpleMessage("Текущая цель:\n" + workLog.getTargetDescription()).execute();
+            if (files != null && !files.isEmpty()) {
+                if(files.size() == 1){
+                    messageFactory.workTargetMessage(targetDescription, files.get(0)).execute();
+                }else{
+                    messageFactory.workTargetGroupMessage(targetDescription, files).execute();
+                }
+            }else if (targetDescription != null && !targetDescription.isBlank()){
+                messageFactory.workTargetMessage(targetDescription, null).execute();
+            }
             return true;
         }));
 
@@ -377,7 +407,7 @@ public class TelegramController {
                     return false;
                 }
             }catch (Exception e){
-                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
+                TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage() == null ? e.getMessage() : "Неизвестная ошибка").execute();
                 return false;
             }
         }));
@@ -678,7 +708,11 @@ public class TelegramController {
             if(data != null){
                 try {
                     Employee employee = getEmployeeByChat(chatId);
-                    TFile file = filesWatchService.getFileById(data.getLong());
+                    TFile file = filesWatchService.getFileById(data.getLong()).orElse(null);
+                    if(file == null){
+                        messageFactory.answerCallback(callbackId, "Файл не найден").execute();
+                        return false;
+                    }
                     messageFactory.answerCallback(callbackId, null).execute();
                     messageFactory.file(file).execute();
                     operatingModes.remove(employee);
@@ -841,12 +875,12 @@ public class TelegramController {
                 Employee employee = getEmployeeByChat(chatId);
                 OperatingMode operatingMode = operatingModes.get(employee);
                 if(operatingMode == null) {
-//                    try {
-//                        sendMessageFromTlgChat(update.getMessage());
-//                        return true;
-//                    } catch (IllegalFields | SaveEntryFailed | IllegalMediaType | ExceptionInsideThread e) {
-//                        log.warn(e.getMessage());
-//                    }
+                    String messageText = update.getMessage().getText();
+                    if(messageText.equals("Зарплата")){
+                        Integer salarySumByDateRange = workingDayDispatcher.getSalarySumByDateRange(employee, DateRange.thisMonth());
+                        messageFactory.simpleMessage("Зарплата за текущий месяц: "+Decorator.bold(salarySumByDateRange+" руб.")).execute();
+                        return true;
+                    }
                     return false;
                 }
                 switch (operatingMode){
@@ -886,8 +920,8 @@ public class TelegramController {
                         return true;
                     }
                     case SEARCH_FILES -> {
-                        List<TFile> foundFiles = filesWatchService.searchFiles(update.getMessage().getText(), null)
-                                .stream().filter(tFile -> tFile.getType().equals(AttachmentType.PHOTO)).limit(10).toList();
+                        List<TFile.FileSuggestion> foundFiles = filesWatchService.getFileSuggestions(update.getMessage().getText())
+                                .stream().toList();
                         if(foundFiles.isEmpty()){
                             messageFactory.simpleMessage("Схем по запросу не найдено. Попробуйте еще раз.").execute();
                             return true;
@@ -1557,7 +1591,7 @@ public class TelegramController {
         }
     }
 
-    public void assignInstallers(WorkLog workLog, Employee employee) throws TelegramApiException {
+    public void assignInstallers(WorkLog workLog, Employee employee, List<Employee> acceptedEmployees) throws TelegramApiException {
         if(workLog.getGangLeader() != null){
             Employee gangLeader = workLog.getEmployees().stream().filter(emp -> Objects.equals(emp.getLogin(), workLog.getGangLeader())).findFirst().orElseThrow(() -> {
                 workLogDispatcher.remove(workLog);
@@ -1569,7 +1603,13 @@ public class TelegramController {
                 throw new ResponseException("У бригадира не назначен telegram id");
             }
             try {
-                TelegramMessageFactory.create(gangLeader.getTelegramUserId(), mainBot).acceptWorkLog(workLog, employee).execute();
+                TelegramMessageFactory messageFactory = TelegramMessageFactory.create(gangLeader.getTelegramUserId(), mainBot);
+                if(acceptedEmployees.contains(gangLeader)){
+                    Task task = workLog.getTask();
+                    messageFactory.simpleMessage("Вам назначена еще одна задача:\n"+ task.getClassName() + " - " + task.getTypeName()).execute();
+                }else{
+                    messageFactory.acceptWorkLog(workLog, employee).execute();
+                }
             }catch (Throwable e){
                 workLogDispatcher.remove(workLog);
                 throw new ResponseException("Бригадир имеет не верный telegram id");
@@ -1583,7 +1623,13 @@ public class TelegramController {
         }
         try {
             for (Employee installer : workLog.getEmployees()) {
-                TelegramMessageFactory.create(installer.getTelegramUserId(), mainBot).acceptWorkLog(workLog, employee).execute();
+                TelegramMessageFactory messageFactory = TelegramMessageFactory.create(installer.getTelegramUserId(), mainBot);
+                if(acceptedEmployees.contains(installer)){
+                    Task task = workLog.getTask();
+                    messageFactory.simpleMessage("Вам назначена еще одна задача:\n"+ task.getClassName() + " - " + task.getTypeName()).execute();
+                }else{
+                    messageFactory.acceptWorkLog(workLog, employee).execute();
+                }
             }
         }catch (Throwable e){
             workLogDispatcher.remove(workLog);

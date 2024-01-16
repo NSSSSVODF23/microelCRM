@@ -2,7 +2,6 @@ package com.microel.trackerbackend.storage.entities.comments;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.storage.dto.comment.AttachmentDto;
-import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
 import org.springframework.lang.Nullable;
@@ -30,7 +29,7 @@ public class Attachment {
     private String name;
     private String mimeType;
     @Enumerated(EnumType.STRING)
-    private AttachmentType type;
+    private FileType type;
     @Column(length = 4096)
     @JsonIgnore
     private String path;
@@ -51,7 +50,7 @@ public class Attachment {
     @Nullable
     public static InputMedia getInputMedia(Attachment attachment) {
         String name = attachment.getName();
-        AttachmentType type = attachment.getType();
+        FileType type = attachment.getType();
         String path = attachment.getPath();
         if (name == null || name.isBlank() || path == null || path.isBlank())
             throw new NullPointerException("Имя прикрепленного файла или путь до него пусты");
@@ -92,7 +91,7 @@ public class Attachment {
     @Nullable
     public static InputMedia getInputMedia(AttachmentDto attachment) {
         String name = attachment.getName();
-        AttachmentType type = attachment.getType();
+        FileType type = attachment.getType();
         String path = attachment.getPath();
         if (name == null || name.isBlank() || path == null || path.isBlank())
             throw new NullPointerException("Имя прикрепленного файла или путь до него пусты");

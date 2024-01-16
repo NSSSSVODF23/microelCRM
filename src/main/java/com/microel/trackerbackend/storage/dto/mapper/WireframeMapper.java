@@ -43,7 +43,7 @@ public class WireframeMapper {
                 .detailedViewType(wireframe.getDetailedViewType())
                 .listViewType(wireframe.getListViewType())
                 .name(wireframe.getName())
-                .stages(wireframe.getStages() == null ? new HashSet<>() : wireframe.getStages().stream().map(TaskStageMapper::fromDto).collect(Collectors.toSet()))
+                .stages(wireframe.getStages() == null ? new ArrayList<>() : wireframe.getStages().stream().map(TaskStageMapper::fromDto).collect(Collectors.toList()))
                 .steps(wireframe.getSteps())
                 .build();
     }

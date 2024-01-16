@@ -2,22 +2,29 @@ package com.microel.trackerbackend.modules.transport;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.microel.trackerbackend.misc.TimeFrame;
 import com.microel.trackerbackend.modules.exceptions.DateRangeReadException;
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.lang.Nullable;
 
 import java.sql.Timestamp;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 
+@Getter
+@Setter
 public class DateRange {
-    private String start;
-    private String end;
 
-    public Boolean validate(){
-        return start != null || end != null;
-    }
+    @Nullable
+    private TimeFrame timeFrame;
+    @Nullable
+    private Timestamp start;
+    @Nullable
+    private Timestamp end;
 
     public static DateRange from(String json) throws DateRangeReadException {
-        if(json == null || json.isBlank()) return new DateRange();
+        if (json == null || json.isBlank()) return new DateRange();
         ObjectMapper mapper = new ObjectMapper();
         try {
             return mapper.readValue(json, DateRange.class);
@@ -26,21 +33,210 @@ public class DateRange {
         }
     }
 
-    public Timestamp getStart() {
-        if(start == null || start.isBlank() || start.equals("null")) return null;
-        return Timestamp.valueOf(LocalDateTime.parse(start, DateTimeFormatter.ISO_DATE_TIME));
+    public static DateRange of(Timestamp start, Timestamp end) {
+        DateRange dateRange = new DateRange();
+        dateRange.start = start;
+        dateRange.end = end;
+        return dateRange;
     }
 
-    public Timestamp getEnd() {
-        if(end == null || end.isBlank() || end.equals("null")) return null;
-        return Timestamp.valueOf(LocalDateTime.parse(end, DateTimeFormatter.ISO_DATE_TIME));
+    public static DateRange of(TimeFrame timeFrame) {
+        DateRange dateRange = new DateRange();
+        dateRange.timeFrame = timeFrame;
+        return dateRange;
+    }
+
+    private static Timestamp getEndNextMonth(){
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.plusMonths(2).withDayOfMonth(1).atStartOfDay());
+    }
+
+    private static Timestamp getEndNextWeek(){
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.plusWeeks(2).with(DayOfWeek.MONDAY).atStartOfDay());
+    }
+
+    private static Timestamp getEndTomorrow() {
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.plusDays(2).atStartOfDay());
+    }
+
+    private static Timestamp getStartToday() {
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.atStartOfDay());
+    }
+
+    private static Timestamp getEndToday() {
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.plusDays(1).atStartOfDay());
+    }
+
+    private static Timestamp getStartYesterday() {
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.minusDays(1).atStartOfDay());
+    }
+
+    private static Timestamp getEndYesterday() {
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.atStartOfDay());
+    }
+
+    private static Timestamp getStartThisWeek() {
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.with(DayOfWeek.MONDAY).atStartOfDay());
+    }
+
+    private static Timestamp getEndThisWeek() {
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.plusWeeks(1).with(DayOfWeek.MONDAY).atStartOfDay());
+    }
+
+    private static Timestamp getStartLastWeek() {
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.with(DayOfWeek.MONDAY).minusWeeks(1).atStartOfDay());
+    }
+
+    private static Timestamp getEndLastWeek() {
+        return getStartThisWeek();
+    }
+
+    private static Timestamp getStartThisMonth() {
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.withDayOfMonth(1).atStartOfDay());
+    }
+
+    private static Timestamp getEndThisMonth() {
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.plusMonths(1).withDayOfMonth(1).atStartOfDay());
+    }
+
+    private static Timestamp getStartLastMonth() {
+        return getStartThisMonth();
+    }
+
+    private static Timestamp getEndLastMonth() {
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.withDayOfMonth(1).minusMonths(1).atStartOfDay());
+    }
+
+    public static DateRange nextMonth() {
+        return DateRange.of(getEndThisMonth(), getEndNextMonth());
+    }
+
+    public static DateRange nextWeek() {
+        return DateRange.of(getEndThisWeek(), getEndNextWeek());
+    }
+
+    public static DateRange tomorrow() {
+        return DateRange.of(getEndToday(), getEndTomorrow());
+    }
+
+    public static DateRange today() {
+        return DateRange.of(getStartToday(), getEndToday());
+    }
+
+    public static DateRange yesterday() {
+        return DateRange.of(getStartYesterday(), getEndYesterday());
+    }
+
+    public static DateRange thisWeek() {
+        return DateRange.of(getStartThisWeek(), getEndThisWeek());
+    }
+
+    public static DateRange lastWeek() {
+        return DateRange.of(getStartLastWeek(), getEndLastWeek());
+    }
+
+    public static DateRange thisMonth() {
+        return DateRange.of(getStartThisMonth(), getEndThisMonth());
+    }
+
+    public static DateRange lastMonth() {
+        return DateRange.of(getStartLastMonth(), getEndLastMonth());
+    }
+
+    public Boolean validate() {
+        return (start != null || end != null) || timeFrame != null;
+    }
+
+    @Nullable
+    public Timestamp start() {
+        if (timeFrame != null) {
+            switch (timeFrame) {
+                case NEXT_MONTH -> {
+                    return getEndThisMonth();
+                }
+                case NEXT_WEEK -> {
+                    return getEndThisWeek();
+                }
+                case TOMORROW -> {
+                    return getEndToday();
+                }
+                case TODAY -> {
+                    return getStartToday();
+                }
+                case YESTERDAY -> {
+                    return getStartYesterday();
+                }
+                case THIS_WEEK -> {
+                    return getStartThisWeek();
+                }
+                case LAST_WEEK -> {
+                    return getStartLastWeek();
+                }
+                case THIS_MONTH -> {
+                    return getStartThisMonth();
+                }
+                case LAST_MONTH -> {
+                    return getStartLastMonth();
+                }
+            }
+        }else if(start != null){
+            return start;
+        }
+        return null;
+    }
+
+    @Nullable
+    public Timestamp end() {
+        if (timeFrame != null) {
+            switch (timeFrame) {
+                case NEXT_MONTH -> {
+                    return getEndNextMonth();
+                }
+                case NEXT_WEEK -> {
+                    return getEndNextWeek();
+                }
+                case TOMORROW -> {
+                    return getEndTomorrow();
+                }
+                case TODAY -> {
+                    return getEndToday();
+                }
+                case YESTERDAY -> {
+                    return getEndYesterday();
+                }
+                case THIS_WEEK -> {
+                    return getEndThisWeek();
+                }
+                case LAST_WEEK -> {
+                    return getEndLastWeek();
+                }
+                case THIS_MONTH -> {
+                    return getEndThisMonth();
+                }
+                case LAST_MONTH -> {
+                    return getEndLastMonth();
+                }
+            }
+        }else if(end != null){
+            return end;
+        }
+        return null;
     }
 
     @Override
     public String toString() {
-        return "DateRange{" +
-                "start='" + getStart() + '\'' +
-                ", end='" + getEnd() + '\'' +
-                '}';
+        return "DateRange{" + "start='" + start + '\'' + ", end='" + end + '\'' + '}';
     }
 }

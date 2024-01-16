@@ -5,7 +5,7 @@ import com.microel.trackerbackend.services.filemanager.FileSaver;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
-import com.microel.trackerbackend.storage.entities.comments.AttachmentType;
+import com.microel.trackerbackend.storage.entities.comments.FileType;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.repositories.AttachmentRepository;
 import org.springframework.data.domain.Sort;
@@ -20,11 +20,9 @@ import java.util.UUID;
 @Component
 public class AttachmentDispatcher {
     private final AttachmentRepository attachmentRepository;
-    private final FileSaver fileSaver;
 
-    public AttachmentDispatcher(AttachmentRepository attachmentRepository, FileSaver fileSaver) {
+    public AttachmentDispatcher(AttachmentRepository attachmentRepository) {
         this.attachmentRepository = attachmentRepository;
-        this.fileSaver = fileSaver;
     }
 
     public Attachment getAttachments(String id) throws EntryNotFound {
@@ -47,17 +45,17 @@ public class AttachmentDispatcher {
         for (FileData file : files) {
 
             Timestamp modifiedTimestamp = Timestamp.from(Instant.ofEpochMilli(file.getModified()));
-            AttachmentType attachmentType = FileSaver.getAttachmentType(file);
+            FileType fileType = FileSaver.getFileType(file);
 
             Attachment.AttachmentBuilder attachBuilder = Attachment.builder()
-                    .type(attachmentType)
+                    .type(fileType)
                     .mimeType(file.getType())
                     .createdAt(Timestamp.from(Instant.now()))
                     .modifiedAt(modifiedTimestamp)
                     .size((long) file.getData().length);
 
             Attachment foundAttachment = attachmentRepository.findById(file.getName()).orElse(null);
-
+            FileSaver fileSaver = new FileSaver();
             if (foundAttachment != null) {
                 if (foundAttachment.getModifiedAt().equals(modifiedTimestamp) && foundAttachment.getSize() == file.getData().length) {
                     result.add(foundAttachment);
@@ -92,13 +90,14 @@ public class AttachmentDispatcher {
         Timestamp modifiedTimestamp = Timestamp.from(Instant.ofEpochMilli(fileData.getModified()));
 
         Attachment.AttachmentBuilder attachBuilder = Attachment.builder()
-                .type(FileSaver.getAttachmentType(fileData))
+                .type(FileSaver.getFileType(fileData))
                 .mimeType(fileData.getType())
                 .createdAt(Timestamp.from(Instant.now()))
                 .modifiedAt(modifiedTimestamp)
                 .size((long) fileData.getData().length);
 
         Attachment foundAttachment = attachmentRepository.findById(fileData.getName()).orElse(null);
+        FileSaver fileSaver = new FileSaver();
 
         if (foundAttachment != null) {
             if (foundAttachment.getModifiedAt().equals(modifiedTimestamp) && foundAttachment.getSize() == fileData.getData().length) {

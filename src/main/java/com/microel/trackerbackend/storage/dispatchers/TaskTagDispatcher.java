@@ -81,4 +81,9 @@ public class TaskTagDispatcher {
     public List<TaskTag> getByName(String query) {
         return taskTagRepository.findAllByNameContainingIgnoreCaseAndDeletedIsFalseOrderByName(query);
     }
+
+    @Nullable
+    public TaskTag get(Long id) {
+        return taskTagRepository.findById(id).orElse(null);
+    }
 }
