@@ -46,7 +46,8 @@ public class NotificationDispatcher {
         Set<Employee> validEmployees = employeeDispatcher.getValidEmployees(recipient.stream().map(Employee::getLogin).collect(Collectors.toList()));
         for (Employee employee : validEmployees) {
             Notification savedNotification = notificationRepository.save(factory.getInstace(employee));
-            if(employee.getStatus() != EmployeeStatus.ONLINE) telegramController.sendNotification(employee, savedNotification);
+//            if(employee.getStatus() != EmployeeStatus.ONLINE) telegramController.sendNotification(employee, savedNotification);
+            telegramController.sendNotification(employee, savedNotification);
             stompBroker.sendNotification(savedNotification);
         }
     }
