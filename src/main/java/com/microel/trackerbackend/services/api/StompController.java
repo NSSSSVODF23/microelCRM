@@ -12,7 +12,7 @@ import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
 import com.microel.trackerbackend.services.MonitoringService;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.Switch;
-import com.microel.trackerbackend.services.external.billing.BillingRequestController;
+import com.microel.trackerbackend.services.external.billing.ApiBillingController;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
@@ -361,7 +361,7 @@ public class StompController {
         sendAll(billingConf, "billing-config", "change");
     }
 
-    public void updateBillingUser(BillingRequestController.TotalUserInfo userInfo) {
+    public void updateBillingUser(ApiBillingController.TotalUserInfo userInfo) {
         sendAll(userInfo, "billing", "user", "update");
         sendAll(userInfo, "billing", "user", userInfo.getUname(), "update");
     }

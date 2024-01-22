@@ -55,6 +55,9 @@ public class Decorator {
             case TASK_HAS_BECOME_ACTUAL:
                 return "\uD83D\uDCBC " +bold("Задача стала актуальной:") + "\n"
                         + parsingLinks(notification.getMessage());
+            case TASK_MOVED_TO_DIRECTORY:
+                return "\uD83D\uDCBC " +bold("Задача в каталоге:") + "\n"
+                        + parsingLinks(notification.getMessage());
         }
         return "Неизвестный тип уведомления";
     }

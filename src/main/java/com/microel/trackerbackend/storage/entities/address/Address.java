@@ -136,7 +136,7 @@ public class Address implements Comparable<Address> {
             addressName.append(" ").append(houseName);
         }
         if(!apartmentName.isBlank()) {
-            addressName.append(" ").append(apartmentName);
+            addressName.append("-").append(apartmentName);
         }
         return addressName.toString();
     }
@@ -183,7 +183,7 @@ public class Address implements Comparable<Address> {
             part.append(letter);
         }
         if(build != null) {
-            part.append(" стр.").append(build);
+            part.append("_").append(build);
         }
         return part.toString();
     }
@@ -208,7 +208,7 @@ public class Address implements Comparable<Address> {
 
     public String getTailPart(){
         if(!getHouseNamePart().equals("") && !getApartmentNamePart().equals(""))
-            return getHouseNamePart() + " " + getApartmentNamePart();
+            return getHouseNamePart() + "-" + getApartmentNamePart();
         if(!getHouseNamePart().equals(""))
             return getHouseNamePart();
         return "";

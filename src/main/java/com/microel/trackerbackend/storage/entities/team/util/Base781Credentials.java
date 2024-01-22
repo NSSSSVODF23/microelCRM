@@ -3,7 +3,6 @@ package com.microel.trackerbackend.storage.entities.team.util;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
-import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import java.util.Objects;
@@ -11,16 +10,14 @@ import java.util.Objects;
 @Getter
 @Setter
 @Entity
-@Table(name = "old_tracker_credentials")
+@Table(name = "base_781_credentials")
 @ToString
-public class OldTrackerCredentials implements Credentials {
+public class Base781Credentials implements Credentials {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long oldTrackerCredentialsId;
+    private Long base781CredentialsId;
     private String username;
     private String password;
-    @Nullable
-    private String installerId;
 
     @Override
     public boolean isNotFull() {
@@ -34,12 +31,12 @@ public class OldTrackerCredentials implements Credentials {
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof OldTrackerCredentials that)) return false;
-        return Objects.equals(getUsername(), that.getUsername()) && Objects.equals(getPassword(), that.getPassword()) && Objects.equals(getInstallerId(), that.getInstallerId());
+        if (!(o instanceof Base781Credentials that)) return false;
+        return Objects.equals(getBase781CredentialsId(), that.getBase781CredentialsId());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(getUsername(), getPassword(), getInstallerId());
+        return Objects.hash(getBase781CredentialsId());
     }
 }

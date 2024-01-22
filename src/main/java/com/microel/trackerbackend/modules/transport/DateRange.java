@@ -111,12 +111,12 @@ public class DateRange {
     }
 
     private static Timestamp getStartLastMonth() {
-        return getStartThisMonth();
+        LocalDate now = LocalDate.now();
+        return Timestamp.valueOf(now.withDayOfMonth(1).minusMonths(1).atStartOfDay());
     }
 
     private static Timestamp getEndLastMonth() {
-        LocalDate now = LocalDate.now();
-        return Timestamp.valueOf(now.withDayOfMonth(1).minusMonths(1).atStartOfDay());
+        return getStartThisMonth();
     }
 
     public static DateRange nextMonth() {

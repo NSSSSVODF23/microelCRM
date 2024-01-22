@@ -5,10 +5,7 @@ import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.task.Task;
-import com.microel.trackerbackend.storage.entities.templating.AdvertisingSource;
-import com.microel.trackerbackend.storage.entities.templating.ConnectionType;
-import com.microel.trackerbackend.storage.entities.templating.DataConnectionService;
-import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
+import com.microel.trackerbackend.storage.entities.templating.*;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import lombok.Getter;
 import lombok.Setter;
@@ -33,7 +30,7 @@ public class TaskFieldFilter{
     @Nullable
     private ConnectionType connectionTypeValue;
     @Nullable
-    private Long connectionServiceValue;
+    private ConnectionService connectionServiceValue;
 
     public boolean isEmpty() {
         switch (type){

@@ -2,7 +2,6 @@ package com.microel.trackerbackend.services.api;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
-import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.controllers.telegram.Utils;
@@ -23,7 +22,7 @@ import com.microel.trackerbackend.services.PhyPhoneService;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.*;
 import com.microel.trackerbackend.services.external.billing.BillingPayType;
-import com.microel.trackerbackend.services.external.billing.BillingRequestController;
+import com.microel.trackerbackend.services.external.billing.ApiBillingController;
 import com.microel.trackerbackend.services.external.oldtracker.OldTrackerService;
 import com.microel.trackerbackend.services.external.oldtracker.task.TaskClassOT;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
@@ -92,7 +91,6 @@ import javax.servlet.http.HttpServletResponse;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
-import java.net.MalformedURLException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -108,7 +106,6 @@ import java.util.stream.Collectors;
 @RequestMapping("api/private")
 public class PrivateRequestController {
     private final PhyPhoneInfoRepository phyPhoneInfoRepository;
-
     private final WireframeDispatcher wireframeDispatcher;
     private final TaskDispatcher taskDispatcher;
     private final StreetDispatcher streetDispatcher;
@@ -136,7 +133,7 @@ public class PrivateRequestController {
     private final PaidWorkDispatcher paidWorkDispatcher;
     private final WorkCalculationDispatcher workCalculationDispatcher;
     private final WorkingDayDispatcher workingDayDispatcher;
-    private final BillingRequestController billingRequestController;
+    private final ApiBillingController apiBillingController;
     private final AcpClient acpClient;
     private final ClientEquipmentDispatcher clientEquipmentDispatcher;
     private final FilesWatchService filesWatchService;
@@ -152,7 +149,7 @@ public class PrivateRequestController {
                                     TaskTagDispatcher taskTagDispatcher, TaskFieldsSnapshotDispatcher taskFieldsSnapshotDispatcher,
                                     NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher,
                                     ChatDispatcher chatDispatcher, TelegramController telegramController,
-                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, BillingRequestController billingRequestController, AcpClient acpClient, ClientEquipmentDispatcher clientEquipmentDispatcher, FilesWatchService filesWatchService, PhyPhoneService phyPhoneService,
+                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, ApiBillingController apiBillingController, AcpClient acpClient, ClientEquipmentDispatcher clientEquipmentDispatcher, FilesWatchService filesWatchService, PhyPhoneService phyPhoneService,
                                     PhyPhoneInfoRepository phyPhoneInfoRepository, OldTrackerService oldTrackerService) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
@@ -181,7 +178,7 @@ public class PrivateRequestController {
         this.paidWorkDispatcher = paidWorkDispatcher;
         this.workCalculationDispatcher = workCalculationDispatcher;
         this.workingDayDispatcher = workingDayDispatcher;
-        this.billingRequestController = billingRequestController;
+        this.apiBillingController = apiBillingController;
         this.acpClient = acpClient;
         this.clientEquipmentDispatcher = clientEquipmentDispatcher;
         this.filesWatchService = filesWatchService;
@@ -2031,61 +2028,6 @@ public class PrivateRequestController {
         return ResponseEntity.ok(workingDayDispatcher.getTableByDate(date, position));
     }
 
-    @GetMapping("billing/users/by-login")
-    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByLogin(@RequestParam String login, @RequestParam Boolean isActive) {
-        return ResponseEntity.ok(billingRequestController.getUsersByLogin(login, isActive));
-    }
-
-    @GetMapping("billing/users/by-fio")
-    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByFio(@RequestParam String query, @RequestParam Boolean isActive) {
-        return ResponseEntity.ok(billingRequestController.getUsersByFio(query, isActive));
-    }
-
-    @GetMapping("billing/users/by-address")
-    public ResponseEntity<List<BillingRequestController.UserItemData>> getBillingByAddress(@RequestParam String address, @RequestParam Boolean isActive) {
-        return ResponseEntity.ok(billingRequestController.getUsersByAddress(address, isActive));
-    }
-
-    @GetMapping("billing/user/{login}")
-    public ResponseEntity<BillingRequestController.TotalUserInfo> getBillingUserInfo(@PathVariable String login) {
-        return ResponseEntity.ok(billingRequestController.getUserInfo(login));
-    }
-
-    @GetMapping("billing/user/{login}/events")
-    public ResponseEntity<BillingRequestController.UserEvents> getBillingUserEvents(@PathVariable String login) {
-        return ResponseEntity.ok(billingRequestController.getUserEvents(login));
-    }
-
-    @PostMapping("billing/user/{login}/make-payment")
-    public ResponseEntity<Void> makePayment(@PathVariable String login, @RequestBody BillingRequestController.PaymentForm paymentForm) {
-        paymentForm.validate();
-        billingRequestController.makePayment(login, paymentForm.getSum(), paymentForm.getPayType(), paymentForm.getComment());
-        return ResponseEntity.ok().build();
-    }
-
-    @PostMapping("billing/user/{login}/deferred-payment")
-    public ResponseEntity<Void> setDeferredPayment(@PathVariable String login) {
-        billingRequestController.deferredPayment(login);
-        return ResponseEntity.ok().build();
-    }
-
-    @PostMapping("billing/user/{login}/start-service")
-    public ResponseEntity<Void> startService(@PathVariable String login) {
-        billingRequestController.startUserService(login);
-        return ResponseEntity.ok().build();
-    }
-
-    @PostMapping("billing/user/{login}/stop-service")
-    public ResponseEntity<Void> stopService(@PathVariable String login) {
-        billingRequestController.stopUserService(login);
-        return ResponseEntity.ok().build();
-    }
-
-    @PostMapping("billing/counting-lives")
-    public ResponseEntity<Map<String,String>> getCountingLives(@RequestBody BillingRequestController.CountingLivesForm form){
-        return ResponseEntity.ok(Map.of("result",billingRequestController.getCalculateCountingLives(form)));
-    }
-
     @GetMapping("convert/billing-address-string")
     public ResponseEntity<Address> convertBillingAddressString(@RequestParam @Nullable String addressString) {
         if (addressString == null) return ResponseEntity.ok(null);
@@ -2135,7 +2077,7 @@ public class PrivateRequestController {
 
     @PostMapping("acp/dhcp/binding/auth")
     public ResponseEntity<Void> authDhcpBinding(@RequestBody DhcpBinding.AuthForm form) {
-        billingRequestController.getUserInfo(form.getLogin());
+        apiBillingController.getUserInfo(form.getLogin());
         acpClient.authDhcpBinding(form);
         return ResponseEntity.ok().build();
     }
@@ -2303,21 +2245,6 @@ public class PrivateRequestController {
                         .filter(service -> service.get("label").toLowerCase().contains(query != null ? query.toLowerCase() : ""))
                         .collect(Collectors.toList())
         );
-    }
-
-    @GetMapping("configuration/billing")
-    public ResponseEntity<BillingConf> getBillingConfiguration() {
-        return ResponseEntity.ok(billingRequestController.getConfiguration());
-    }
-
-    @PostMapping("configuration/billing")
-    public ResponseEntity<Void> updateBillingConfiguration(@RequestBody BillingConf conf) {
-        try {
-            billingRequestController.setConfiguration(conf);
-            return ResponseEntity.ok().build();
-        } catch (MalformedURLException e) {
-            throw new IllegalFields("Не верный Url адрес");
-        }
     }
 
     @GetMapping("configuration/telegram")

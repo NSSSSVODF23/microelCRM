@@ -34,7 +34,7 @@ import java.util.zip.CRC32;
 
 @Component
 @Slf4j
-public class BillingRequestController {
+public class ApiBillingController {
 
     private final XmlRpcClientConfigImpl config = new XmlRpcClientConfigImpl();
     private final XmlRpcClient client = new XmlRpcClient();
@@ -45,7 +45,7 @@ public class BillingRequestController {
     private final StompController stompController;
     private BillingConf billingConf;
 
-    public BillingRequestController(ConfigurationStorage configStorage, StompController stompController) throws MalformedURLException {
+    public ApiBillingController(ConfigurationStorage configStorage, StompController stompController) throws MalformedURLException {
         this.configStorage = configStorage;
         billingConf = configStorage.loadOrDefault(BillingConf.class, new BillingConf());
         this.stompController = stompController;
@@ -223,7 +223,7 @@ public class BillingRequestController {
         stompController.changeBillingConfig(billingConf);
     }
 
-    private void getUpdatedUserAndPushUpdate(String login) {
+    public void getUpdatedUserAndPushUpdate(String login) {
         TotalUserInfo userInfo = getUserInfo(login);
         stompController.updateBillingUser(userInfo);
     }

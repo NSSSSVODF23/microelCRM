@@ -16,7 +16,7 @@ import com.microel.trackerbackend.services.external.RestPage;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
-import com.microel.trackerbackend.services.external.billing.BillingRequestController;
+import com.microel.trackerbackend.services.external.billing.ApiBillingController;
 import com.microel.trackerbackend.services.filemanager.FileData;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
@@ -83,7 +83,7 @@ public class TelegramController {
     private final EmployeeDispatcher employeeDispatcher;
     private final StompController stompController;
     private final AttachmentDispatcher attachmentDispatcher;
-    private final BillingRequestController billingRequestController;
+    private final ApiBillingController apiBillingController;
     private final AddressDispatcher addressDispatcher;
     private final HouseDispatcher houseDispatcher;
     private final WorkingDayDispatcher workingDayDispatcher;
@@ -102,7 +102,7 @@ public class TelegramController {
 
     public TelegramController(ConfigurationStorage configurationStorage, TaskDispatcher taskDispatcher, WorkLogDispatcher workLogDispatcher,
                               ChatDispatcher chatDispatcher, ChatMessageDispatcher chatMessageDispatcher, EmployeeDispatcher employeeDispatcher,
-                              StompController stompController, AttachmentDispatcher attachmentDispatcher, BillingRequestController billingRequestController,
+                              StompController stompController, AttachmentDispatcher attachmentDispatcher, ApiBillingController apiBillingController,
                               AddressDispatcher addressDispatcher, HouseDispatcher houseDispatcher, WorkingDayDispatcher workingDayDispatcher, AcpClient acpClient, FilesWatchService filesWatchService) {
         this.configurationStorage = configurationStorage;
         this.taskDispatcher = taskDispatcher;
@@ -112,7 +112,7 @@ public class TelegramController {
         this.employeeDispatcher = employeeDispatcher;
         this.stompController = stompController;
         this.attachmentDispatcher = attachmentDispatcher;
-        this.billingRequestController = billingRequestController;
+        this.apiBillingController = apiBillingController;
         this.addressDispatcher = addressDispatcher;
         this.houseDispatcher = houseDispatcher;
         this.workingDayDispatcher = workingDayDispatcher;
@@ -489,7 +489,7 @@ public class TelegramController {
                 Employee employee = getEmployeeByChat(chatId);
                 try {
                     House house = houseDispatcher.get(data.getLong());
-                    String calculateCountingLives = billingRequestController.getCalculateCountingLives(BillingRequestController.CountingLivesForm.of(house.getAddress(), 1, 500));
+                    String calculateCountingLives = apiBillingController.getCalculateCountingLives(ApiBillingController.CountingLivesForm.of(house.getAddress(), 1, 500));
                     messageFactory.answerCallback(callbackId, null).execute();
                     messageFactory.simpleMessage(calculateCountingLives).execute();
                     operatingModes.remove(employee);
@@ -525,7 +525,7 @@ public class TelegramController {
                     Integer buildingId = house.getAcpHouseBind().getBuildingId();
                     RestPage<DhcpBinding> lastBindings = acpClient.getLastBindings(0, (short) 1, null, null, null, null, buildingId, null);
                     lastBindings.forEach(lb->{
-                        BillingRequestController.TotalUserInfo userInfo = billingRequestController.getUserInfo(lb.getAuthName());
+                        ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(lb.getAuthName());
                         if(userInfo != null){
                             lb.setBillingAddress(userInfo.getIbase().getAddr());
                         }
@@ -559,7 +559,7 @@ public class TelegramController {
                 try {
                     RestPage<DhcpBinding> lastBindings = acpClient.getLastBindings(0, (short) 1, null, null, null, null, null, data.getInt(), null);
                     lastBindings.forEach(lb->{
-                        BillingRequestController.TotalUserInfo userInfo = billingRequestController.getUserInfo(lb.getAuthName());
+                        ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(lb.getAuthName());
                         if(userInfo != null){
                             lb.setBillingAddress(userInfo.getIbase().getAddr());
                         }
@@ -627,7 +627,7 @@ public class TelegramController {
                             Integer buildingId = Integer.parseInt(split[1]);
                             RestPage<DhcpBinding> lastBindings = acpClient.getLastBindings(pageHouse, (short) 1, null, null, null, null, buildingId, null);
                             lastBindings.forEach(lb->{
-                                BillingRequestController.TotalUserInfo userInfo = billingRequestController.getUserInfo(lb.getAuthName());
+                                ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(lb.getAuthName());
                                 if(userInfo != null){
                                     lb.setBillingAddress(userInfo.getIbase().getAddr());
                                 }
@@ -641,7 +641,7 @@ public class TelegramController {
                             Integer commutatorId = Integer.parseInt(split[1]);
                             RestPage<DhcpBinding> lastBindingsCommutator = acpClient.getLastBindings(pageCommutator, null, null, null, null, null, null, commutatorId, null);
                             lastBindingsCommutator.forEach(lb->{
-                                BillingRequestController.TotalUserInfo userInfo = billingRequestController.getUserInfo(lb.getAuthName());
+                                ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(lb.getAuthName());
                                 if(userInfo != null){
                                     lb.setBillingAddress(userInfo.getIbase().getAddr());
                                 }
@@ -667,7 +667,7 @@ public class TelegramController {
                 try {
                     Employee employee = getEmployeeByChat(chatId);
                     try {
-                        BillingRequestController.TotalUserInfo userInfo = billingRequestController.getUserInfo(data.getString());
+                        ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(data.getString());
                         messageFactory.answerCallback(callbackId, null).execute();
                         messageFactory.billingInfo(userInfo).execute();
                         return true;

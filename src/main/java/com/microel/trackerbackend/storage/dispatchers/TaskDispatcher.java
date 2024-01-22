@@ -129,15 +129,15 @@ public class TaskDispatcher {
                 Task save = taskRepository.save(task);
                 updateTasksCountWorker.appendPath(save).execute(this);
                 stompController.updateTask(save);
-            }/* else if (task.getActualTo() != null) {
+            } else if (task.getActualTo() != null) {
                 notificationDispatcher.createNotification(recipient, Notification.taskExpired(task));
-                UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
-                updateTasksCountWorker.appendPath(task);
-                task.setActualTo(null);
-                Task save = taskRepository.save(task);
-                updateTasksCountWorker.appendPath(save).execute(this);
-                stompController.updateTask(save);
-            }*/
+//                UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+//                updateTasksCountWorker.appendPath(task);
+//                task.setActualTo(null);
+//                Task save = taskRepository.save(task);
+//                updateTasksCountWorker.appendPath(save).execute(this);
+//                stompController.updateTask(save);
+            }
         }
     }
 

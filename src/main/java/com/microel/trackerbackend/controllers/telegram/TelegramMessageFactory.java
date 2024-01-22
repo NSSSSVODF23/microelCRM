@@ -6,12 +6,9 @@ import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.external.RestPage;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
-import com.microel.trackerbackend.services.external.billing.BillingRequestController;
+import com.microel.trackerbackend.services.external.billing.ApiBillingController;
 import com.microel.trackerbackend.storage.dto.chat.ChatMessageDto;
 import com.microel.trackerbackend.storage.dto.chat.TelegramMessageBindDto;
-import com.microel.trackerbackend.storage.dto.task.ModelItemDto;
-import com.microel.trackerbackend.storage.dto.task.TaskDto;
-import com.microel.trackerbackend.storage.dto.task.WorkLogDto;
 import com.microel.trackerbackend.storage.entities.acp.NetworkConnectionLocation;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
@@ -53,7 +50,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 @AllArgsConstructor
@@ -638,7 +634,7 @@ public class TelegramMessageFactory {
 
     }
 
-    public AbstractExecutor<Message> billingInfo(BillingRequestController.TotalUserInfo userInfo) {
+    public AbstractExecutor<Message> billingInfo(ApiBillingController.TotalUserInfo userInfo) {
 
         StringBuilder stringBuilder = new StringBuilder();
 
@@ -649,7 +645,7 @@ public class TelegramMessageFactory {
 
         stringBuilder.append("\n\n").append(Decorator.bold("Тарифы")).append("\n\n");
 
-        BillingRequestController.OldTarifItem mainTariff = userInfo.getOldTarif().get(0);
+        ApiBillingController.OldTarifItem mainTariff = userInfo.getOldTarif().get(0);
         if (mainTariff != null) {
             stringBuilder.append(Decorator.underline("Основной:")).append("\n");
             stringBuilder.append("   ").append(Decorator.italic(mainTariff.getService())).append(" ").append(mainTariff.getPrice()).append("руб/период").append("\n");
@@ -660,13 +656,13 @@ public class TelegramMessageFactory {
         if (userInfo.getOldTarif().size() > 1) {
             stringBuilder.append(Decorator.underline("Сервисы:\n"));
             for (int i = 1; i < userInfo.getOldTarif().size(); i++) {
-                BillingRequestController.OldTarifItem service = userInfo.getOldTarif().get(i);
+                ApiBillingController.OldTarifItem service = userInfo.getOldTarif().get(i);
                 stringBuilder.append("   ").append(service.getService()).append(" ").append(service.getPrice()).append("руб/период").append("\n");
             }
         }
 
         if (userInfo.getOldTarif() != null && userInfo.getOldTarif().size() > 0) {
-            Float totalPrice = userInfo.getOldTarif().stream().map(BillingRequestController.OldTarifItem::getPrice).reduce(0f, Float::sum);
+            Float totalPrice = userInfo.getOldTarif().stream().map(ApiBillingController.OldTarifItem::getPrice).reduce(0f, Float::sum);
             stringBuilder.append(Decorator.underline("Общая стоимость:")).append(" ").append(totalPrice).append("руб/период").append("\n");
         }
 

@@ -2,21 +2,15 @@ package com.microel.trackerbackend.services.external.acp.types;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.microel.trackerbackend.controllers.telegram.TelegramMessageFactory;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
-import com.microel.trackerbackend.misc.network.NetworkRemoteControl;
 import com.microel.trackerbackend.misc.network.NetworkState;
-import com.microel.trackerbackend.services.external.billing.BillingRequestController;
 import com.microel.trackerbackend.storage.entities.acp.NetworkConnectionLocation;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import lombok.*;
 import net.time4j.CalendarUnit;
-import net.time4j.Duration;
 import net.time4j.Moment;
 import net.time4j.PrettyTime;
-import net.time4j.format.TemporalFormatter;
 import net.time4j.format.platform.SimpleFormatter;
-import net.time4j.tz.TZID;
 import net.time4j.tz.Timezone;
 import org.springframework.lang.Nullable;
 

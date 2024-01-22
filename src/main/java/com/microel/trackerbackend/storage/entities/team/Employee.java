@@ -64,6 +64,14 @@ public class Employee implements Observer{
     @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH}, orphanRemoval = true)
     @JoinColumn(name = "f_old_tracker_credentials_id")
     private OldTrackerCredentials oldTrackerCredentials;
+    @Nullable
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH}, orphanRemoval = true)
+    @JoinColumn(name = "f_base_781_credentials_id")
+    private Base781Credentials base781Credentials;
+    @Nullable
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH}, orphanRemoval = true)
+    @JoinColumn(name = "f_base_1785_credentials_id")
+    private Base1785Credentials base1785Credentials;
 
     @JsonIgnore
     public boolean isHasOldTrackerCredentials(){

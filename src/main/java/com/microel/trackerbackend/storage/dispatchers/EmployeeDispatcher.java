@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.misc.ListItem;
+import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.security.PasswordService;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
+import javax.servlet.http.HttpServletRequest;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
@@ -221,6 +223,23 @@ public class EmployeeDispatcher {
         Employee employee = employeeRepository.findById(login).orElse(null);
         if (employee == null) throw new EntryNotFound("Сотрудника с логином " + login + " не существует");
         return employee;
+    }
+
+    public Employee getEmployeeFromRequest(HttpServletRequest request) {
+        if (request.getCookies() == null) throw new ResponseException("Не авторизован");
+        String login = AuthorizationProvider.getLoginFromCookie(List.of(request.getCookies()));
+        if (login == null) throw new ResponseException("Не удалось получить данные о текущем пользователе");
+
+        Employee currentUser;
+        try {
+            currentUser = getEmployee(login);
+        } catch (EntryNotFound e) {
+            throw new ResponseException(e.getMessage());
+        }
+
+        if (currentUser.getDeleted()) throw new ResponseException("Сотрудник удален");
+
+        return currentUser;
     }
 
     public boolean isExist(String login) {
