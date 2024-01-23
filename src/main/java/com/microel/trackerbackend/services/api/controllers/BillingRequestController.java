@@ -5,6 +5,7 @@ import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.billing.ApiBillingController;
 import com.microel.trackerbackend.services.external.billing.directaccess.bases.Base1785;
+import com.microel.trackerbackend.services.external.billing.directaccess.bases.Base781;
 import com.microel.trackerbackend.storage.dispatchers.EmployeeDispatcher;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.util.Credentials;
@@ -69,10 +70,10 @@ public class BillingRequestController {
         return ResponseEntity.ok(apiBillingController.getUserEvents(login));
     }
 
-    @PostMapping("user/{login}/make-payment")
-    public ResponseEntity<Void> makePayment(@PathVariable String login, @RequestBody ApiBillingController.PaymentForm paymentForm) {
-        paymentForm.validate();
-        apiBillingController.makePayment(login, paymentForm.getSum(), paymentForm.getPayType(), paymentForm.getComment());
+    @PostMapping("user/{login}/update-balance")
+    public ResponseEntity<Void> updateBalance(@PathVariable String login, @RequestBody ApiBillingController.UpdateBalanceForm form) {
+        form.validate();
+        apiBillingController.updateBalance(login, form.getSum(), form.getPayType(), form.getComment());
         return ResponseEntity.ok().build();
     }
 
@@ -177,8 +178,10 @@ public class BillingRequestController {
 
         Base1785 base = createBase1785Session(employee);
         base.login();
+        List<Base1785.UserTariff> tariffList = base.getTariffList(login);
+        base.logout();
 
-        return ResponseEntity.ok(base.getTariffList(login));
+        return ResponseEntity.ok(tariffList);
     }
 
     @GetMapping("user/{login}/services")
@@ -187,8 +190,10 @@ public class BillingRequestController {
 
         Base1785 base = createBase1785Session(employee);
         base.login();
+        List<Base1785.UserTariff> serviceList = base.getServiceList(login);
+        base.logout();
 
-        return ResponseEntity.ok(base.getServiceList(login));
+        return ResponseEntity.ok(serviceList);
     }
 
     @PatchMapping("user/{login}/service/{id}/append")
@@ -199,6 +204,8 @@ public class BillingRequestController {
         base.login();
 
         base.appendService(login, id);
+
+        base.logout();
 
         apiBillingController.getUpdatedUserAndPushUpdate(login);
 
@@ -214,6 +221,8 @@ public class BillingRequestController {
 
         base.removeService(login, name);
 
+        base.logout();
+
         apiBillingController.getUpdatedUserAndPushUpdate(login);
 
         return ResponseEntity.ok().build();
@@ -227,6 +236,24 @@ public class BillingRequestController {
         base.login();
 
         base.changeTariff(login, id);
+
+        base.logout();
+
+        apiBillingController.getUpdatedUserAndPushUpdate(login);
+
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("user/{login}/make-payment")
+    public ResponseEntity<Void> makePayment(@PathVariable String login, @RequestBody Base781.PaymentForm form, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base781 base = createBase781Session(employee);
+        base.login();
+
+        base.makePayment(login, form);
+
+        base.logout();
 
         apiBillingController.getUpdatedUserAndPushUpdate(login);
 
@@ -256,9 +283,17 @@ public class BillingRequestController {
     private Base1785 createBase1785Session(Employee employee){
         Credentials credentials = employee.getBase1785Credentials();
         if (credentials == null || credentials.isNotFull())
-            throw new ResponseException("Нет доступа к биллингу для создания логина");
+            throw new ResponseException("Не установлены реквизиты");
 
         return Base1785.create(credentials);
+    }
+
+    private Base781 createBase781Session(Employee employee){
+        Credentials credentials = employee.getBase781Credentials();
+        if (credentials == null || credentials.isNotFull())
+            throw new ResponseException("Не установлены реквизиты");
+
+        return Base781.create(credentials);
     }
 
     @Getter

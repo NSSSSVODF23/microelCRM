@@ -46,6 +46,7 @@ public class DirectBaseSession {
         Connection connection = session.newRequest().url(url).method(method);
         if(body != null && !body.isEmpty()) connection.data(body);
         connection.timeout(60000);
+//        connection.ignoreContentType(true);
         return connection.execute();
     }
 }

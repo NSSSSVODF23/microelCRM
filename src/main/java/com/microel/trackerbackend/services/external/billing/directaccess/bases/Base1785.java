@@ -47,9 +47,8 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
 
     @Override
     public void logout() {
-        String url = Url.create(Map.of("act", "auth"), getHost(), "index.php");
         try {
-            Jsoup.connect(url).execute();
+            request(Request.of("index.php", Map.of("act", "auth")));
         } catch (IOException e) {
             throw new ResponseException("Ошибка при выходе " + getHost());
         }

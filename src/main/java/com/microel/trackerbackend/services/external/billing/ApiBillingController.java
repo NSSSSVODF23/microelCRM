@@ -149,7 +149,7 @@ public class ApiBillingController {
         return UserEvents.from(execute());
     }
 
-    public void makePayment(String login, Float sum, BillingPayType payType, String comment) {
+    public void updateBalance(String login, Float sum, BillingPayType payType, String comment) {
         prepareRequestBody("regPay");
         setRequestProp("uname", login);
         setRequestProp("sum", String.valueOf(sum.intValue()));
@@ -1050,7 +1050,7 @@ public class ApiBillingController {
 
     @Getter
     @Setter
-    public static class PaymentForm {
+    public static class UpdateBalanceForm {
         private Float sum;
         private BillingPayType payType;
         private String comment;

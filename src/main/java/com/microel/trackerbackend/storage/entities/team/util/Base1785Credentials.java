@@ -23,12 +23,12 @@ public class Base1785Credentials implements Credentials {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof Base1785Credentials that)) return false;
-        return Objects.equals(getBase1785CredentialsId(), that.getBase1785CredentialsId());
+        return Objects.equals(getUsername(), that.getUsername()) && Objects.equals(getPassword(), that.getPassword());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(getBase1785CredentialsId());
+        return Objects.hash(getUsername(), getPassword());
     }
 
     @Override

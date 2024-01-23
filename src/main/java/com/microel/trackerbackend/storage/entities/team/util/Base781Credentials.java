@@ -32,11 +32,11 @@ public class Base781Credentials implements Credentials {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof Base781Credentials that)) return false;
-        return Objects.equals(getBase781CredentialsId(), that.getBase781CredentialsId());
+        return Objects.equals(getUsername(), that.getUsername()) && Objects.equals(getPassword(), that.getPassword());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(getBase781CredentialsId());
+        return Objects.hash(getUsername(), getPassword());
     }
 }

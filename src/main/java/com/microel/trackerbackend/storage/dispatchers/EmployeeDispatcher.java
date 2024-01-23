@@ -48,13 +48,13 @@ public class EmployeeDispatcher {
         this.telegramController = telegramController;
         this.stompController = stompController;
 
-        if (employeeRepository.count() == 0) {
-            try {
-                create("", "", "", "admin", "admin", 0, "", "", null, null, false, null);
-            } catch (AlreadyExists | EntryNotFound e) {
-                log.warn("Не удалось создать запись администратора");
-            }
-        }
+//        if (employeeRepository.count() == 0) {
+//            try {
+//                create("", "", "", "admin", "admin", 0, "", "", null, null, false, null);
+//            } catch (AlreadyExists | EntryNotFound e) {
+//                log.warn("Не удалось создать запись администратора");
+//            }
+//        }
     }
 
     @Transactional
@@ -89,125 +89,61 @@ public class EmployeeDispatcher {
     }
 
     @Transactional
-    public Employee create(
-            String firstName,
-            String lastName,
-            String secondName,
-            String login,
-            String password,
-            Integer access,
-            String internalPhoneNumber,
-            String telegramUserId,
-            @Nullable
-            Long department,
-            @Nullable
-            Long position,
-            Boolean offsite,
-            @Nullable
-            OldTrackerCredentials oldTrackerCredentials
-    ) throws AlreadyExists, EntryNotFound {
-        boolean exists = employeeRepository.existsById(login);
+    public Employee create(EmployeeForm form) throws AlreadyExists, EntryNotFound {
+        boolean exists = employeeRepository.existsById(form.getLogin());
         if (exists) throw new AlreadyExists();
         Employee foundEmployeeTelegramId = null;
-        if(telegramUserId != null && !telegramUserId.isBlank())
-            foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(telegramUserId).orElse(null);
+        if(form.getTelegramUserId() != null && !form.getTelegramUserId().isBlank())
+            foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(form.getTelegramUserId()).orElse(null);
         if (foundEmployeeTelegramId != null)
             throw new ResponseException("Уже есть сотрудник с данным Telegram ID");
 
-        if(telegramUserId != null && !telegramUserId.isBlank()) {
+        if(form.getTelegramUserId() != null && !form.getTelegramUserId().isBlank()) {
             try {
-                telegramController.sendMessageToTlgId(telegramUserId, "Ваш аккаунт в Telegram привязан к учетной записи Microel");
+                telegramController.sendMessageToTlgId(form.getTelegramUserId(), "Ваш аккаунт в Telegram привязан к учетной записи Microel");
             } catch (Throwable e) {
                 throw new ResponseException("Не корректный Telegram ID");
             }
         }
 
-        Department foundDepartment = departmentDispatcher.getById(department);
+        Department foundDepartment = departmentDispatcher.getById(form.getDepartment());
 
-        Position foundPosition = positionDispatcher.getById(position);
+        Position foundPosition = positionDispatcher.getById(form.getPosition());
 
-        Employee.EmployeeBuilder employeeBuilder = Employee.builder();
-        employeeBuilder
-                .firstName(firstName)
-                .lastName(lastName)
-                .secondName(secondName)
-                .login(login)
-                .password(passwordService.encryptPassword(password))
-                .access(access)
-                .internalPhoneNumber(internalPhoneNumber)
-                .telegramUserId(telegramUserId)
-                .department(foundDepartment)
-                .position(foundPosition)
-                .created(Timestamp.from(Instant.now()))
-                .oldTrackerCredentials(oldTrackerCredentials)
-                .deleted(false);
-
-        if (offsite == null) employeeBuilder.offsite(false);
-        else employeeBuilder.offsite(offsite);
-
-        return employeeRepository.save(employeeBuilder.build());
+        return employeeRepository.save(form.toNewEmployee(foundDepartment, foundPosition, passwordService));
     }
 
     @Transactional
-    public Employee edit(
-            String firstName,
-            String lastName,
-            String secondName,
-            String login,
-            String password,
-            Integer access,
-            String internalPhoneNumber,
-            String telegramUserId,
-            @Nullable String telegramGroupChatId,
-            Long department,
-            Long position,
-            Boolean offsite,
-            @Nullable
-            OldTrackerCredentials oldTrackerCredentials
-    ) throws EntryNotFound, EditingNotPossible {
-        Employee foundEmployee = employeeRepository.findById(login).orElse(null);
+    public Employee edit(EmployeeForm form) throws EntryNotFound, EditingNotPossible {
+        Employee foundEmployee = employeeRepository.findById(form.getLogin()).orElse(null);
         Employee foundEmployeeTelegramId = null;
-        if(telegramUserId != null && !telegramUserId.isBlank())
-            foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(telegramUserId).orElse(null);
+        if(form.getTelegramUserId() != null && !form.getTelegramUserId().isBlank())
+            foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(form.getTelegramUserId()).orElse(null);
         if (foundEmployee == null) throw new EntryNotFound();
         if (foundEmployee.getDeleted()) throw new EditingNotPossible();
-        if (foundEmployeeTelegramId != null && !Objects.equals(foundEmployeeTelegramId.getLogin(), login))
+        if (foundEmployeeTelegramId != null && !Objects.equals(foundEmployeeTelegramId.getLogin(), form.getLogin()))
             throw new ResponseException("Уже есть сотрудник с данным Telegram ID");
 
-        if ((telegramUserId != null && !telegramUserId.isBlank()) && (foundEmployeeTelegramId == null || !Objects.equals(foundEmployeeTelegramId.getTelegramUserId(), telegramUserId))) {
+        if ((form.getTelegramUserId() != null && !form.getTelegramUserId().isBlank()) && (foundEmployeeTelegramId == null || !Objects.equals(foundEmployeeTelegramId.getTelegramUserId(), form.getTelegramUserId()))) {
             try {
-                telegramController.sendMessageToTlgId(telegramUserId, "Ваш аккаунт в Telegram привязан к учетной записи Microel");
+                telegramController.sendMessageToTlgId(form.getTelegramUserId(), "Ваш аккаунт в Telegram привязан к учетной записи Microel");
             } catch (Throwable e) {
                 throw new ResponseException("Не корректный Telegram ID");
             }
         }
 
-        if(telegramGroupChatId != null && !telegramGroupChatId.isBlank() && !Objects.equals(foundEmployee.getTelegramGroupChatId(), telegramGroupChatId)){
+        if(form.getTelegramGroupChatId() != null && !form.getTelegramGroupChatId().isBlank() && !Objects.equals(foundEmployee.getTelegramGroupChatId(), form.getTelegramGroupChatId())){
             try {
-                telegramController.sendMessageToTlgId(telegramGroupChatId, foundEmployee.getFullName() + " назначена рабочая группа");
+                telegramController.sendMessageToTlgId(form.getTelegramGroupChatId(), foundEmployee.getFullName() + " назначена рабочая группа");
             } catch (Throwable e) {
                 throw new ResponseException("Не корректный id группового рабочего чата");
             }
         }
 
-        Department foundDepartment = departmentDispatcher.getById(department);
-        Position foundPosition = positionDispatcher.getById(position);
+        Department foundDepartment = departmentDispatcher.getById(form.getDepartment());
+        Position foundPosition = positionDispatcher.getById(form.getPosition());
 
-        foundEmployee.setFirstName(firstName);
-        foundEmployee.setLastName(lastName);
-        foundEmployee.setSecondName(secondName);
-        if (!password.equals("password")) foundEmployee.setPassword(passwordService.encryptPassword(password));
-        foundEmployee.setAccess(access);
-        foundEmployee.setInternalPhoneNumber(internalPhoneNumber);
-        foundEmployee.setTelegramUserId(telegramUserId);
-        foundEmployee.setDepartment(foundDepartment);
-        foundEmployee.setPosition(foundPosition);
-        foundEmployee.setOffsite(offsite);
-        foundEmployee.setTelegramGroupChatId(telegramGroupChatId);
-        if(!Objects.equals(foundEmployee.getOldTrackerCredentials(), oldTrackerCredentials))
-            foundEmployee.setOldTrackerCredentials(oldTrackerCredentials);
-
-        return employeeRepository.save(foundEmployee);
+        return employeeRepository.save(form.updateEmployee(foundEmployee, foundDepartment, foundPosition, passwordService));
     }
 
     @Transactional
@@ -335,4 +271,6 @@ public class EmployeeDispatcher {
         employee.setPhyPhoneInfo(phone);
         stompController.updateEmployee(employeeRepository.save(employee));
     }
+
+
 }

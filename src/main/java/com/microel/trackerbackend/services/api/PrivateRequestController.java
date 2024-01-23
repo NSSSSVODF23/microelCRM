@@ -1520,9 +1520,7 @@ public class PrivateRequestController {
         if (body.getDepartment() == null) throw new ResponseException("Сотруднику не присвоен отдел");
         if (body.getPosition() == null) throw new ResponseException("Сотруднику не присвоена должность");
         try {
-            Employee employee = employeeDispatcher.create(body.getFirstName(), body.getLastName(), body.getSecondName(),
-                    body.getLogin(), body.getPassword(), body.getAccess(), body.getInternalPhoneNumber(),
-                    body.getTelegramUserId(), body.getDepartment(), body.getPosition(), body.getOffsite(), body.getOldTrackerCredentials());
+            Employee employee = employeeDispatcher.create(body);
             stompController.createEmployee(employee);
             return ResponseEntity.ok(employee);
         } catch (AlreadyExists e) {
@@ -1543,9 +1541,7 @@ public class PrivateRequestController {
         if (body.getDepartment() == null) throw new ResponseException("Сотруднику не присвоен отдел");
         if (body.getPosition() == null) throw new ResponseException("Сотруднику не присвоена должность");
         try {
-            Employee employee = employeeDispatcher.edit(body.getFirstName(), body.getLastName(), body.getSecondName(), login, body.getPassword(),
-                    body.getAccess(), body.getInternalPhoneNumber(), body.getTelegramUserId(), body.getTelegramGroupChatId(),
-                    body.getDepartment(), body.getPosition(), body.getOffsite(), body.getOldTrackerCredentials());
+            Employee employee = employeeDispatcher.edit(body);
             stompController.updateEmployee(employee);
             return ResponseEntity.ok(employee);
         } catch (EntryNotFound e) {

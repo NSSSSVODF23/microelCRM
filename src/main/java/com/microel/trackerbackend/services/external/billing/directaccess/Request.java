@@ -29,6 +29,10 @@ public class Request {
         return of(endpoint, query, null, method);
     }
 
+    public static Request ofBody(String endpoint, Map<String, String> body, Connection.Method method) {
+        return of(endpoint, null, body, method);
+    }
+
     public static Request of(String endpoint, Map<String, String> query) {
         return of(endpoint, query, null, null);
     }
@@ -57,7 +61,7 @@ public class Request {
         return of(null, query, body, null);
     }
 
-    public static Request of(String endpoint,Map<String, String> query, Map<String, String> body) {
+    public static Request of(String endpoint, Map<String, String> query, Map<String, String> body) {
         return of(endpoint, query, body, null);
     }
 

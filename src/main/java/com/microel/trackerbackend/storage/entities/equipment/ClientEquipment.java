@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.entities.equipment;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.microel.trackerbackend.misc.AbstractForm;
 import com.microel.trackerbackend.storage.entities.EmployeeIntervention;
@@ -34,6 +35,7 @@ public class ClientEquipment {
     private Float price;
     private Timestamp created;
     @ManyToOne
+    @JsonIgnore
     private Employee creator;
     @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @BatchSize(size = 25)

@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.services.external.billing.directaccess.bases;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.external.billing.directaccess.DirectBaseAccess;
 import com.microel.trackerbackend.services.external.billing.directaccess.DirectBaseSession;
@@ -7,9 +8,11 @@ import com.microel.trackerbackend.services.external.billing.directaccess.Request
 import com.microel.trackerbackend.services.external.billing.directaccess.Url;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.team.util.Credentials;
+import lombok.Data;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
+import org.apache.commons.text.StringEscapeUtils;
 import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
 import org.jsoup.Jsoup;
@@ -17,48 +20,91 @@ import org.jsoup.nodes.Document;
 
 import javax.validation.constraints.NotBlank;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 public class Base781 extends DirectBaseSession implements DirectBaseAccess {
 
     private Base781(Credentials credentials) {
-        super("http://10.50.0.17:85", credentials);
+        super("http://10.50.0.7:81", credentials);
     }
 
     @Override
     public void login() {
         try {
             Connection.Response response = request(
-                    Request.of(
-                            "index.php",
-                            Map.of("act", "main"),
-                            Map.of("login", getCredentials().getUsername(), "passwd", getCredentials().getPassword()),
+                    Request.ofBody(
+                            "auth/check",
+                            Map.of("_auth_login", getCredentials().getUsername(), "_auth_pw", getCredentials().getPassword()),
                             Connection.Method.POST
                     )
             );
             authSuccessfulCheck(response);
-        } catch (HttpStatusException e) {
-            throw new ResponseException("Ошибка авторизации в " + getHost() + " " + getCredentials());
+        } catch (HttpStatusException ignore) {
+//            throw new ResponseException("Ошибка авторизации в " + getHost() + " " + getCredentials());
         } catch (IOException e) {
             throw new ResponseException("Ошибка подключения к " + getHost());
         }
     }
 
+    private void selectUser(@NotBlank String login){
+        try {
+            request(Request.of("main/set_role/role/office/rolename/%D0%9E%D1%84%D0%B8%D1%81?"));
+            request(Request.of("user_info/start"));
+            Connection.Response response = request(Request.of("user_info/show_user", Map.of("rq.uname", login), Connection.Method.GET));
+        } catch (IOException e) {
+            throw new ResponseException("Ошибка при выборе абонента " + getHost());
+        }
+    }
+
+    public void makePayment(@NotBlank String login, @NonNull PaymentForm form){
+        selectUser(login);
+        try {
+            Connection.Response response = request(Request.ofBody("ajax_c.php", form.toRequestBody(), Connection.Method.POST));
+            String errorMessage = getAjaxErrorMessage(response.body());
+            if(errorMessage != null)
+                throw new ResponseException(errorMessage);
+
+            ObjectMapper mapper = new ObjectMapper();
+            PaymentResponse paymentResponse = mapper.readValue(response.body(), PaymentResponse.class);
+
+            Connection.Response checkIssuanceResponse = request(Request.ofBody("ajax_c.php", paymentResponse.toRequestBody(), Connection.Method.POST));
+            errorMessage = getAjaxErrorMessage(checkIssuanceResponse.body());
+            if(errorMessage != null)
+                throw new ResponseException(errorMessage);
+        } catch (IOException e) {
+            throw new ResponseException("Ошибка при совершении платежа " + getHost());
+        }
+    }
+
     @Override
     public void logout() {
-        String url = Url.create(Map.of("act", "auth"), getHost(), "index.php");
         try {
-            Jsoup.connect(url).execute();
+            request(Request.of("auth/logout"));
         } catch (IOException e) {
             throw new ResponseException("Ошибка при выходе " + getHost());
         }
     }
 
+    private String getAjaxErrorMessage(String body){
+        Pattern pattern = Pattern.compile("\\\"msg\\\":\\\"([^\\\"]+)");
+        Matcher matcher = pattern.matcher(body);
+        return matcher.find() ? utfConvert(matcher.group(1)) : null;
+    }
+
+    private String utfConvert(String str){
+        return StringEscapeUtils.unescapeJava(str);
+    }
+
     private void authSuccessfulCheck(Connection.Response response) throws IOException {
         Document document = response.bufferUp().parse();
-        if(document.body().children().isEmpty() || document.body().text().contains("adm_auth.operator_not_found")){
+        if(document.body().children().isEmpty() || document.body().text().contains("Авторизация завершилась с ошибкой")){
             throw new ResponseException("Не авторизованный запрос " + getHost() + " " + getCredentials());
         }
     }
@@ -67,96 +113,71 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
         return new Base781(credentials);
     }
 
-    @Getter
-    @Setter
-    public static class CreateUserForm{
+    @Data
+    public static class PaymentResponse{
+        private String state;
+        private String __msg;
+        private KkmInfo kkm;
+        @Data
+        public static class KkmInfo{
+            private String manager;
+            private Integer cashin;
+            private List<SalesInfoItem> sales;
+            private XObject x;
 
-        @NonNull
-        private Address address;
-        @NotBlank
-        private String fullName;
-        @NotBlank
-        private String phone;
-        @NonNull
-        private UserType userType;
-
-        public String getPreparePhone(){
-            String cleared = phone.replaceAll("[-() ]", "").trim();
-            return cleared.substring(1, cleared.length() - 1);
-        }
-
-        public Map<String, String> toRequestBody(String login){
-            Map<String, String> body = new HashMap<>();
-
-            if(userType == UserType.ORG){
-                body.put("login", "BIZ" + login);
-            }else{
-                body.put("login", login);
+            @Data
+            public static class SalesInfoItem{
+                private String product;
+                private Integer ammount;
+                private Integer price;
+                private Integer group;
             }
 
-            if(address.getStreet() == null)
-                throw new ResponseException("Не указана улица для создания абонента");
-
-            if(address.getStreet().getBillingAlias() == null || address.getStreet().getBillingAlias().isBlank())
-                throw new ResponseException("Не указан псевдоним для улицы в биллинге");
-
-            if(address.getHouseNamePart() == null || address.getHouseNamePart().isBlank())
-                throw new ResponseException("Не указан адрес дома");
-
-            String billingAlias = address.getStreet().getBillingAlias();
-
-            String house = address.getHouseNamePart();
-
-            String apartNum = "";
-            if(address.getApartmentNum() != null)
-                apartNum = address.getApartmentNum().toString();
-
-            String entrance = "";
-            if(address.getEntrance() != null)
-                entrance = address.getEntrance().toString();
-
-            String floor = "";
-            if(address.getFloor() != null)
-                floor = address.getFloor().toString();
-
-
-            body.put("fio", fullName);
-            body.put("phone", getPreparePhone());
-            body.put("pwd", getPreparePhone());
-            body.put("utype", userType.getValue());
-            body.put("street", billingAlias);
-            body.put("hause", house);
-            body.put("kv", apartNum);
-            body.put("pod", entrance);
-            body.put("etj", floor);
-            body.put("ndog", login);
-            body.put("AddUser", "Добавить абонента");
-
-            return body;
+            @Data
+            public static class XObject{
+                private Integer delivery;
+                private Integer ptype;
+                private String uname;
+                private String tarif;
+                private Integer sum;
+                private Integer cashin;
+                private String kkm_state;
+                private Integer tid;
+                private Integer seid;
+            }
         }
 
-        public static CreateUserForm of(Address address, String fullName, String phone, UserType userType){
-            CreateUserForm form = new CreateUserForm();
-            form.setAddress(address);
-            form.setFullName(fullName);
-            form.setPhone(phone);
-            form.setUserType(userType);
-            return form;
+        public Map<String, String> toRequestBody(){
+            Map<String, String> requestBody = new HashMap<>();
+            requestBody.put("kkm_state", kkm.x.kkm_state);
+            requestBody.put("manager", kkm.manager);
+            requestBody.put("sum_kkm", kkm.x.sum.toString());
+            requestBody.put("cashin", kkm.x.cashin.toString());
+            requestBody.put("__act", "kkm-saleKKM");
+            return requestBody;
         }
     }
 
-    public enum UserType {
-        PHY("обычн."),
-        ORG("орг.");
+    @Getter
+    @Setter
+    public static class PaymentForm{
+        @NonNull
+        private Integer paymentType;
+        @NonNull
+        private Integer sum;
+        @NotBlank
+        private String comment;
 
-        private final String value;
-
-        UserType(String value) {
-            this.value = value;
-        }
-
-        public String getValue() {
-            return value;
+        public Map<String, String> toRequestBody(){
+            Map<String, String> requestBody = new HashMap<>();
+            requestBody.put("rq.sum", sum.toString());
+//            requestBody.put("rq.cashin", null);
+            requestBody.put("rq.paytype", paymentType.toString());
+            requestBody.put("rq.coment", comment);
+//            requestBody.put("rq.msg", null);
+            requestBody.put("__act", "user_info-regPay");
+            return requestBody;
         }
     }
+
 }
