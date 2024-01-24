@@ -260,6 +260,22 @@ public class BillingRequestController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("user/{login}/make-recalculation")
+    public ResponseEntity<Void> makeRecalculation(@PathVariable String login, @RequestBody Base781.RecalculationForm form, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base781 base = createBase781Session(employee);
+        base.login();
+
+        base.makeRecalculation(login, form);
+
+        base.logout();
+
+        apiBillingController.getUpdatedUserAndPushUpdate(login);
+
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("counting-lives")
     public ResponseEntity<Map<String, String>> getCountingLives(@RequestBody ApiBillingController.CountingLivesForm form) {
         return ResponseEntity.ok(Map.of("result", apiBillingController.getCalculateCountingLives(form)));

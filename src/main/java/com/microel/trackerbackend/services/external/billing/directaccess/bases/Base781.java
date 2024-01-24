@@ -83,6 +83,18 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
+    public void makeRecalculation(@NotBlank String login, @NonNull RecalculationForm form){
+        selectUser(login);
+        try {
+            Connection.Response response = request(Request.ofBody("ajax_c.php", form.toRequestBody(), Connection.Method.POST));
+            String errorMessage = getAjaxErrorMessage(response.body());
+            if(errorMessage != null)
+                throw new ResponseException(errorMessage);
+        } catch (IOException e) {
+            throw new ResponseException("Ошибка при совершении платежа " + getHost());
+        }
+    }
+
     @Override
     public void logout() {
         try {
@@ -177,6 +189,40 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
 //            requestBody.put("rq.msg", null);
             requestBody.put("__act", "user_info-regPay");
             return requestBody;
+        }
+    }
+
+    @Getter
+    @Setter
+    public static class RecalculationForm{
+        @NonNull
+        private RecalculationMode mode;
+        @NonNull
+        private Integer count;
+        @NotBlank
+        private String comment;
+
+        public Map<String, String> toRequestBody(){
+            Map<String, String> requestBody = new HashMap<>();
+            switch (mode) {
+                case DAYS -> {
+                    requestBody.put("rq.pr_days", count.toString());
+                    requestBody.put("rq.pr_money", "0");
+                    requestBody.put("__act", "user_info-prolongDays");
+                }
+                case MONEY -> {
+                    requestBody.put("rq.pr_days", "0");
+                    requestBody.put("rq.pr_money", count.toString());
+                    requestBody.put("__act", "user_info-prolongMoney");
+                }
+            }
+            requestBody.put("__prompt", comment);
+            return requestBody;
+        }
+
+        public enum RecalculationMode{
+            DAYS,
+            MONEY
         }
     }
 
