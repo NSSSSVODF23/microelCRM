@@ -80,6 +80,9 @@ public class WorkLog {
     @JsonIgnore
     @BatchSize(size = 25)
     private List<WorkCalculation> workCalculations;
+    @Nullable
+    @Column(columnDefinition = "boolean default true")
+    private Boolean taskIsClearlyCompleted;
 
     @Override
     public boolean equals(Object o) {

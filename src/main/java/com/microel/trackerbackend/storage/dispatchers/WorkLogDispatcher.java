@@ -449,50 +449,11 @@ public class WorkLogDispatcher {
         stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.reportCreated(workLog.getTask(), text.toString(), employee)));
         if (workLog.getWorkReports().size() == workLog.getEmployees().size()) {
             workLog.setClosed(timestamp);
+            workLog.setTaskIsClearlyCompleted(true); //TODO Удалить
             workLog.getChat().setClosed(timestamp);
             WorkLog save = workLogRepository.save(workLog);
             taskDispatcher.close(workLog.getTask().getTaskId());
             return save;
-//            Task task = workLog.getTask();
-//            task.setTaskStatus(TaskStatus.CLOSE);
-//            task.setUpdated(timestamp);
-
-//            stompController.updateTask(workLog.getTask());
-//
-//            // Обновляем счетчики задач на странице
-//            Long wireframeId = task.getModelWireframe().getWireframeId();
-//
-//            task.getAllEmployeesObservers().forEach(observer -> {
-//                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
-//                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
-//                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
-//                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
-//                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
-//            });
-//
-//            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
-//            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
-//            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
-//            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
-//            stompController.updateTagTaskCounter(tasksCountByTags);
-//
-//            stompController.closeChat(workLog.getChat());
-//            stompController.closeWorkLog(workLog);
-//            stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
-//            notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.worksCompleted(workLog));
-//
-//            Employee assignator = workLog.getCreator();
-//            if(assignator.isHasOldTrackerCredentials()){
-//                TaskStage taskStage = task.getCurrentStage();
-//                if(taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
-//                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(assignator.getOldTrackerCredentials().getUsername(), assignator.getOldTrackerCredentials().getPassword());
-//                    TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
-//                    List<OldTrackerRequestFactory.FieldData> dataList = taskClassOT.getStandardFieldsOnReport().get(workLog.getWorkReports().toArray(WorkReport[]::new));
-//                    requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getAutoCloseStageId(), dataList).execute();
-//                    requestFactory.close().execute();
-//                    task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getAutoCloseStageId());
-//                }
-//            }
         }else{
             return workLogRepository.save(workLog);
         }
@@ -526,37 +487,11 @@ public class WorkLogDispatcher {
 //        stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.reportCreated(workLog.getTask(), text.toString(), employee)));
         if (workLog.getWorkReports().size() == workLog.getEmployees().size()) {
             workLog.setClosed(timestamp);
+            workLog.setTaskIsClearlyCompleted(true); //TODO Удалить
             workLog.getChat().setClosed(timestamp);
             WorkLog save = workLogRepository.save(workLog);
             taskDispatcher.close(workLog.getTask().getTaskId());
             return save;
-
-//            Task task = workLog.getTask();
-//            task.setTaskStatus(TaskStatus.CLOSE);
-//            task.setUpdated(timestamp);
-//            stompController.updateTask(workLog.getTask());
-//
-//            // Обновляем счетчики задач на странице
-//            Long wireframeId = task.getModelWireframe().getWireframeId();
-//
-//            task.getAllEmployeesObservers().forEach(observer -> {
-//                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
-//                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
-//                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
-//                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
-//                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
-//            });
-//
-//            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
-//            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
-//            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
-//            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
-//            stompController.updateTagTaskCounter(tasksCountByTags);
-//
-//            stompController.closeChat(workLog.getChat());
-//            stompController.closeWorkLog(workLog);
-//            stompController.createTaskEvent(workLog.getTask().getTaskId(), taskEventDispatcher.appendEvent(TaskEvent.closeWorkLog(workLog.getTask(), workLog, Employee.getSystem())));
-//            notificationDispatcher.createNotification(workLog.getTask().getAllEmployeesObservers(), Notification.worksCompleted(workLog));
         }else{
             return workLogRepository.save(workLog);
         }
@@ -651,5 +586,15 @@ public class WorkLogDispatcher {
             }
         }
         return acceptedEmployees;
+    }
+
+    public List<WorkLog> getAfterWork(Employee employee) {
+        return workLogRepository.findAll((root, query, cb) -> {
+           List<Predicate> predicates = new ArrayList<>();
+           predicates.add(cb.isNotNull(root.get("closed")));
+           predicates.add(cb.equal(root.get("creator"), employee));
+           predicates.add(cb.isNull(root.get("taskIsClearlyCompleted")));
+           return cb.and(predicates.toArray(Predicate[]::new));
+        }, Sort.by(Sort.Direction.DESC, "closed"));
     }
 }

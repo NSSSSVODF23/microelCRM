@@ -1294,44 +1294,6 @@ public class PrivateRequestController {
         return ResponseEntity.ok().build();
     }
 
-    // Получить WorkLog по его идентификатору
-    @GetMapping("work-log/{workLogId}")
-    public ResponseEntity<WorkLog> getWorkLog(@PathVariable Long workLogId) {
-        try {
-            return ResponseEntity.ok(workLogDispatcher.get(workLogId));
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Получить журналы работ определенной задачи
-    @GetMapping("task/{taskId}/work-logs")
-    public ResponseEntity<List<WorkLog>> getWorkLogs(@PathVariable Long taskId) {
-        return ResponseEntity.ok(workLogDispatcher.getAllByTaskId(taskId));
-    }
-
-    /**
-     *Получить список активных журналов работ
-     */
-    @GetMapping("work-logs/active")
-    public ResponseEntity<List<WorkLog>> getActiveWorkLogs() {
-        return ResponseEntity.ok(workLogDispatcher.getActive());
-    }
-
-    // Получить количество активных журналов работ
-    @GetMapping("work-logs/active/count")
-    public ResponseEntity<Long> getActiveWorkLogsCount() {
-        return ResponseEntity.ok(workLogDispatcher.getActiveCount());
-    }
-
-    @GetMapping("task/{taskId}/work-log/active")
-    public ResponseEntity<WorkLog> getActiveWorkLog(@PathVariable Long taskId) {
-        try {
-            return ResponseEntity.ok(workLogDispatcher.getActiveByTaskId(taskId));
-        } catch (EntryNotFound e) {
-            return ResponseEntity.ok(null);
-        }
-    }
 
     // Закрывает задачу
     @PatchMapping("task/{taskId}/close")
@@ -1976,11 +1938,6 @@ public class PrivateRequestController {
     @GetMapping("salary/paid-work/{id}")
     public ResponseEntity<PaidWork> getSalaryPaidWork(@PathVariable Long id) {
         return ResponseEntity.ok(paidWorkDispatcher.get(id));
-    }
-
-    @GetMapping("work-logs/uncalculated")
-    public ResponseEntity<List<WorkLog>> getUncalculatedWorkLogs() {
-        return ResponseEntity.ok(workLogDispatcher.getUncalculated());
     }
 
     @GetMapping("uncompleted-reports")

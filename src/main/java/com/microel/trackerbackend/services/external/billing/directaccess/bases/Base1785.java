@@ -250,7 +250,7 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
 
         public String getPreparePhone(){
             String cleared = phone.replaceAll("[-() ]", "").trim();
-            return cleared.substring(1, cleared.length() - 1);
+            return cleared.substring(1);
         }
 
         public Map<String, String> toRequestBody(String login){
