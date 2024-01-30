@@ -19,10 +19,7 @@ import javax.persistence.Entity;
 import javax.persistence.Table;
 import javax.persistence.*;
 import java.sql.Timestamp;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Entity
@@ -92,6 +89,16 @@ public class WorkLog {
         return Objects.equals(getWorkLogId(), workLog.getWorkLogId());
     }
 
+    @Nullable
+    public Timestamp getLastAcceptedTimestamp(){
+        AcceptingEntry acceptingEntry = getAcceptedEmployees().stream().max(Comparator.comparing(AcceptingEntry::getTimestamp)).orElse(null);
+        return acceptingEntry != null ? acceptingEntry.getTimestamp() : null;
+    }
+
+    public List<WorkLogTargetFile> getTargetImages(){
+        return getTargetFiles().stream().filter(WorkLogTargetFile::isImage).collect(Collectors.toList());
+    }
+
     public Set<AcceptingEntry> getAcceptedEmployees() {
         if (acceptedEmployees == null) return acceptedEmployees = new HashSet<>();
         return acceptedEmployees;
@@ -119,6 +126,14 @@ public class WorkLog {
      */
     public Set<Employee> getWhoAccepted() {
         return employees.stream().filter(e -> acceptedEmployees.stream().anyMatch(a -> a.getLogin().equals(e.getLogin()))).collect(Collectors.toSet());
+    }
+
+    public boolean isAllEmployeesAccepted() {
+        return employees.size() == getWhoAccepted().size();
+    }
+
+    public boolean isUnaccepted() {
+        return employees.size() != getWhoAccepted().size();
     }
 
     /**

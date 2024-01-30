@@ -220,13 +220,13 @@ public class WorkCalculationDispatcher {
     public void calculateAndSaveBypass(BypassWorkCalculationForm form, Employee employee) {
         Task task = taskDispatcher.createTask(form.getTaskInfo(), form.getReportInfo().getDate(), employee);
         stompController.createTask(task);
-        stompController.updateTask(taskDispatcher.modifyTags(task.getTaskId(), form.getReportInfo().getTags()));
+        taskDispatcher.modifyTags(task.getTaskId(), form.getReportInfo().getTags());
         WorkLog workLog = workLogDispatcher.createWorkLog(task, form.getReportInfo(), form.getReportInfo().getDate(), employee);
         stompController.createWorkLog(workLog);
         workLog.getChat().setClosed(form.getReportInfo().getDate());
         calculating(workLog, form.getActions(), form.getSpreading(), null, employee, null, form.getIsPaidWork(), form.getAmountOfMoneyTaken());
         stompController.closeWorkLog(workLog);
         stompController.closeChat(workLog.getChat());
-        stompController.updateTask(taskDispatcher.close(task.getTaskId(), employee));
+        taskDispatcher.close(task.getTaskId(), employee);
     }
 }

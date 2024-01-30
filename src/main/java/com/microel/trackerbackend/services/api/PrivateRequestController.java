@@ -370,9 +370,6 @@ public class PrivateRequestController {
             // Создаем оповещение о новой задаче
             notificationDispatcher.createNotification(observers, Notification.taskCreated(createdTask));
 
-            // Отправляем сигнал пользователям, что задача создана
-            stompController.createTask(createdTask);
-
             createdTask.getAllEmployeesObservers().forEach(observer -> {
                 WireframeTaskCounter wireframeTaskCounter = new WireframeTaskCounter();
                 Long wireframeId = createdTask.getModelWireframe().getWireframeId();
@@ -428,7 +425,6 @@ public class PrivateRequestController {
         try {
             Task task = taskDispatcher.deleteTask(id, employee);
             Set<Employee> observers = task.getAllEmployeesObservers(employee);
-            stompController.updateTask(task);
             notificationDispatcher.createNotification(observers, Notification.taskDeleted(task, employee));
         } catch (EntryNotFound e) {
             throw new ResponseException("Задача с идентификатором " + id + " не найдена в базе данных");
@@ -630,7 +626,6 @@ public class PrivateRequestController {
         Employee employee = getEmployeeFromRequest(request);
         try {
             Task task = taskDispatcher.moveTaskScheduled(taskId, delta);
-            stompController.updateTask(task);
             TaskEvent taskEvent;
             // Создаем события в журнале задачи если даты изменились
             if (task.getActualFrom() != null) {
@@ -678,7 +673,6 @@ public class PrivateRequestController {
         try {
             Employee employeeFromRequest = getEmployeeFromRequest(request);
             Task task = taskDispatcher.changeTaskStage(taskId, body.get("stageId"));
-            stompController.updateTask(task);
 
             Long wireframeId = task.getModelWireframe().getWireframeId();
 
@@ -711,8 +705,6 @@ public class PrivateRequestController {
     public ResponseEntity<Task> unlinkParentTask(@PathVariable Long taskId, HttpServletRequest request) {
         try {
             Pair<Task, Task> taskTaskPair = taskDispatcher.unlinkFromParent(taskId);
-            stompController.updateTask(taskTaskPair.getFirst());
-            stompController.updateTask(taskTaskPair.getSecond());
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.unlinkFromParentTask(taskTaskPair.getFirst(), taskTaskPair.getSecond(), getEmployeeFromRequest(request)));
             TaskEvent parentTaskEvent = taskEventDispatcher.appendEvent(TaskEvent.unlinkChildTask(taskTaskPair.getSecond(), Set.of(taskTaskPair.getFirst()), getEmployeeFromRequest(request)));
             stompController.createTaskEvent(taskId, taskEvent);
@@ -729,14 +721,11 @@ public class PrivateRequestController {
         try {
             Triplet<Task, Task, Task> taskTriplet = taskDispatcher.changeLinkToParentTask(taskId, body.get("parentTaskId"));
             Employee author = getEmployeeFromRequest(request);
-            stompController.updateTask(taskTriplet.getValue0());
             TaskEvent targetTaskEvent = taskEventDispatcher.appendEvent(TaskEvent.linkedToParentTask(taskTriplet.getValue0(), taskTriplet.getValue1(), author));
             stompController.createTaskEvent(taskId, targetTaskEvent);
-            stompController.updateTask(taskTriplet.getValue1());
             TaskEvent parentTaskEvent = taskEventDispatcher.appendEvent(TaskEvent.linkedToChildTask(taskTriplet.getValue1(), Set.of(taskTriplet.getValue0()), author));
             stompController.createTaskEvent(taskTriplet.getValue1().getTaskId(), parentTaskEvent);
             if (taskTriplet.getValue2() != null) {
-                stompController.updateTask(taskTriplet.getValue2());
                 TaskEvent previousParentTasksEvent = taskEventDispatcher.appendEvent(TaskEvent.unlinkChildTask(taskTriplet.getValue2(), Set.of(taskTriplet.getValue0()), author));
                 stompController.createTaskEvent(taskTriplet.getValue2().getTaskId(), previousParentTasksEvent);
             }
@@ -752,16 +741,13 @@ public class PrivateRequestController {
         try {
             Triplet<Task, List<Task>, List<Pair<Task, Task>>> complexOfTasks = taskDispatcher.appendLinksToChildrenTask(taskId, childIds);
             Employee author = getEmployeeFromRequest(request);
-            stompController.updateTask(complexOfTasks.getValue0());
             TaskEvent targetTaskEvent = taskEventDispatcher.appendEvent(TaskEvent.linkedToChildTask(complexOfTasks.getValue0(), new HashSet<>(complexOfTasks.getValue1()), author));
             stompController.createTaskEvent(taskId, targetTaskEvent);
             complexOfTasks.getValue1().forEach(childTasks -> {
-                stompController.updateTask(childTasks);
                 TaskEvent childTaskEvent = taskEventDispatcher.appendEvent(TaskEvent.linkedToParentTask(childTasks, complexOfTasks.getValue0(), author));
                 stompController.createTaskEvent(childTasks.getTaskId(), childTaskEvent);
             });
             complexOfTasks.getValue2().forEach(previousParentChild -> {
-                stompController.updateTask(previousParentChild.getFirst());
                 TaskEvent previousParentTasksEvent = taskEventDispatcher.appendEvent(TaskEvent.unlinkChildTask(previousParentChild.getFirst(), Set.of(previousParentChild.getSecond()), author));
                 stompController.createTaskEvent(previousParentChild.getFirst().getTaskId(), previousParentTasksEvent);
             });
@@ -776,7 +762,6 @@ public class PrivateRequestController {
     public ResponseEntity<Task> changeTaskTags(@PathVariable Long taskId, @RequestBody Set<TaskTag> body, HttpServletRequest request) {
         try {
             Task task = taskDispatcher.modifyTags(taskId, body);
-            stompController.updateTask(task);
 
             task.getAllEmployeesObservers().forEach(observer->{
                 Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
@@ -983,8 +968,6 @@ public class PrivateRequestController {
 
             notificationDispatcher.createNotification(employeesObservers, Notification.youObserver(task));
 
-            stompController.updateTask(task);
-
             List<Observer> observers = new ArrayList<>();
             observers.addAll(task.getEmployeesObservers());
             observers.addAll(task.getDepartmentsObservers());
@@ -1022,7 +1005,6 @@ public class PrivateRequestController {
         try {
             Employee employeeFromRequest = getEmployeeFromRequest(request);
             Task task = taskDispatcher.changeTaskResponsible(id, body);
-            stompController.updateTask(task);
             Set<Employee> observers = task.getAllEmployeesObservers(employeeFromRequest);
             notificationDispatcher.createNotification(observers, Notification.youResponsible(task));
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeResponsible(task, body, employeeFromRequest));
@@ -1038,7 +1020,6 @@ public class PrivateRequestController {
     public ResponseEntity<Task> unbindTaskResponsible(@PathVariable Long id, HttpServletRequest request) {
         try {
             Task task = taskDispatcher.unbindTaskResponsible(id);
-            stompController.updateTask(task);
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.unbindResponsible(task, getEmployeeFromRequest(request)));
             stompController.createTaskEvent(id, taskEvent);
             return ResponseEntity.ok(task);
@@ -1052,7 +1033,6 @@ public class PrivateRequestController {
     public ResponseEntity<Task> changeTaskActualFrom(@PathVariable Long id, @RequestBody Instant body, HttpServletRequest request) {
         try {
             Task task = taskDispatcher.changeTaskActualFrom(id, body);
-            stompController.updateTask(task);
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeActualFrom(task, body, getEmployeeFromRequest(request)));
             stompController.createTaskEvent(id, taskEvent);
             return ResponseEntity.ok(task);
@@ -1066,7 +1046,6 @@ public class PrivateRequestController {
     public ResponseEntity<Task> changeTaskActualTo(@PathVariable Long id, @RequestBody Instant body, HttpServletRequest request) {
         try {
             Task task = taskDispatcher.changeTaskActualTo(id, body);
-            stompController.updateTask(task);
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeActualTo(task, body, getEmployeeFromRequest(request)));
             stompController.createTaskEvent(id, taskEvent);
             return ResponseEntity.ok(task);
@@ -1080,7 +1059,6 @@ public class PrivateRequestController {
     public ResponseEntity<Task> clearTaskActualFromDate(@PathVariable Long id, HttpServletRequest request) {
         try {
             Task task = taskDispatcher.clearTaskActualFrom(id);
-            stompController.updateTask(task);
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.clearActualFrom(task, getEmployeeFromRequest(request)));
             stompController.createTaskEvent(id, taskEvent);
             return ResponseEntity.ok(task);
@@ -1094,7 +1072,6 @@ public class PrivateRequestController {
     public ResponseEntity<Task> clearTaskActualToDate(@PathVariable Long id, HttpServletRequest request) {
         try {
             Task task = taskDispatcher.clearTaskActualTo(id);
-            stompController.updateTask(task);
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.clearActualTo(task, getEmployeeFromRequest(request)));
             stompController.createTaskEvent(id, taskEvent);
             return ResponseEntity.ok(task);
@@ -1248,7 +1225,6 @@ public class PrivateRequestController {
             WorkLog workLog = taskDispatcher.assignInstallers(taskId, body, employee);
             List<Employee> acceptedEmployees = workLogDispatcher.getAcceptedEmployees(workLog.getEmployees());
             telegramController.assignInstallers(workLog, employee, acceptedEmployees);
-            stompController.updateTask(workLog.getTask());
             stompController.createWorkLog(workLog);
             stompController.createChat(Objects.requireNonNull(ChatMapper.toDto(workLog.getChat())));
             Set<Employee> observers = workLog.getTask().getAllEmployeesObservers(employee);
@@ -1267,7 +1243,6 @@ public class PrivateRequestController {
     public ResponseEntity<Void> forceCloseWorkLog(@PathVariable Long taskId, @RequestBody String reasonOfClosing, HttpServletRequest request) {
         try {
             WorkLog taskWorkPair = taskDispatcher.forceCloseWorkLog(taskId, reasonOfClosing, getEmployeeFromRequest(request));
-            stompController.updateTask(taskWorkPair.getTask());
             stompController.closeChat(taskWorkPair.getChat());
             stompController.closeWorkLog(taskWorkPair);
 
@@ -1289,7 +1264,6 @@ public class PrivateRequestController {
             notificationDispatcher.createNotification(observers, Notification.taskMovedToDirectory(task, employee));
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.movedToDirectory(task, employee));
             stompController.createTaskEvent(task.getTaskId(), taskEvent);
-            stompController.updateTask(task);
         }
         return ResponseEntity.ok().build();
     }
@@ -1301,11 +1275,6 @@ public class PrivateRequestController {
         Employee employee = getEmployeeFromRequest(request);
         try {
             Task task = taskDispatcher.close(taskId, employee);
-            stompController.updateTask(task);
-            Set<Employee> observers = task.getAllEmployeesObservers(employee);
-            notificationDispatcher.createNotification(observers, Notification.taskClosed(task, employee));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.close(task, employee));
-            stompController.createTaskEvent(taskId, taskEvent);
             return ResponseEntity.ok(task);
         } catch (EntryNotFound | IllegalFields e) {
             throw new ResponseException(e.getMessage());
@@ -1318,11 +1287,7 @@ public class PrivateRequestController {
         Employee employee = getEmployeeFromRequest(request);
         try {
             Task task = taskDispatcher.reopen(taskId, employee);
-            stompController.updateTask(task);
-            Set<Employee> observers = task.getAllEmployeesObservers(employee);
-            notificationDispatcher.createNotification(observers, Notification.taskReopened(task, employee));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.reopen(task, employee));
-            stompController.createTaskEvent(taskId, taskEvent);
+
             return ResponseEntity.ok(task);
         } catch (EntryNotFound | IllegalFields e) {
             throw new ResponseException(e.getMessage());
@@ -1337,7 +1302,6 @@ public class PrivateRequestController {
             TaskFieldsSnapshotDispatcher.SnapshotBuilder snapshotBuilder = taskFieldsSnapshotDispatcher.builder().beforeEditing(taskId, employee);
             Task task = taskDispatcher.edit(taskId, modelItems, employee);
             snapshotBuilder.afterEditing().flush();
-            stompController.updateTask(task);
             Set<Employee> observers = task.getAllEmployeesObservers(employee);
             notificationDispatcher.createNotification(observers, Notification.taskEdited(task, employee));
             TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.editFields(task, employee));
@@ -2393,6 +2357,77 @@ public class PrivateRequestController {
             response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
         }
     }
+
+    @GetMapping("file-thumbnail/{id}")
+    public void getTFileThumbnail(@PathVariable Long id,
+                                  @RequestHeader(value = "Range", required = false) String rangeHeader,
+                                  HttpServletResponse response) {
+        TFile tFile = filesWatchService.getFileById(id).orElseThrow(()->new ResponseException("Файл не найден"));
+
+        try {
+            OutputStream os = response.getOutputStream();
+
+            // Получаем размер фала
+            long fileSize = Files.size(Path.of(tFile.getThumbnail()));
+
+            byte[] buffer = new byte[1024];
+
+            try (RandomAccessFile file = new RandomAccessFile(tFile.getThumbnail(), "r")) {
+                if (rangeHeader == null) {
+                    response.setHeader("Content-Type", tFile.getMimeType());
+                    response.setHeader("Content-Length", String.valueOf(fileSize));
+                    response.setHeader("Content-Disposition", "inline;filename="+tFile.getName());
+
+                    response.setStatus(HttpStatus.OK.value());
+                    long pos = 0;
+                    file.seek(pos);
+                    while (pos < fileSize - 1) {
+                        file.read(buffer);
+                        os.write(buffer);
+                        pos += buffer.length;
+                    }
+                    os.flush();
+                    return;
+                }
+
+                String[] ranges = rangeHeader.split("-");
+                long rangeStart = Long.parseLong(ranges[0].substring(6));
+                long rangeEnd;
+                if (ranges.length > 1) {
+                    rangeEnd = Long.parseLong(ranges[1]);
+                } else {
+                    rangeEnd = fileSize - 1;
+                }
+                if (fileSize < rangeEnd) {
+                    rangeEnd = fileSize - 1;
+                }
+
+                String contentLength = String.valueOf((rangeEnd - rangeStart) + 1);
+                response.setHeader("Content-Type", tFile.getMimeType());
+                response.setHeader("Content-Length", contentLength);
+                response.setHeader("Accept-Ranges", "bytes");
+                response.setHeader("Content-Range", "bytes" + " " + rangeStart + "-" + rangeEnd + "/" + fileSize);
+                response.setHeader("Content-Disposition", "inline;filename="+tFile.getName());
+                response.setStatus(HttpStatus.PARTIAL_CONTENT.value());
+                long pos = rangeStart;
+                file.seek(pos);
+                while (pos < rangeEnd) {
+                    file.read(buffer);
+                    os.write(buffer);
+                    pos += buffer.length;
+                }
+                os.flush();
+
+
+            } catch (FileNotFoundException e) {
+                response.setStatus(HttpStatus.NOT_FOUND.value());
+            }
+
+        } catch (IOException e) {
+            response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        }
+    }
+
     @GetMapping("accounting/monthly-salary-report-table")
     public void getMonthlySalaryReportTable(@RequestParam Long date, HttpServletResponse response) {
         org.javatuples.Pair<Date,Date> monthBoundaries = Utils.getMonthBoundaries(new Date(date));

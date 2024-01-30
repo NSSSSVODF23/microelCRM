@@ -451,4 +451,12 @@ public class StompController {
     public void updateFilesDirectory(Long id){
         sendAll(id, "files", "directory", "update");
     }
+
+    public void afterWorkAppend(WorkLog workLog){
+        sendToUser(workLog.getCreator().getLogin(), workLog, "after-work", "append");
+    }
+
+    public void afterWorkRemoved(Long id, String employeeLogin){
+        sendToUser(employeeLogin, id, "after-work", "remove");
+    }
 }

@@ -309,8 +309,9 @@ public class FilesWatchService {
                 sendUpdateDirectorySignal(directory.getParent());
             }
         } else {
-            TFile tFile = TFile.of(file);
-            TFile existTFile = fileRepository.findFirstByPath(tFile.getPath()).orElse(null);
+            TFile existTFile = fileRepository.findFirstByPath(file.getPath()).orElse(null);
+            boolean createThumbnail = existTFile == null || existTFile.getThumbnail() == null || existTFile.getThumbnail().isBlank();
+            TFile tFile = TFile.of(file, createThumbnail);
             if (existTFile != null) {
                 update(tFile, existTFile);
                 sendUpdateDirectorySignal(tFile.getParent());
@@ -358,10 +359,10 @@ public class FilesWatchService {
 
     @Transactional
     @Nullable
-    public TFile create(TFile TFile) {
-        TFile existTFile = fileRepository.findFirstByPath(TFile.getPath()).orElse(null);
+    public TFile create(TFile file) {
+        TFile existTFile = fileRepository.findFirstByPath(file.getPath()).orElse(null);
         if (existTFile == null) {
-            return fileRepository.save(TFile);
+            return fileRepository.save(file);
         }
         return null;
     }
@@ -372,6 +373,8 @@ public class FilesWatchService {
         existTFile.setMimeType(tFile.getMimeType());
         existTFile.setCreatedAt(tFile.getCreatedAt());
         existTFile.setModifiedAt(tFile.getModifiedAt());
+        if(existTFile.getThumbnail() == null || existTFile.getThumbnail().isBlank())
+            existTFile.setThumbnail(tFile.getThumbnail());
         return fileRepository.save(existTFile);
     }
 

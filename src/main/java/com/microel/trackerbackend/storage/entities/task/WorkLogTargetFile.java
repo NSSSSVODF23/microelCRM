@@ -42,6 +42,7 @@ public class WorkLogTargetFile {
     private Timestamp createdAt;
     @Nullable
     @Column(length = 4096)
+    @JsonIgnore
     private String thumbnail;
 
     public static WorkLogTargetFile of(FileData fileData) throws EmptyFile, WriteError {
@@ -57,6 +58,11 @@ public class WorkLogTargetFile {
         file.setCreatedAt(Timestamp.from(Instant.now()));
         file.setThumbnail(path.getThumbnail());
         return file;
+    }
+
+    @JsonIgnore
+    public boolean isImage() {
+        return type == FileType.PHOTO || type == FileType.VIDEO;
     }
 
     @JsonIgnore

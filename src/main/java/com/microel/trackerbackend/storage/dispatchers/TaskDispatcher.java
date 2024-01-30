@@ -20,6 +20,7 @@ import com.microel.trackerbackend.storage.dto.mapper.TaskMapper;
 import com.microel.trackerbackend.storage.dto.task.TaskDto;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
+import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskStatus;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
@@ -78,6 +79,7 @@ public class TaskDispatcher {
     private final StompController stompController;
     private final OldTrackerService oldTrackerService;
     private final AddressDispatcher addressDispatcher;
+    private final TaskEventDispatcher taskEventDispatcher;
 
     public TaskDispatcher(TaskRepository taskRepository, ModelItemDispatcher modelItemDispatcher,
                           WireframeDispatcher wireframeDispatcher, CommentDispatcher commentDispatcher,
@@ -85,7 +87,7 @@ public class TaskDispatcher {
                           EmployeeDispatcher employeeDispatcher, WorkLogDispatcher workLogDispatcher,
                           TaskTagDispatcher taskTagDispatcher, AddressDispatcher addressDispatcher,
                           @Lazy NotificationDispatcher notificationDispatcher, StompController stompController,
-                          OldTrackerService oldTrackerService, AddressDispatcher addressDispatcher1) {
+                          OldTrackerService oldTrackerService, AddressDispatcher addressDispatcher1, TaskEventDispatcher taskEventDispatcher) {
         this.taskRepository = taskRepository;
         this.modelItemDispatcher = modelItemDispatcher;
         this.wireframeDispatcher = wireframeDispatcher;
@@ -99,6 +101,7 @@ public class TaskDispatcher {
         this.stompController = stompController;
         this.oldTrackerService = oldTrackerService;
         this.addressDispatcher = addressDispatcher1;
+        this.taskEventDispatcher = taskEventDispatcher;
     }
 
     @Async
@@ -291,6 +294,7 @@ public class TaskDispatcher {
             createdTask.setTags(body.getTags());
 
         Task task = taskRepository.save(createdTask);
+        stompController.createTask(task);
         Long wireframeId = task.getModelWireframe().getWireframeId();
 
         task.getAllEmployeesObservers().forEach(observer -> {
@@ -381,7 +385,7 @@ public class TaskDispatcher {
         }
 
         Task save = taskRepository.save(task);
-
+        stompController.updateTask(task);
         updateTasksCountWorker.execute(this);
 
         return save;
@@ -422,6 +426,7 @@ public class TaskDispatcher {
 
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
+        stompController.updateTask(save);
 
         updateTasksCountWorker.appendPath(save).execute(this);
 
@@ -558,6 +563,7 @@ public class TaskDispatcher {
         workLogTask.setUpdated(timestamp);
 
         WorkLog save = workLogDispatcher.save(workLog);
+        stompController.afterWorkAppend(save);
 
         if(employee.isHasOldTrackerCredentials()){
             TaskStage taskStage = task.getCurrentStage();
@@ -608,7 +614,10 @@ public class TaskDispatcher {
         task.setEmployeesObservers(employeeDispatcher.getByIdSet(personalResponsibilities));
         task.setUpdated(Timestamp.from(Instant.now()));
 
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+        stompController.updateTask(save);
+
+        return save;
     }
 
     @Transactional
@@ -622,7 +631,10 @@ public class TaskDispatcher {
         task.setParent(null);
         parentTask.setUpdated(Timestamp.from(Instant.now()));
         task.setUpdated(Timestamp.from(Instant.now()));
-        return Pair.of(taskRepository.save(task), taskRepository.save(parentTask));
+        Pair<Task, Task> pair = Pair.of(taskRepository.save(task), taskRepository.save(parentTask));
+        stompController.updateTask(pair.getFirst());
+        stompController.updateTask(pair.getSecond());
+        return pair;
     }
 
     @Transactional
@@ -656,7 +668,11 @@ public class TaskDispatcher {
             targetTask.setParent(parentTaskId);
             parentTask.getChildren().add(targetTask);
 
-            return Triplet.with(taskRepository.save(targetTask), taskRepository.save(parentTask), taskRepository.save(previousParent));
+            Triplet<Task, Task, Task> trip = Triplet.with(taskRepository.save(targetTask), taskRepository.save(parentTask), taskRepository.save(previousParent));
+            stompController.updateTask(trip.getValue0());
+            stompController.updateTask(trip.getValue1());
+            stompController.updateTask(trip.getValue2());
+            return trip;
         }
 
         targetTask.setParent(parentTaskId);
@@ -664,7 +680,10 @@ public class TaskDispatcher {
         targetTask.setUpdated(Timestamp.from(Instant.now()));
         parentTask.setUpdated(Timestamp.from(Instant.now()));
 
-        return Triplet.with(taskRepository.save(targetTask), taskRepository.save(parentTask), null);
+        Triplet<Task, Task, Task> trip = Triplet.with(taskRepository.save(targetTask), taskRepository.save(parentTask), null);
+        stompController.updateTask(trip.getValue0());
+        stompController.updateTask(trip.getValue1());
+        return trip;
     }
 
     @Transactional
@@ -694,7 +713,15 @@ public class TaskDispatcher {
         }
         targetTask.setUpdated(Timestamp.from(Instant.now()));
 
-        return Triplet.with(taskRepository.save(targetTask), newChildTasks, previousParentsChildTasks);
+        Triplet<Task, List<Task>, List<Pair<Task, Task>>> trip = Triplet.with(taskRepository.save(targetTask), newChildTasks, previousParentsChildTasks);
+        stompController.updateTask(trip.getValue0());
+        for (Task task : trip.getValue1()) {
+            stompController.updateTask(task);
+        }
+        for (Pair<Task, Task> pair : trip.getValue2()) {
+            stompController.updateTask(pair.getFirst());
+        }
+        return trip;
     }
 
     public Task getRootTask(Long taskId) throws EntryNotFound {
@@ -725,6 +752,7 @@ public class TaskDispatcher {
         task.setTags(tags);
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
+        stompController.updateTask(save);
         updateTasksCountWorker.appendPath(save).execute(this);
         return save;
     }
@@ -741,7 +769,9 @@ public class TaskDispatcher {
         task.setResponsible(employee);
         task.setUpdated(Timestamp.from(Instant.now()));
         if (!task.getEmployeesObservers().contains(employee)) task.getEmployeesObservers().add(employee);
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+        stompController.updateTask(save);
+        return save;
     }
 
     @Transactional
@@ -750,7 +780,9 @@ public class TaskDispatcher {
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
         task.setResponsible(null);
         task.setUpdated(Timestamp.from(Instant.now()));
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+        stompController.updateTask(save);
+        return save;
     }
 
     @Transactional
@@ -763,6 +795,7 @@ public class TaskDispatcher {
         task.setActualFrom(Timestamp.from(datetime));
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
+        stompController.updateTask(save);
         updateTasksCountWorker.appendPath(save).execute(this);
         return save;
     }
@@ -791,6 +824,7 @@ public class TaskDispatcher {
         task.setActualFrom(null);
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
+        stompController.updateTask(save);
         updateTasksCountWorker.appendPath(save).execute(this);
         return save;
     }
@@ -804,6 +838,7 @@ public class TaskDispatcher {
         task.setActualTo(null);
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
+        stompController.updateTask(save);
         updateTasksCountWorker.appendPath(save).execute(this);
         return save;
     }
@@ -855,6 +890,11 @@ public class TaskDispatcher {
 
         Task save = taskRepository.save(task);
         updateTasksCountWorker.appendPath(save).execute(this);
+        stompController.updateTask(save);
+        Set<Employee> observers = save.getAllEmployeesObservers(employee);
+        notificationDispatcher.createNotification(observers, Notification.taskClosed(save, employee));
+        TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.close(save, employee));
+        stompController.createTaskEvent(save.getTaskId(), taskEvent);
         return save;
     }
 
@@ -890,6 +930,11 @@ public class TaskDispatcher {
         }
 
         stompController.updateTask(taskRepository.save(task));
+
+        Set<Employee> observers = task.getAllEmployeesObservers(employee);
+        notificationDispatcher.createNotification(observers, Notification.taskReopened(task, employee));
+        TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.reopen(task, employee));
+        stompController.createTaskEvent(taskId, taskEvent);
 
         Long wireframeId = task.getModelWireframe().getWireframeId();
 
@@ -928,6 +973,8 @@ public class TaskDispatcher {
             updateTasksCountWorker.appendPath(task);
         }
         List<Task> taskList = taskRepository.saveAll(tasks);
+        for (Task task : taskList)
+            stompController.updateTask(task);
         updateTasksCountWorker.execute(this);
         return taskList;
     }
@@ -950,7 +997,9 @@ public class TaskDispatcher {
             }
         }
         task.setUpdated(Timestamp.from(Instant.now()));
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+        stompController.updateTask(save);
+        return save;
     }
 
     public Long getIncomingTasksCount(Employee employee) {
@@ -1201,7 +1250,9 @@ public class TaskDispatcher {
         if (task.getActualFrom() != null) task.setActualFrom(delta.shift(task.getActualFrom()));
         if (task.getActualTo() != null) task.setActualTo(delta.shift(task.getActualTo()));
         task.setUpdated(Timestamp.from(Instant.now()));
-        return taskRepository.save(task);
+        Task save = taskRepository.save(task);
+        stompController.updateTask(save);
+        return save;
     }
 
     public Long getCountByWireframe(Wireframe wireframe) {
@@ -1427,7 +1478,9 @@ public class TaskDispatcher {
                         task.setCurrentDirectory(taskStage.getDirectories().get(0));
                         updateTasksCountWorker.appendPath(task);
                     }
-                    taskRepository.saveAll(tasks);
+                    List<Task> taskList = taskRepository.saveAll(tasks);
+                    for (Task task : taskList)
+                        stompController.updateTask(task);
                     updateTasksCountWorker.execute(this);
                 }
             }

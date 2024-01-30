@@ -5,17 +5,24 @@ import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.billing.ApiBillingController;
 import com.microel.trackerbackend.storage.dispatchers.EmployeeDispatcher;
 import com.microel.trackerbackend.storage.dispatchers.WorkLogDispatcher;
+import com.microel.trackerbackend.storage.entities.comments.Attachment;
+import com.microel.trackerbackend.storage.entities.comments.FileType;
+import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
+import com.microel.trackerbackend.storage.entities.task.WorkLogTargetFile;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.repositories.ModelItemRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 @Controller
@@ -85,6 +92,120 @@ public class WorkLogRequestController {
     @GetMapping("after-work/list")
     public ResponseEntity<List<WorkLog>> getAfterWorkList(HttpServletRequest request) {
         return ResponseEntity.ok(workLogDispatcher.getAfterWork(employeeDispatcher.getEmployeeFromRequest(request)));
+    }
+
+    @PatchMapping("{id}/mark-as-completed")
+    public ResponseEntity<WorkLog> markWorkLogAsCompleted(@PathVariable Long id) {
+        return ResponseEntity.ok(workLogDispatcher.markAsCompleted(id));
+    }
+
+    @PatchMapping("{id}/mark-as-uncompleted")
+    public ResponseEntity<WorkLog> markWorkLogAsUncompleted(@PathVariable Long id) {
+        return ResponseEntity.ok(workLogDispatcher.markAsUncompleted(id));
+    }
+
+    @PatchMapping("{id}/mark-as-uncompleted-and-close")
+    public ResponseEntity<WorkLog> markWorkLogAsUncompletedAndClose(@PathVariable Long id) {
+        return ResponseEntity.ok(workLogDispatcher.markAsUncompletedAndClose(id));
+    }
+
+    @GetMapping("employee-work-log/list")
+    public ResponseEntity<List<WorkLogDispatcher.EmployeeWorkLogs>> getEmployeeWorkLogs(HttpServletRequest request) {
+        return ResponseEntity.ok(workLogDispatcher.getEmployeeWorkLogList(employeeDispatcher.getEmployeeFromRequest(request)));
+    }
+
+    @GetMapping("target-file/{id}")
+    public void getTargetFile(@PathVariable Long id,
+                         @RequestHeader(value = "Range", required = false) String rangeHeader,
+                         HttpServletResponse response) {
+        WorkLogTargetFile targetFile = workLogDispatcher.getTargetFileById(id);
+
+        try {
+            OutputStream os = response.getOutputStream();
+
+            // Получаем размер фала
+            long fileSize = Files.size(Path.of(targetFile.getPath()));
+
+            byte[] buffer = new byte[1024];
+
+            try (RandomAccessFile file = new RandomAccessFile(targetFile.getPath(), "r")) {
+                if (rangeHeader == null) {
+                    response.setHeader("Content-Type", targetFile.getMimeType());
+                    response.setHeader("Content-Length", String.valueOf(fileSize));
+                    response.setHeader("Content-Disposition", "inline;filename="+targetFile.getName());
+
+                    response.setStatus(HttpStatus.OK.value());
+                    long pos = 0;
+                    file.seek(pos);
+                    while (pos < fileSize - 1) {
+                        file.read(buffer);
+                        os.write(buffer);
+                        pos += buffer.length;
+                    }
+                    os.flush();
+                    return;
+                }
+
+                String[] ranges = rangeHeader.split("-");
+                long rangeStart = Long.parseLong(ranges[0].substring(6));
+                long rangeEnd;
+                if (ranges.length > 1) {
+                    rangeEnd = Long.parseLong(ranges[1]);
+                } else {
+                    rangeEnd = fileSize - 1;
+                }
+                if (fileSize < rangeEnd) {
+                    rangeEnd = fileSize - 1;
+                }
+
+                String contentLength = String.valueOf((rangeEnd - rangeStart) + 1);
+                response.setHeader("Content-Type", targetFile.getMimeType());
+                response.setHeader("Content-Length", contentLength);
+                response.setHeader("Accept-Ranges", "bytes");
+                response.setHeader("Content-Range", "bytes" + " " + rangeStart + "-" + rangeEnd + "/" + fileSize);
+                response.setHeader("Content-Disposition", "inline;filename="+targetFile.getName());
+                response.setStatus(HttpStatus.PARTIAL_CONTENT.value());
+                long pos = rangeStart;
+                file.seek(pos);
+                while (pos < rangeEnd) {
+                    file.read(buffer);
+                    os.write(buffer);
+                    pos += buffer.length;
+                }
+                os.flush();
+
+
+            } catch (FileNotFoundException e) {
+                response.setStatus(HttpStatus.NOT_FOUND.value());
+            }
+
+        } catch (IOException e) {
+            response.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
+        }
+    }
+
+    @GetMapping("thumbnail/{id}")
+    public void getTargetFileThumbnail(@PathVariable Long id, HttpServletResponse response) {
+        WorkLogTargetFile targetFile = workLogDispatcher.getTargetFileById(id);
+
+        if (targetFile.getType() == FileType.PHOTO || targetFile.getType() == FileType.VIDEO) {
+            if (targetFile.getThumbnail() == null) {
+                response.setStatus(HttpStatus.NOT_FOUND.value());
+                return;
+            }
+            Path filePath = Path.of(targetFile.getThumbnail());
+            try (InputStream inputStream = Files.newInputStream(filePath)) {
+                long size = Files.size(filePath);
+                response.setHeader("Content-Type", "image/jpeg");
+                response.setHeader("Content-Length", String.valueOf(size));
+                response.setStatus(HttpStatus.OK.value());
+                inputStream.transferTo(response.getOutputStream());
+            } catch (IOException e) {
+                response.setStatus(HttpStatus.NOT_FOUND.value());
+            }
+        }else{
+            response.setStatus(HttpStatus.NOT_FOUND.value());
+        }
     }
 
 }
