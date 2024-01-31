@@ -844,12 +844,12 @@ public class TaskDispatcher {
     }
 
     @Transactional
-    public Task close(Long id, @Nullable Employee employee) throws EntryNotFound, IllegalFields {
+    public Task close(Long id, Employee employee, @Nullable Boolean userClose) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
         UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         if (task.getTaskStatus().equals(TaskStatus.CLOSE)) throw new IllegalFields("Задача уже закрыта");
-        if (employee != null && task.getTaskStatus().equals(TaskStatus.PROCESSING))
+        if ((userClose != null && userClose) && task.getTaskStatus().equals(TaskStatus.PROCESSING))
             throw new IllegalFields("Пока задача отдана монтажникам её нельзя закрыть");
         task.setTaskStatus(TaskStatus.CLOSE);
         final Timestamp NOW = Timestamp.from(Instant.now());
@@ -898,10 +898,10 @@ public class TaskDispatcher {
         return save;
     }
 
-    @Transactional
-    public Task close(Long id) throws EntryNotFound, IllegalFields {
-        return close(id, null);
-    }
+//    @Transactional
+//    public Task close(Long id) throws EntryNotFound, IllegalFields {
+//        return close(id, null);
+//    }
 
     @Transactional
     public Task reopen(Long taskId, Employee employee) throws EntryNotFound, IllegalFields {

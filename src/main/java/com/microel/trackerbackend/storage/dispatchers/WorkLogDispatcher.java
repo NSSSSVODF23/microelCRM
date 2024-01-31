@@ -455,7 +455,7 @@ public class WorkLogDispatcher {
             workLog.setClosed(timestamp);
             workLog.getChat().setClosed(timestamp);
             WorkLog save = workLogRepository.save(workLog);
-            taskDispatcher.close(workLog.getTask().getTaskId(), save.getCreator());
+            taskDispatcher.close(workLog.getTask().getTaskId(), save.getCreator(), false);
             stompController.closeWorkLog(save);
             stompController.afterWorkAppend(save);
             return save;
@@ -494,7 +494,7 @@ public class WorkLogDispatcher {
             workLog.setClosed(timestamp);
             workLog.getChat().setClosed(timestamp);
             WorkLog save = workLogRepository.save(workLog);
-            taskDispatcher.close(workLog.getTask().getTaskId(), save.getCreator());
+            taskDispatcher.close(workLog.getTask().getTaskId(), save.getCreator(), false);
             stompController.closeWorkLog(save);
             stompController.afterWorkAppend(save);
             return save;
@@ -635,7 +635,7 @@ public class WorkLogDispatcher {
 
         final Task TASK = workLog.getTask();
         if (TASK.getTaskStatus() == TaskStatus.ACTIVE)
-            taskDispatcher.close(TASK.getTaskId(), workLog.getCreator());
+            taskDispatcher.close(TASK.getTaskId(), workLog.getCreator(), false);
 
         stompController.updateWorkLog(workLog);
         stompController.afterWorkRemoved(workLog.getWorkLogId(), workLog.getCreator().getLogin());
@@ -665,7 +665,7 @@ public class WorkLogDispatcher {
 
         final Task TASK = workLog.getTask();
         if (TASK.getTaskStatus() == TaskStatus.ACTIVE)
-            taskDispatcher.close(TASK.getTaskId(), workLog.getCreator());
+            taskDispatcher.close(TASK.getTaskId(), workLog.getCreator(), false);
 
         stompController.updateWorkLog(workLog);
         stompController.afterWorkRemoved(workLog.getWorkLogId(), workLog.getCreator().getLogin());

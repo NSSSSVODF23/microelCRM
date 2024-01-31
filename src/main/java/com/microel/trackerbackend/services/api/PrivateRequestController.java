@@ -1274,7 +1274,7 @@ public class PrivateRequestController {
     public ResponseEntity<Task> closeTask(@PathVariable Long taskId, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         try {
-            Task task = taskDispatcher.close(taskId, employee);
+            Task task = taskDispatcher.close(taskId, employee, true);
             return ResponseEntity.ok(task);
         } catch (EntryNotFound | IllegalFields e) {
             throw new ResponseException(e.getMessage());
