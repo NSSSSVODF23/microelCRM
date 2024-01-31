@@ -19,6 +19,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.persistence.criteria.Join;
 import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
 import javax.servlet.http.HttpServletRequest;
@@ -272,5 +273,13 @@ public class EmployeeDispatcher {
         stompController.updateEmployee(employeeRepository.save(employee));
     }
 
-
+    public List<Employee> getEmployeesByPositionId(Long positionId) {
+        return employeeRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            Join<Employee, Position> positionJoin = root.join("position", JoinType.LEFT);
+            predicates.add(cb.equal(positionJoin.get("positionId"), positionId));
+            predicates.add(cb.isFalse(root.get("deleted")));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        });
+    }
 }

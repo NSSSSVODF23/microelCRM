@@ -455,7 +455,7 @@ public class WorkLogDispatcher {
             workLog.setClosed(timestamp);
             workLog.getChat().setClosed(timestamp);
             WorkLog save = workLogRepository.save(workLog);
-            taskDispatcher.close(workLog.getTask().getTaskId());
+            taskDispatcher.close(workLog.getTask().getTaskId(), save.getCreator());
             stompController.closeWorkLog(save);
             stompController.afterWorkAppend(save);
             return save;
@@ -494,7 +494,7 @@ public class WorkLogDispatcher {
             workLog.setClosed(timestamp);
             workLog.getChat().setClosed(timestamp);
             WorkLog save = workLogRepository.save(workLog);
-            taskDispatcher.close(workLog.getTask().getTaskId());
+            taskDispatcher.close(workLog.getTask().getTaskId(), save.getCreator());
             stompController.closeWorkLog(save);
             stompController.afterWorkAppend(save);
             return save;

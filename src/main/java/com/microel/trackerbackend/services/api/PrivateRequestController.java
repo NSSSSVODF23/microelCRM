@@ -1404,6 +1404,10 @@ public class PrivateRequestController {
         try {
             Position position = positionDispatcher.edit(id, body.getName(), body.getDescription(), body.getAccess());
             stompController.updatePosition(position);
+            List<Employee> employees = employeeDispatcher.getEmployeesByPositionId(position.getPositionId());
+            for (Employee employee : employees) {
+                stompController.updateEmployee(employee);
+            }
             return ResponseEntity.ok(position);
         } catch (EntryNotFound e) {
             throw new ResponseException("Должность с идентификатором " + id + " не найдена в базе данных");
