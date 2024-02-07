@@ -9,7 +9,7 @@ import java.util.List;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-
+@Deprecated
 public class ChartData {
     @Nullable
     private List<String> labels;

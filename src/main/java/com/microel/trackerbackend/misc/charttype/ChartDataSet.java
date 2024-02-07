@@ -12,6 +12,7 @@ import java.util.List;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Deprecated
 public class ChartDataSet {
     @Nullable
     private String label;

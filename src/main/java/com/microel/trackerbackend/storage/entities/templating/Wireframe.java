@@ -103,6 +103,18 @@ public class Wireframe {
         return getStages().stream().filter(stage -> stage.getOrderIndex() == 0).findFirst().orElse(null);
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Wireframe wireframe)) return false;
+        return Objects.equals(getWireframeId(), wireframe.getWireframeId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getWireframeId());
+    }
+
     @Data
     public static class Form{
         private String name;

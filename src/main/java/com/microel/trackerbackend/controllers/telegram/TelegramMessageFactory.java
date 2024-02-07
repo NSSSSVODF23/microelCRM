@@ -14,6 +14,7 @@ import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
+import com.microel.trackerbackend.storage.entities.task.Contract;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.WorkLogTargetFile;
@@ -149,6 +150,34 @@ public class TelegramMessageFactory {
                 .parseMode("HTML")
                 .replyMarkup(keyboardMarkup)
                 .build();
+        return new MessageExecutor<>(message, context);
+    }
+
+    public AbstractExecutor<Message> requiringDeliveryOfAContract(WorkLog workLog) {
+        StringBuilder messageBuilder = new StringBuilder();
+
+        Task task = workLog.getTask();
+        List<ModelItem> fields = task.getFields().stream().filter(ModelItem::nonEmpty).filter(ModelItem::isDisplayToTelegram).toList();
+
+        messageBuilder.append(" #").append(task.getTaskId()).append("\n");
+        for (ModelItem field : fields) {
+            messageBuilder.append(Decorator.underline(field.getName())).append(": ").append(field.getTextRepresentationForTlg()).append("\n");
+        }
+
+        messageBuilder.append("\n\nНужные договора:\n");
+
+        List<String> contractList = workLog.getConcludedContracts().stream().filter(Contract::isUnreceived).map(Contract::toTelegramString).toList();
+
+        for (String contract : contractList) {
+            messageBuilder.append(Decorator.bold(contract)).append("\n");
+        }
+
+        SendMessage message = SendMessage.builder()
+                .chatId(chatId)
+                .text(messageBuilder.toString())
+                .parseMode("HTML")
+                .build();
+
         return new MessageExecutor<>(message, context);
     }
 

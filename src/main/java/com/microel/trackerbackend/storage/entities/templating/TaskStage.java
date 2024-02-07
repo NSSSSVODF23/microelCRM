@@ -11,6 +11,7 @@ import javax.persistence.*;
 import javax.persistence.CascadeType;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Getter
@@ -53,5 +54,17 @@ public class TaskStage {
                     .directories(directories == null ? new ArrayList<>() : directories.stream().map(TaskTypeDirectory.Form::toEntity).collect(Collectors.toList()))
                     .build();
         }
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TaskStage taskStage)) return false;
+        return Objects.equals(getStageId(), taskStage.getStageId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getStageId());
     }
 }

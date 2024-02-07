@@ -13,9 +13,9 @@ public interface EmployeeRepository extends JpaRepository<Employee, String>, Jpa
 
     List<Employee> findAllByOffsiteIsTrue();
 
-    List<Employee> findAllByLoginIsInAndDeletedIsFalseAndOffsiteIsFalse(Set<String> personalResponsibilities);
+    List<Employee> findAllByLoginIsInAndDeletedIsFalseAndOffsiteIsFalse(Set<String> logins);
 
-    Set<Employee> findAllByLoginInAndDeletedIsFalseAndOffsiteIsFalse(List<String> collect);
+    Set<Employee> findAllByLoginInAndDeletedIsFalseAndOffsiteIsFalse(List<String> logins);
 
     Optional<Employee> findByTelegramUserId(String chatId);
 

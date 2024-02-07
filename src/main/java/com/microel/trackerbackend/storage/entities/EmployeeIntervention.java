@@ -6,6 +6,7 @@ import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
 import java.sql.Timestamp;
+import java.time.Instant;
 
 @Getter
 @Setter
@@ -25,4 +26,16 @@ public class EmployeeIntervention {
     @Nullable
     @Column(columnDefinition = "text default ''")
     private String description;
+
+    public static EmployeeIntervention from(Employee employee, @Nullable String description) {
+        EmployeeIntervention employeeIntervention = new EmployeeIntervention();
+        employeeIntervention.setEmployee(employee);
+        employeeIntervention.setDescription(description);
+        employeeIntervention.setTimestamp(Timestamp.from(Instant.now()));
+        return employeeIntervention;
+    }
+
+    public static EmployeeIntervention from(Employee employee) {
+        return from(employee, null);
+    }
 }

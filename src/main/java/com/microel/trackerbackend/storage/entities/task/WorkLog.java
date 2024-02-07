@@ -19,6 +19,7 @@ import javax.persistence.Entity;
 import javax.persistence.Table;
 import javax.persistence.*;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -80,22 +81,34 @@ public class WorkLog {
     @Nullable
     @Column(columnDefinition = "boolean default true")
     private Boolean taskIsClearlyCompleted;
+    @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    @BatchSize(size = 25)
+    private List<Contract> concludedContracts;
+
+    public void addConcludedContract(TypesOfContracts typeOfContract, Long count) {
+        if (concludedContracts == null)
+            concludedContracts = new ArrayList<>();
+        Contract contract = new Contract();
+        contract.setWorkLog(this);
+        contract.setTypeOfContract(typeOfContract);
+        contract.setCount(count);
+        concludedContracts.add(contract);
+    }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof WorkLog)) return false;
-        WorkLog workLog = (WorkLog) o;
+        if (!(o instanceof WorkLog workLog)) return false;
         return Objects.equals(getWorkLogId(), workLog.getWorkLogId());
     }
 
     @Nullable
-    public Timestamp getLastAcceptedTimestamp(){
+    public Timestamp getLastAcceptedTimestamp() {
         AcceptingEntry acceptingEntry = getAcceptedEmployees().stream().max(Comparator.comparing(AcceptingEntry::getTimestamp)).orElse(null);
         return acceptingEntry != null ? acceptingEntry.getTimestamp() : null;
     }
 
-    public List<WorkLogTargetFile> getTargetImages(){
+    public List<WorkLogTargetFile> getTargetImages() {
         return getTargetFiles().stream().filter(WorkLogTargetFile::isImage).collect(Collectors.toList());
     }
 
@@ -112,7 +125,7 @@ public class WorkLog {
     public Status getStatus() {
         if (isForceClosed) {
             return Status.FORCE_CLOSE;
-        }else if(closed != null) {
+        } else if (closed != null) {
             return Status.CLOSE;
         } else {
             return Status.ACTIVE;
@@ -142,11 +155,12 @@ public class WorkLog {
      * @return Список сотрудников
      */
     public Set<Employee> getWhoClosed() {
-        if(workReports == null || workReports.isEmpty()) return new HashSet<>();
+        if (workReports == null || workReports.isEmpty()) return new HashSet<>();
         return workReports.stream().map(WorkReport::getAuthor).collect(Collectors.toSet());
     }
 
-    /** Список сотрудников кто принял задачу и ещё не закрыл её (активные)
+    /**
+     * Список сотрудников кто принял задачу и ещё не закрыл её (активные)
      *
      * @return Список сотрудников
      */
@@ -177,8 +191,10 @@ public class WorkLog {
      * @return Затраченное время в миллисекундах
      */
     public Long getLeadTime() {
-        if (getStatus() == Status.ACTIVE) return 0L;
-        return closed.getTime() - created.getTime();
+        if (!getReceivedAndClosedDuration().equals(Duration.ZERO))
+            return getReceivedAndClosedDuration().toMillis();
+
+        return getGivenAndClosedDuration().toMillis();
     }
 
     /**
@@ -193,11 +209,49 @@ public class WorkLog {
         return this;
     }
 
-    public boolean getIsReportsUncompleted(){
-        if(getIsForceClosed()) return false;
-        if(workReports == null || workReports.isEmpty()) return true;
-        if(workReports.size() != getWorkReports().size()) return true;
+    public boolean getIsReportsUncompleted() {
+        if (getIsForceClosed()) return false;
+        if (workReports == null || workReports.isEmpty()) return true;
+        if (workReports.size() != getWorkReports().size()) return true;
         return workReports.stream().anyMatch(WorkReport::getAwaitingWriting);
+    }
+
+    @JsonIgnore
+    @Nullable
+    public Timestamp getFirstEmployeeAccept() {
+        if (getAcceptedEmployees().isEmpty()) return null;
+        AcceptingEntry acceptingEntry = getAcceptedEmployees().stream().min(Comparator.comparing(AcceptingEntry::getTimestamp)).orElse(null);
+        return acceptingEntry != null ? acceptingEntry.getTimestamp() : null;
+    }
+
+    @JsonIgnore
+    public Duration getGivenAndReceivedDuration() {
+        Timestamp firstEmployeeAccept = getFirstEmployeeAccept();
+        if (firstEmployeeAccept == null) return Duration.ZERO;
+        return Duration.between(getCreated().toInstant(), firstEmployeeAccept.toInstant());
+    }
+
+    @JsonIgnore
+    public Duration getGivenAndClosedDuration() {
+        if (getClosed() == null) return Duration.ZERO;
+        return Duration.between(getCreated().toInstant(), getClosed().toInstant());
+    }
+
+    @JsonIgnore
+    public Duration getReceivedAndClosedDuration() {
+        if (getClosed() == null) return Duration.ZERO;
+        Timestamp firstEmployeeAccept = getFirstEmployeeAccept();
+        if (firstEmployeeAccept == null) return Duration.ZERO;
+        return Duration.between(firstEmployeeAccept.toInstant(), getClosed().toInstant());
+    }
+
+    @JsonIgnore
+    @Nullable
+    public Float getSalaryByEmployee(Employee employee) {
+        if (!getCalculated() || getWorkCalculations() == null || getWorkCalculations().isEmpty()) return null;
+        WorkCalculation employeeCalculation = getWorkCalculations().stream().filter(workCalculation -> workCalculation.getEmployee().equals(employee)).findFirst().orElse(null);
+        if (employeeCalculation == null) return null;
+        return employeeCalculation.getSumWithoutNDFL();
     }
 
     @Override
@@ -217,7 +271,7 @@ public class WorkLog {
 
     @Getter
     @Setter
-    public static class AssignBody{
+    public static class AssignBody {
         private Set<Employee> installers;
         @Nullable
         private String gangLeader;
@@ -231,13 +285,14 @@ public class WorkLog {
 
     @Getter
     @Setter
-    public static class WritingReportForm{
+    public static class WritingReportForm {
         private String reportDescription;
         private Long workLogId;
 
-        public void throwIfIncomplete(){
-            if(reportDescription == null || reportDescription.isBlank()) throw new ResponseException("Отчет не заполнен");
-            if(workLogId == null) throw new ResponseException("Не указан id журнала задачи");
+        public void throwIfIncomplete() {
+            if (reportDescription == null || reportDescription.isBlank())
+                throw new ResponseException("Отчет не заполнен");
+            if (workLogId == null) throw new ResponseException("Не указан id журнала задачи");
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
+import com.microel.trackerbackend.controllers.telegram.TelegramController;
+import com.microel.trackerbackend.controllers.telegram.TelegramMessageFactory;
 import com.microel.trackerbackend.misc.BypassWorkCalculationForm;
 import com.microel.trackerbackend.services.FilesWatchService;
 import com.microel.trackerbackend.services.api.ResponseException;
@@ -11,6 +13,7 @@ import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.mapper.WorkLogMapper;
 import com.microel.trackerbackend.storage.dto.task.WorkLogDto;
+import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
@@ -23,22 +26,29 @@ import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.AlreadyClosed;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
+import com.microel.trackerbackend.storage.repositories.TypesOfContractsRepository;
 import com.microel.trackerbackend.storage.repositories.WorkLogRepository;
 import com.microel.trackerbackend.storage.repositories.WorkLogTargetFileRepository;
 import com.microel.trackerbackend.storage.repositories.WorkReportRepository;
 import lombok.Data;
 import org.hibernate.Hibernate;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.telegram.telegrambots.meta.api.objects.Message;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import javax.persistence.criteria.*;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -55,9 +65,17 @@ public class WorkLogDispatcher {
     private final WorkLogTargetFileRepository workLogTargetFileRepository;
     private final OldTrackerService oldTrackerService;
     private final FilesWatchService filesWatchService;
+    private final TypesOfContractsRepository typesOfContractsRepository;
+    private final AddressDispatcher addressDispatcher;
+    private final TelegramController telegramController;
 
-    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher, TaskEventDispatcher taskEventDispatcher, @Lazy TaskDispatcher taskDispatcher, StompController stompController, @Lazy NotificationDispatcher notificationDispatcher,
-                             WorkReportRepository workReportRepository, WorkLogTargetFileRepository workLogTargetFileRepository, OldTrackerService oldTrackerService, FilesWatchService filesWatchService) {
+    public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher,
+                             TaskEventDispatcher taskEventDispatcher, @Lazy TaskDispatcher taskDispatcher,
+                             StompController stompController, @Lazy NotificationDispatcher notificationDispatcher,
+                             WorkReportRepository workReportRepository, WorkLogTargetFileRepository workLogTargetFileRepository,
+                             OldTrackerService oldTrackerService, FilesWatchService filesWatchService,
+                             TypesOfContractsRepository typesOfContractsRepository, AddressDispatcher addressDispatcher,
+                             @Lazy TelegramController telegramController) {
         this.workLogRepository = workLogRepository;
         this.employeeDispatcher = employeeDispatcher;
         this.taskEventDispatcher = taskEventDispatcher;
@@ -68,6 +86,52 @@ public class WorkLogDispatcher {
         this.workLogTargetFileRepository = workLogTargetFileRepository;
         this.oldTrackerService = oldTrackerService;
         this.filesWatchService = filesWatchService;
+        this.typesOfContractsRepository = typesOfContractsRepository;
+        this.addressDispatcher = addressDispatcher;
+        this.telegramController = telegramController;
+    }
+
+    @Scheduled(cron = "0 0 12 * * *")
+    @Async
+    public void notificationOfUnrecievedContracts() {
+        Employee testMe = employeeDispatcher.getEmployee("admin");
+        List<WorkLog> unreceivedContractsWorkLogs = workLogRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            Join<WorkLog, Contract> contractJoin = root.join("concludedContracts", JoinType.LEFT);
+
+            predicates.add(cb.isNotNull(root.get("closed")));
+            predicates.add(cb.isNotNull(contractJoin));
+            predicates.add(cb.isNull(contractJoin.get("received")));
+
+            query.distinct(true);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        });
+
+        Map<Employee, List<WorkLog>> collect = unreceivedContractsWorkLogs.stream()
+                .collect(Collectors.flatMapping(
+                        wl -> wl.getEmployees()
+                                .stream()
+                                .map(component -> new AbstractMap.SimpleEntry<>(wl, component)),
+                        Collectors.groupingBy(AbstractMap.SimpleEntry::getValue, Collectors.mapping(AbstractMap.SimpleEntry::getKey, Collectors.toList()))
+                ));
+
+        for (Map.Entry<Employee, List<WorkLog>> entry : collect.entrySet()) {
+            Employee employee = entry.getKey();
+            List<WorkLog> workLogs = entry.getValue();
+
+            TelegramMessageFactory messageFactory = telegramController.getMessageFactory(employee);
+            TelegramMessageFactory messageFactoryTest = telegramController.getMessageFactory(testMe);
+            try {
+                messageFactory.simpleMessage("Требуется сдать договора по " + workLogs.size() + " задачам").execute();
+                messageFactoryTest.simpleMessage("Требуется сдать договора по " + workLogs.size() + " задачам").execute();
+                for (WorkLog workLog : workLogs) {
+                    messageFactory.requiringDeliveryOfAContract(workLog).execute();
+                    messageFactoryTest.requiringDeliveryOfAContract(workLog).execute();
+                }
+            } catch (TelegramApiException ignore) {
+            }
+        }
     }
 
     @Transactional
@@ -594,7 +658,7 @@ public class WorkLogDispatcher {
         return acceptedEmployees;
     }
 
-    public List<EmployeeWorkLogs> getEmployeeWorkLogList(Employee employee){
+    public List<EmployeeWorkLogs> getEmployeeWorkLogList(Employee employee) {
         List<WorkLog> myActiveWorkLogs = workLogRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isNull(root.get("closed")));
@@ -628,10 +692,25 @@ public class WorkLogDispatcher {
     }
 
     @Transactional
-    public WorkLog markAsCompleted(Long id) {
+    public WorkLog markAsCompleted(Long id, @Nullable List<TypesOfContracts.Suggestion> contracts) {
         WorkLog workLog = workLogRepository.findById(id).orElseThrow(() -> new ResponseException("Журнал работ не найден"));
+
+        if (contracts != null && !contracts.isEmpty()) {
+            Map<Long, Long> contractsCount = contracts.stream().map(TypesOfContracts.Suggestion::getValue).collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+            List<TypesOfContracts> typesOfContractsList = typesOfContractsRepository.findAll((root, query, cb) -> {
+                List<Predicate> predicates = new ArrayList<>();
+                predicates.add(root.get("typeOfContractId").in(contractsCount.keySet()));
+                predicates.add(cb.isFalse(root.get("isDeleted")));
+                return cb.and(predicates.toArray(Predicate[]::new));
+            });
+            for (TypesOfContracts typeOfContract : typesOfContractsList) {
+                workLog.addConcludedContract(typeOfContract, contractsCount.get(typeOfContract.getTypeOfContractId()));
+            }
+        }
+
         workLog.setTaskIsClearlyCompleted(true);
         workLog = workLogRepository.save(workLog);
+        stompController.updatingMarkedContracts();
 
         final Task TASK = workLog.getTask();
         if (TASK.getTaskStatus() == TaskStatus.ACTIVE)
@@ -676,11 +755,73 @@ public class WorkLogDispatcher {
         return workLogTargetFileRepository.findById(id).orElseThrow(() -> new ResponseException("Файл не найден"));
     }
 
+    public Page<WorkLog> getPageOfConfirmationOfContracts(Integer page, ContractConfirmationFilters filters, Employee employee) {
+        return workLogRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            Join<WorkLog, Contract> contractJoin = root.join("concludedContracts", JoinType.LEFT);
+            Join<Contract, TypesOfContracts> typesOfContractsJoin = contractJoin.join("typeOfContract", JoinType.LEFT);
+            Join<TypesOfContracts, Employee> receiversEmployeesJoin = typesOfContractsJoin.join("receivers", JoinType.LEFT);
+            Join<TypesOfContracts, Employee> archiversEmployeesJoin = typesOfContractsJoin.join("archivers", JoinType.LEFT);
+
+
+            if (filters.isNonEmpty()) {
+                Join<WorkLog, Task> taskJoin = root.join("task", JoinType.LEFT);
+                Join<Task, ModelItem> fieldsJoin = taskJoin.join("fields", JoinType.LEFT);
+                Join<WorkLog, Employee> installersJoin = root.join("employees", JoinType.LEFT);
+                if (filters.getSearchQuery() != null && !filters.getSearchQuery().isBlank()) {
+                    String searchPattern = "%" + filters.getSearchQuery().toLowerCase() + "%";
+                    List<Address> addressInDBByQuery = addressDispatcher.getAddressInDBByQuery(filters.getSearchQuery());
+                    List<Predicate> filterPredicates = new ArrayList<>();
+                    if (!addressInDBByQuery.isEmpty()) {
+                        filterPredicates.add(fieldsJoin.get("addressData").in(addressInDBByQuery));
+                    }
+                    filterPredicates.add(cb.like(cb.lower(fieldsJoin.get("stringData")), searchPattern));
+                    filterPredicates.add(
+                            cb.or(
+                                    cb.like(cb.lower(installersJoin.get("firstName")), searchPattern),
+                                    cb.like(cb.lower(installersJoin.get("lastName")), searchPattern),
+                                    cb.like(cb.lower(installersJoin.get("secondName")), searchPattern)
+                            )
+                    );
+                    predicates.add(cb.or(filterPredicates.toArray(Predicate[]::new)));
+                }
+            }
+
+            predicates.add(cb.isNotNull(root.get("closed")));
+            predicates.add(cb.or(
+                    cb.and(
+                            receiversEmployeesJoin.in(employee),
+                            cb.isNull(contractJoin.get("received")),
+                            cb.isNull(contractJoin.get("archived"))
+                    ),
+                    cb.and(
+                            archiversEmployeesJoin.in(employee),
+                            cb.isNotNull(contractJoin.get("received")),
+                            cb.isNull(contractJoin.get("archived"))
+                    )
+            ));
+
+            query.distinct(true);
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }, PageRequest.of(page, 15, Sort.by(Sort.Direction.DESC, "closed")));
+    }
+
     @Data
-    public static class EmployeeWorkLogs{
+    public static class EmployeeWorkLogs {
         private Set<Employee> employees;
         @Nullable
         private WorkLog active;
         private List<WorkLog> unactive;
+    }
+
+    @Data
+    public static class ContractConfirmationFilters {
+        @Nullable
+        private String searchQuery;
+
+        public boolean isNonEmpty() {
+            return searchQuery != null && !searchQuery.isBlank();
+        }
     }
 }

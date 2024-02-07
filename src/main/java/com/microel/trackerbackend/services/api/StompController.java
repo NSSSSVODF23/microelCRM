@@ -29,6 +29,7 @@ import com.microel.trackerbackend.storage.entities.salary.PaidWork;
 import com.microel.trackerbackend.storage.entities.salary.PaidWorkGroup;
 import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
 import com.microel.trackerbackend.storage.entities.task.Task;
+import com.microel.trackerbackend.storage.entities.task.TypesOfContracts;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
 import com.microel.trackerbackend.storage.entities.team.Employee;
@@ -458,5 +459,21 @@ public class StompController {
 
     public void afterWorkRemoved(Long id, String employeeLogin){
         sendToUser(employeeLogin, id, "after-work", "remove");
+    }
+
+    public void createTypeOfContract(TypesOfContracts typesOfContracts) {
+        sendAll(typesOfContracts, "contract", "type", "create");
+    }
+
+    public void updateTypeOfContract(TypesOfContracts typesOfContracts) {
+        sendAll(typesOfContracts, "contract", "type", "update");
+    }
+
+    public void deleteTypeOfContract(TypesOfContracts typesOfContracts) {
+        sendAll(typesOfContracts, "contract", "type", "delete");
+    }
+
+    public void updatingMarkedContracts() {
+        sendAll(true, "contract", "marked", "update");
     }
 }

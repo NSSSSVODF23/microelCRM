@@ -8,13 +8,16 @@ import com.microel.trackerbackend.storage.dispatchers.WorkLogDispatcher;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.FileType;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
+import com.microel.trackerbackend.storage.entities.task.TypesOfContracts;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.WorkLogTargetFile;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.repositories.ModelItemRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
@@ -95,8 +98,8 @@ public class WorkLogRequestController {
     }
 
     @PatchMapping("{id}/mark-as-completed")
-    public ResponseEntity<WorkLog> markWorkLogAsCompleted(@PathVariable Long id) {
-        return ResponseEntity.ok(workLogDispatcher.markAsCompleted(id));
+    public ResponseEntity<WorkLog> markWorkLogAsCompleted(@PathVariable Long id, @RequestBody @Nullable List<TypesOfContracts.Suggestion> contracts) {
+        return ResponseEntity.ok(workLogDispatcher.markAsCompleted(id, contracts));
     }
 
     @PatchMapping("{id}/mark-as-uncompleted")
@@ -108,6 +111,21 @@ public class WorkLogRequestController {
     public ResponseEntity<WorkLog> markWorkLogAsUncompletedAndClose(@PathVariable Long id) {
         return ResponseEntity.ok(workLogDispatcher.markAsUncompletedAndClose(id));
     }
+
+    @PostMapping("unconfirmed-contracts/{page}")
+    public ResponseEntity<Page<WorkLog>> getPageOfConfirmationOfContracts(
+            @PathVariable Integer page,
+            @RequestBody WorkLogDispatcher.ContractConfirmationFilters filters,
+            HttpServletRequest request
+    ){
+        return ResponseEntity.ok(workLogDispatcher.getPageOfConfirmationOfContracts(page, filters, employeeDispatcher.getEmployeeFromRequest(request)));
+    }
+
+//    @GetMapping("unconfirmed-contracts/test-notification")
+//    public ResponseEntity<Void> testNotification() {
+//        workLogDispatcher.notificationOfUnrecievedContracts();
+//        return ResponseEntity.ok().build();
+//    }
 
     @GetMapping("employee-work-log/list")
     public ResponseEntity<List<WorkLogDispatcher.EmployeeWorkLogs>> getEmployeeWorkLogs(HttpServletRequest request) {

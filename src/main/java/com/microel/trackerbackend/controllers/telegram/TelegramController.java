@@ -1660,7 +1660,13 @@ public class TelegramController {
         }
         return telegramConf;
     }
-    
+
+    public TelegramMessageFactory getMessageFactory(Employee employee) {
+        if(employee.getTelegramUserId() == null || employee.getTelegramUserId().isBlank())
+            throw new ResponseException("Не установлен telegram id для пользователя "+employee.getFullName());
+        return TelegramMessageFactory.create(employee.getTelegramUserId(), mainBot);
+    }
+
     public enum OperatingMode{
         REPORT_SENDING("REPORT_SENDING"),
         CHECK_ALIVE("CHECK_ALIVE"),
