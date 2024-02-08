@@ -4,6 +4,8 @@ import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.billing.ApiBillingController;
+import com.microel.trackerbackend.services.external.billing.BillingPayType;
+import com.microel.trackerbackend.services.external.billing.directaccess.bases.Base1783;
 import com.microel.trackerbackend.services.external.billing.directaccess.bases.Base1785;
 import com.microel.trackerbackend.services.external.billing.directaccess.bases.Base781;
 import com.microel.trackerbackend.storage.dispatchers.EmployeeDispatcher;
@@ -13,6 +15,7 @@ import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.ModelItemRepository;
+import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -71,8 +74,20 @@ public class BillingRequestController {
     }
 
     @PostMapping("user/{login}/update-balance")
-    public ResponseEntity<Void> updateBalance(@PathVariable String login, @RequestBody ApiBillingController.UpdateBalanceForm form) {
+    public ResponseEntity<Void> updateBalance(@PathVariable String login, @RequestBody ApiBillingController.UpdateBalanceForm form, HttpServletRequest request) {
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
         form.validate();
+        if(form.getPayType() == BillingPayType.BANK){
+            Base781 base = createBase781Session(employee);
+            base.login();
+
+            base.makeBankPayment(login, form.getSum(), form.getComment());
+
+            base.logout();
+
+            apiBillingController.getUpdatedUserAndPushUpdate(login);
+            return ResponseEntity.ok().build();
+        }
         apiBillingController.updateBalance(login, form.getSum(), form.getPayType(), form.getComment());
         return ResponseEntity.ok().build();
     }
@@ -244,6 +259,132 @@ public class BillingRequestController {
         return ResponseEntity.ok().build();
     }
 
+    @PatchMapping("user/{login}/balance-reset")
+    public ResponseEntity<Void> balanceReset(@PathVariable String login, @RequestBody String comment, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base1785 base = createBase1785Session(employee);
+        base.login();
+
+        base.balanceReset(login, comment);
+
+        base.logout();
+
+        apiBillingController.getUpdatedUserAndPushUpdate(login);
+
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("user/{login}/is-enable")
+    public ResponseEntity<Boolean> isLoginEnable(@PathVariable String login, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base1785 base = createBase1785Session(employee);
+        base.login();
+
+        Boolean isEnable = base.isLoginEnable(login);
+
+        base.logout();
+
+        return ResponseEntity.ok(isEnable);
+    }
+
+    @PatchMapping("user/{login}/enable-login")
+    public ResponseEntity<Void> enableLogin(@PathVariable String login, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base1785 base = createBase1785Session(employee);
+        base.login();
+
+        base.enableLogin(login);
+
+        base.logout();
+
+        apiBillingController.getUpdatedUserAndPushUpdate(login);
+
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("user/{login}/change/address")
+    public ResponseEntity<Void> changeAddress(@PathVariable String login, @RequestBody String address, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base1783 base = createBase1783Session(employee);
+        base.login();
+
+        base.changeAddress(login, address);
+
+        base.logout();
+
+        apiBillingController.getUpdatedUserAndPushUpdate(login);
+
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("user/{login}/change/full-name")
+    public ResponseEntity<Void> changeFullName(@PathVariable String login, @RequestBody String fullName, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base1783 base = createBase1783Session(employee);
+        base.login();
+
+        base.changeFullName(login, fullName);
+
+        base.logout();
+
+        apiBillingController.getUpdatedUserAndPushUpdate(login);
+
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("user/{login}/change/phone")
+    public ResponseEntity<Void> changePhone(@PathVariable String login, @RequestBody String phone, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base1783 base = createBase1783Session(employee);
+        base.login();
+
+        base.changePhone(login, phone);
+
+        base.logout();
+
+        apiBillingController.getUpdatedUserAndPushUpdate(login);
+
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("user/{login}/change/comment")
+    public ResponseEntity<Void> changeComment(@PathVariable String login, @RequestBody String comment, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base1783 base = createBase1783Session(employee);
+        base.login();
+
+        base.changeComment(login, comment);
+
+        base.logout();
+
+        apiBillingController.getUpdatedUserAndPushUpdate(login);
+
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("user/{login}/edit")
+    public ResponseEntity<Void> editUser(@PathVariable String login, @RequestBody EditUserForm form, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base1783 base = createBase1783Session(employee);
+        base.login();
+
+        base.userEdit(login, form);
+
+        base.logout();
+
+        apiBillingController.getUpdatedUserAndPushUpdate(login);
+
+        return ResponseEntity.ok().build();
+    }
+
     @PostMapping("user/{login}/make-payment")
     public ResponseEntity<Void> makePayment(@PathVariable String login, @RequestBody Base781.PaymentForm form, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
@@ -312,10 +453,26 @@ public class BillingRequestController {
         return Base781.create(credentials);
     }
 
+    private Base1783 createBase1783Session(Employee employee){
+        Credentials credentials = employee.getBase1783Credentials();
+        if (credentials == null || credentials.isNotFull())
+            throw new ResponseException("Не установлены реквизиты");
+
+        return Base1783.create(credentials);
+    }
+
     @Getter
     @Setter
     public static class LoginFieldInfo {
         private Long modelItemId;
         private Boolean isOrg;
+    }
+
+    @Data
+    public static class EditUserForm {
+        private String address;
+        private String fullName;
+        private String phone;
+        private String comment;
     }
 }

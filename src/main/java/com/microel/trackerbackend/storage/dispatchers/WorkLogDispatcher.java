@@ -94,7 +94,7 @@ public class WorkLogDispatcher {
     @Scheduled(cron = "0 0 12 * * *")
     @Async
     public void notificationOfUnrecievedContracts() {
-        Employee testMe = employeeDispatcher.getEmployee("admin");
+//        Employee testMe = employeeDispatcher.getEmployee("admin");
         List<WorkLog> unreceivedContractsWorkLogs = workLogRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
@@ -121,13 +121,13 @@ public class WorkLogDispatcher {
             List<WorkLog> workLogs = entry.getValue();
 
             TelegramMessageFactory messageFactory = telegramController.getMessageFactory(employee);
-            TelegramMessageFactory messageFactoryTest = telegramController.getMessageFactory(testMe);
+//            TelegramMessageFactory messageFactoryTest = telegramController.getMessageFactory(testMe);
             try {
                 messageFactory.simpleMessage("Требуется сдать договора по " + workLogs.size() + " задачам").execute();
-                messageFactoryTest.simpleMessage("Требуется сдать договора по " + workLogs.size() + " задачам").execute();
+//                messageFactoryTest.simpleMessage("Требуется сдать договора по " + workLogs.size() + " задачам").execute();
                 for (WorkLog workLog : workLogs) {
                     messageFactory.requiringDeliveryOfAContract(workLog).execute();
-                    messageFactoryTest.requiringDeliveryOfAContract(workLog).execute();
+//                    messageFactoryTest.requiringDeliveryOfAContract(workLog).execute();
                 }
             } catch (TelegramApiException ignore) {
             }

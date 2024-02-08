@@ -5,8 +5,6 @@ import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.external.billing.directaccess.DirectBaseAccess;
 import com.microel.trackerbackend.services.external.billing.directaccess.DirectBaseSession;
 import com.microel.trackerbackend.services.external.billing.directaccess.Request;
-import com.microel.trackerbackend.services.external.billing.directaccess.Url;
-import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.team.util.Credentials;
 import lombok.Data;
 import lombok.Getter;
@@ -15,13 +13,10 @@ import lombok.Setter;
 import org.apache.commons.text.StringEscapeUtils;
 import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
-import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 
 import javax.validation.constraints.NotBlank;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +28,10 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
 
     private Base781(Credentials credentials) {
         super("http://10.50.0.7:81", credentials);
+    }
+
+    public static Base781 create(Credentials credentials) {
+        return new Base781(credentials);
     }
 
     @Override
@@ -53,7 +52,7 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
-    private void selectUser(@NotBlank String login){
+    private void selectUser(@NotBlank String login) {
         try {
             request(Request.of("main/set_role/role/office/rolename/%D0%9E%D1%84%D0%B8%D1%81?"));
             request(Request.of("user_info/start"));
@@ -63,12 +62,12 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
-    public void makePayment(@NotBlank String login, @NonNull PaymentForm form){
+    public void makePayment(@NotBlank String login, @NonNull PaymentForm form) {
         selectUser(login);
         try {
             Connection.Response response = request(Request.ofBody("ajax_c.php", form.toRequestBody(), Connection.Method.POST));
             String errorMessage = getAjaxErrorMessage(response.body());
-            if(errorMessage != null)
+            if (errorMessage != null)
                 throw new ResponseException(errorMessage);
 
             ObjectMapper mapper = new ObjectMapper();
@@ -76,19 +75,19 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
 
             Connection.Response checkIssuanceResponse = request(Request.ofBody("ajax_c.php", paymentResponse.toRequestBody(), Connection.Method.POST));
             errorMessage = getAjaxErrorMessage(checkIssuanceResponse.body());
-            if(errorMessage != null)
+            if (errorMessage != null)
                 throw new ResponseException(errorMessage);
         } catch (IOException e) {
             throw new ResponseException("Ошибка при совершении платежа " + getHost());
         }
     }
 
-    public void makeRecalculation(@NotBlank String login, @NonNull RecalculationForm form){
+    public void makeRecalculation(@NotBlank String login, @NonNull RecalculationForm form) {
         selectUser(login);
         try {
             Connection.Response response = request(Request.ofBody("ajax_c.php", form.toRequestBody(), Connection.Method.POST));
             String errorMessage = getAjaxErrorMessage(response.body());
-            if(errorMessage != null)
+            if (errorMessage != null)
                 throw new ResponseException(errorMessage);
         } catch (IOException e) {
             throw new ResponseException("Ошибка при совершении платежа " + getHost());
@@ -104,41 +103,65 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
-    private String getAjaxErrorMessage(String body){
+    private String getAjaxErrorMessage(String body) {
         Pattern pattern = Pattern.compile("\\\"msg\\\":\\\"([^\\\"]+)");
         Matcher matcher = pattern.matcher(body);
         return matcher.find() ? utfConvert(matcher.group(1)) : null;
     }
 
-    private String utfConvert(String str){
+    private String utfConvert(String str) {
         return StringEscapeUtils.unescapeJava(str);
     }
 
     private void authSuccessfulCheck(Connection.Response response) throws IOException {
         Document document = response.bufferUp().parse();
-        if(document.body().children().isEmpty() || document.body().text().contains("Авторизация завершилась с ошибкой")){
+        if (document.body().children().isEmpty() || document.body().text().contains("Авторизация завершилась с ошибкой")) {
             throw new ResponseException("Не авторизованный запрос " + getHost() + " " + getCredentials());
         }
     }
 
-    public static Base781 create(Credentials credentials) {
-        return new Base781(credentials);
+    public void makeBankPayment(String login, Float sum, String comment) {
+        selectUser(login);
+        try {
+            Connection.Response response = request(Request.ofBody("ajax_c.php", Map.of(
+                    "rq.sum", sum.toString(),
+                    "rq.paytype", "2",
+                    "rq.coment", comment,
+                    "__act", "user_info-regPay"
+            ), Connection.Method.POST));
+            String errorMessage = getAjaxErrorMessage(response.body());
+            if (errorMessage != null)
+                throw new ResponseException(errorMessage);
+        } catch (IOException e) {
+            throw new ResponseException("Ошибка при совершении платежа " + getHost());
+        }
     }
 
     @Data
-    public static class PaymentResponse{
+    public static class PaymentResponse {
         private String state;
         private String __msg;
         private KkmInfo kkm;
+
+        public Map<String, String> toRequestBody() {
+            Map<String, String> requestBody = new HashMap<>();
+            requestBody.put("kkm_state", kkm.x.kkm_state);
+            requestBody.put("manager", kkm.manager);
+            requestBody.put("sum_kkm", kkm.x.sum.toString());
+            requestBody.put("cashin", kkm.x.cashin.toString());
+            requestBody.put("__act", "kkm-saleKKM");
+            return requestBody;
+        }
+
         @Data
-        public static class KkmInfo{
+        public static class KkmInfo {
             private String manager;
             private Integer cashin;
             private List<SalesInfoItem> sales;
             private XObject x;
 
             @Data
-            public static class SalesInfoItem{
+            public static class SalesInfoItem {
                 private String product;
                 private Integer ammount;
                 private Integer price;
@@ -146,7 +169,7 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
             }
 
             @Data
-            public static class XObject{
+            public static class XObject {
                 private Integer delivery;
                 private Integer ptype;
                 private String uname;
@@ -158,21 +181,11 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
                 private Integer seid;
             }
         }
-
-        public Map<String, String> toRequestBody(){
-            Map<String, String> requestBody = new HashMap<>();
-            requestBody.put("kkm_state", kkm.x.kkm_state);
-            requestBody.put("manager", kkm.manager);
-            requestBody.put("sum_kkm", kkm.x.sum.toString());
-            requestBody.put("cashin", kkm.x.cashin.toString());
-            requestBody.put("__act", "kkm-saleKKM");
-            return requestBody;
-        }
     }
 
     @Getter
     @Setter
-    public static class PaymentForm{
+    public static class PaymentForm {
         @NonNull
         private Integer paymentType;
         @NonNull
@@ -180,7 +193,7 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
         @NotBlank
         private String comment;
 
-        public Map<String, String> toRequestBody(){
+        public Map<String, String> toRequestBody() {
             Map<String, String> requestBody = new HashMap<>();
             requestBody.put("rq.sum", sum.toString());
 //            requestBody.put("rq.cashin", null);
@@ -194,7 +207,7 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
 
     @Getter
     @Setter
-    public static class RecalculationForm{
+    public static class RecalculationForm {
         @NonNull
         private RecalculationMode mode;
         @NonNull
@@ -202,7 +215,7 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
         @NotBlank
         private String comment;
 
-        public Map<String, String> toRequestBody(){
+        public Map<String, String> toRequestBody() {
             Map<String, String> requestBody = new HashMap<>();
             switch (mode) {
                 case DAYS -> {
@@ -220,7 +233,7 @@ public class Base781 extends DirectBaseSession implements DirectBaseAccess {
             return requestBody;
         }
 
-        public enum RecalculationMode{
+        public enum RecalculationMode {
             DAYS,
             MONEY
         }

@@ -33,6 +33,8 @@ public class EmployeeForm {
     private Base781Credentials base781Credentials;
     @Nullable
     private Base1785Credentials base1785Credentials;
+    @Nullable
+    private Base1783Credentials base1783Credentials;
 
     public Employee toNewEmployee(Department department, Position position, PasswordService passwordService){
         Employee.EmployeeBuilder employeeBuilder = Employee.builder();
@@ -53,6 +55,7 @@ public class EmployeeForm {
                 .oldTrackerCredentials(oldTrackerCredentials)
                 .base781Credentials(base781Credentials)
                 .base1785Credentials(base1785Credentials)
+                .base1783Credentials(base1783Credentials)
                 .deleted(false);
 
         return employeeBuilder.build();
@@ -78,6 +81,8 @@ public class EmployeeForm {
             employee.setBase781Credentials(base781Credentials);
         if(!Objects.equals(employee.getBase1785Credentials(), base1785Credentials))
             employee.setBase1785Credentials(base1785Credentials);
+        if(!Objects.equals(employee.getBase1783Credentials(), base1783Credentials))
+            employee.setBase1783Credentials(base1783Credentials);
 
         return employee;
     }

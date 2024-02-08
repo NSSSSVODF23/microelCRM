@@ -1,7 +1,10 @@
 package com.microel.trackerbackend.services.external.billing.directaccess.bases;
 
+import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.services.api.ResponseException;
-import com.microel.trackerbackend.services.external.billing.directaccess.*;
+import com.microel.trackerbackend.services.external.billing.directaccess.DirectBaseAccess;
+import com.microel.trackerbackend.services.external.billing.directaccess.DirectBaseSession;
+import com.microel.trackerbackend.services.external.billing.directaccess.Request;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.team.util.Credentials;
 import lombok.Getter;
@@ -9,7 +12,6 @@ import lombok.NonNull;
 import lombok.Setter;
 import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
-import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
@@ -24,6 +26,10 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
 
     private Base1785(Credentials credentials) {
         super("http://10.50.0.17:85", credentials);
+    }
+
+    public static Base1785 create(Credentials credentials) {
+        return new Base1785(credentials);
     }
 
     @Override
@@ -54,7 +60,7 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
-    public String getFreeUserLogin(){
+    public String getFreeUserLogin() {
         try {
             Connection.Response response = request(
                     Request.of(
@@ -82,15 +88,15 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
                     )
             );
             authSuccessfulCheck(response);
-            if(form.getUserType() == UserType.ORG)
-                return "BIZ"+freeUserLogin;
+            if (form.getUserType() == UserType.ORG)
+                return "BIZ" + freeUserLogin;
             return freeUserLogin;
-        }catch (IOException e) {
+        } catch (IOException e) {
             throw new ResponseException("Ошибка при создании пользователя в " + getHost() + " " + getCredentials());
         }
     }
 
-    public void selectTargetUser(@NotBlank String login){
+    public void selectTargetUser(@NotBlank String login) {
         try {
             Connection.Response response = request(
                     Request.of(
@@ -106,7 +112,7 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
-    public List<UserTariff> getTariffList(@NotBlank String login){
+    public List<UserTariff> getTariffList(@NotBlank String login) {
         selectTargetUser(login);
         try {
             Connection.Response response = request(
@@ -119,8 +125,8 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
             );
             authSuccessfulCheck(response);
             List<UserTariff> userTariffs = parseUserTariffs(response.bufferUp().parse(), "2");
-            if(userTariffs.size() == 1) return new ArrayList<>();
-            if(userTariffs.isEmpty()){
+            if (userTariffs.size() == 1) return new ArrayList<>();
+            if (userTariffs.isEmpty()) {
                 request(
                         Request.of(
                                 "index.php",
@@ -138,7 +144,7 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
                         )
                 );
                 authSuccessfulCheck(emergencyResponse);
-                userTariffs = parseUserTariffs(emergencyResponse.bufferUp().parse(),"1");
+                userTariffs = parseUserTariffs(emergencyResponse.bufferUp().parse(), "1");
             }
             return userTariffs;
         } catch (IOException e) {
@@ -146,7 +152,7 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
-    public List<UserTariff> getServiceList(@NotBlank String login){
+    public List<UserTariff> getServiceList(@NotBlank String login) {
         selectTargetUser(login);
         try {
             Connection.Response response = request(
@@ -166,14 +172,14 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
-    private List<UserTariff> parseUserTariffs(Document document, String childNumber){
-        Elements tariffElements = document.select("form>table:nth-of-type("+childNumber+")>tbody>tr:nth-child(odd)");
+    private List<UserTariff> parseUserTariffs(Document document, String childNumber) {
+        Elements tariffElements = document.select("form>table:nth-of-type(" + childNumber + ")>tbody>tr:nth-child(odd)");
         List<UserTariff> userTariffs = tariffElements.stream().skip(1L).map(UserTariff::from).collect(Collectors.toList());
         Collections.reverse(userTariffs);
         return userTariffs;
     }
 
-    public void appendService(@NotBlank String login, @NonNull Integer id){
+    public void appendService(@NotBlank String login, @NonNull Integer id) {
         selectTargetUser(login);
         try {
             Connection.Response response = request(
@@ -190,7 +196,7 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
-    public void removeService(@NotBlank String login, @NotBlank String name){
+    public void removeService(@NotBlank String login, @NotBlank String name) {
         selectTargetUser(login);
         try {
             Connection.Response response = request(
@@ -207,7 +213,7 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
-    public void changeTariff(@NotBlank String login, @NonNull Integer id){
+    public void changeTariff(@NotBlank String login, @NonNull Integer id) {
         selectTargetUser(login);
         try {
             Connection.Response response = request(
@@ -226,18 +232,90 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
 
     private void authSuccessfulCheck(Connection.Response response) throws IOException {
         Document document = response.bufferUp().parse();
-        if(document.body().children().isEmpty() || document.body().text().contains("adm_auth.operator_not_found")){
+        if (document.body().children().isEmpty() || document.body().text().contains("adm_auth.operator_not_found")) {
             throw new ResponseException("Не авторизованный запрос " + getHost() + " " + getCredentials());
         }
     }
 
-    public static Base1785 create(Credentials credentials) {
-        return new Base1785(credentials);
+    public void balanceReset(String login, String comment) {
+        selectTargetUser(login);
+        try {
+            Connection.Response response = request(
+                    Request.of(
+                            "index.php",
+                            Map.of("act", "pay_action"),
+                            Map.of(
+                                    "rmoney","0",
+                                    "ptype", "10",
+                                    "smoney",  "0",
+                                    "straf", "0",
+                                    "stime", "0",
+                                    "subm_pay", "Оплата",
+                                    "cmt", comment
+                            ),
+                            Connection.Method.POST
+                    )
+            );
+            authSuccessfulCheck(response);
+        } catch (IOException e) {
+            throw new ResponseException("Не удалось сбросить баланс");
+        }
+    }
+
+    public Boolean isLoginEnable(String login) {
+        selectTargetUser(login);
+        try {
+            Connection.Response response = request(
+                    Request.of(
+                            "index.php",
+                            Map.of("act", "user_work"),
+                            Connection.Method.GET
+                    )
+            );
+            authSuccessfulCheck(response);
+            Document document = response.bufferUp().parse();
+            Element element = document.selectFirst("body > center > form > table.def_table > tbody > tr:nth-child(4) > td:nth-child(4)");
+            return element != null && element.text().equals("1");
+        } catch (IOException e) {
+            throw new ResponseException("Не удалось сбросить баланс");
+        }
+    }
+
+    public void enableLogin(String login) {
+        selectTargetUser(login);
+        try {
+            Connection.Response response = request(
+                    Request.of(
+                            "index.php",
+                            Map.of("act", "auth_control"),
+                            Map.of("On_All", "Вкл.все"),
+                            Connection.Method.POST
+                    )
+            );
+            authSuccessfulCheck(response);
+        } catch (IOException e) {
+            throw new ResponseException("Не удалось активировать логин");
+        }
+    }
+
+    public enum UserType {
+        PHY("обычн."),
+        ORG("орг.");
+
+        private final String value;
+
+        UserType(String value) {
+            this.value = value;
+        }
+
+        public String getValue() {
+            return value;
+        }
     }
 
     @Getter
     @Setter
-    public static class CreateUserForm{
+    public static class CreateUserForm {
 
         @NonNull
         private Address address;
@@ -248,27 +326,36 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
         @NonNull
         private UserType userType;
 
-        public String getPreparePhone(){
+        public static CreateUserForm of(Address address, String fullName, String phone, UserType userType) {
+            CreateUserForm form = new CreateUserForm();
+            form.setAddress(address);
+            form.setFullName(fullName);
+            form.setPhone(phone);
+            form.setUserType(userType);
+            return form;
+        }
+
+        public String getPreparePhone() {
             String cleared = phone.replaceAll("[-() ]", "").trim();
             return cleared.substring(1);
         }
 
-        public Map<String, String> toRequestBody(String login){
+        public Map<String, String> toRequestBody(String login) {
             Map<String, String> body = new HashMap<>();
 
-            if(userType == UserType.ORG){
+            if (userType == UserType.ORG) {
                 body.put("login", "BIZ" + login);
-            }else{
+            } else {
                 body.put("login", login);
             }
 
-            if(address.getStreet() == null)
+            if (address.getStreet() == null)
                 throw new ResponseException("Не указана улица для создания абонента");
 
-            if(address.getStreet().getBillingAlias() == null || address.getStreet().getBillingAlias().isBlank())
+            if (address.getStreet().getBillingAlias() == null || address.getStreet().getBillingAlias().isBlank())
                 throw new ResponseException("Не указан псевдоним для улицы в биллинге");
 
-            if(address.getHouseNamePart() == null || address.getHouseNamePart().isBlank())
+            if (address.getHouseNamePart() == null || address.getHouseNamePart().isBlank())
                 throw new ResponseException("Не указан адрес дома");
 
             String billingAlias = address.getStreet().getBillingAlias();
@@ -276,15 +363,15 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
             String house = address.getHouseNamePart();
 
             String apartNum = "";
-            if(address.getApartmentNum() != null)
+            if (address.getApartmentNum() != null)
                 apartNum = address.getApartmentNum().toString();
 
             String entrance = "";
-            if(address.getEntrance() != null)
+            if (address.getEntrance() != null)
                 entrance = address.getEntrance().toString();
 
             String floor = "";
-            if(address.getFloor() != null)
+            if (address.getFloor() != null)
                 floor = address.getFloor().toString();
 
 
@@ -302,28 +389,20 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
 
             return body;
         }
-
-        public static CreateUserForm of(Address address, String fullName, String phone, UserType userType){
-            CreateUserForm form = new CreateUserForm();
-            form.setAddress(address);
-            form.setFullName(fullName);
-            form.setPhone(phone);
-            form.setUserType(userType);
-            return form;
-        }
     }
 
     @Getter
     @Setter
-    public static class UserTariff{
+    public static class UserTariff {
         private Integer id;
         private String name;
         private Float cost;
         private String description;
 
-        private UserTariff(){}
+        private UserTariff() {
+        }
 
-        public static UserTariff from(Element element){
+        public static UserTariff from(Element element) {
             UserTariff userTariff = new UserTariff();
 
             Element idCol = element.child(0);
@@ -337,21 +416,6 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
             userTariff.setDescription(descCol.text());
 
             return userTariff;
-        }
-    }
-
-    public enum UserType {
-        PHY("обычн."),
-        ORG("орг.");
-
-        private final String value;
-
-        UserType(String value) {
-            this.value = value;
-        }
-
-        public String getValue() {
-            return value;
         }
     }
 }

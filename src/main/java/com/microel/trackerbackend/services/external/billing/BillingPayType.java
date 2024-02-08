@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 public enum BillingPayType {
+    BANK(2),
     REFUND(3),
     CREDIT(4),
     SERVICE(11);
@@ -23,23 +24,14 @@ public enum BillingPayType {
 
     public String getLabel() {
         return switch (this) {
+            case BANK -> "Банк";
             case REFUND -> "Возврат";
             case CREDIT -> "Кредит";
-            case SERVICE -> "Сервисный";
+            case SERVICE -> "Служебный";
         };
     }
 
     public static List<ListItem> getList(){
         return Stream.of(BillingPayType.values()).map(value->new ListItem(value.getLabel(), value.ordinal())).toList();
     }
-
-//    public static class ListItem{
-//        public String label;
-//        public Integer value;
-//
-//        public ListItem(String label, Integer value){
-//            this.label = label;
-//            this.value = value;
-//        }
-//    }
 }

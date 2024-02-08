@@ -9,7 +9,10 @@ import org.springframework.lang.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Stream;
 
 @Getter
 @Setter
@@ -33,10 +36,13 @@ public class NetworkRemoteControl {
     }
 
     private Mono<NetworkRemoteControl> checkWebAccess(){
-        Short[] potentialPorts = {80, 8080, 8081, 8888, 443};
+        Short[] potentialHttpPorts = {80, 8080, 81, 8081, 8888, 280, 591, 777, 5080, 8080, 8090};
+        Short[] potentialHttpsPorts = {443, 5083, 5443, 8083, 8443};
         CustomWebClientFactory webClientFactory = new CustomWebClientFactory();
+        List<Mono<Short>> httpEndpoint = Arrays.stream(potentialHttpPorts).map(port -> webClientFactory.createGetResponse("http://" + ip, port)).toList();
+        List<Mono<Short>> httpsEndpoint = Arrays.stream(potentialHttpsPorts).map(port -> webClientFactory.createGetResponse("https://" + ip, port)).toList();
         return Flux.merge(
-            Arrays.stream(potentialPorts).map(port->webClientFactory.createGetResponse("http://" + ip , port)).toList()
+                Stream.concat(httpEndpoint.stream(), httpsEndpoint.stream()).toList()
         ).filter(val->!val.equals(Integer.valueOf(0).shortValue())).next().map(response -> {
             webPort = response;
             hasAccess = true;

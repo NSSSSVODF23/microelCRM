@@ -271,7 +271,10 @@ public class HouseDispatcher {
                 predicates.add(cb.equal(root.get("build"), build));
             }
             if (isAcpConnected != null) {
-                predicates.add(cb.equal(root.get("isAcpConnected"), isAcpConnected));
+                if(isAcpConnected)
+                    predicates.add(cb.isNotNull(root.get("acpHouseBind")));
+                else
+                    predicates.add(cb.isNull(root.get("acpHouseBind")));
             }
             return cb.and(predicates.toArray(Predicate[]::new));
         }, Sort.by(Sort.Direction.DESC, "houseId", "letter", "fraction", "build"));
