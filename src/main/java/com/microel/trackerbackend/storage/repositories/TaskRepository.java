@@ -3,9 +3,12 @@ package com.microel.trackerbackend.storage.repositories;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.TaskStatus;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -25,4 +28,5 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
     Long countByModelWireframe_WireframeIdAndDeletedFalseAndTaskStatus(Long wireframeId, TaskStatus taskStatus);
 
     List<Task> findByCurrentDirectory_TaskTypeDirectoryIdIn(List<Long> taskTypeDirectoriesIds);
+
 }

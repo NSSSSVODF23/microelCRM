@@ -23,10 +23,11 @@ public class LogoutRequest implements OldTrackerRequest<Void> {
     @Override
     public Void execute() {
         try {
-            Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=logout").headers(headers).cookies(cookies).method(Connection.Method.GET).execute();
+            Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=logout").headers(headers).cookies(cookies).method(Connection.Method.GET).timeout(15000).execute();
             return null;
-        } catch (IOException e) {
-            throw new ResponseException(e.getMessage());
+        } catch (Exception e) {
+            System.out.println("Не удалось logout из старого трекера");
         }
+        return null;
     }
 }

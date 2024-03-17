@@ -1,7 +1,12 @@
 package com.microel.trackerbackend.services.api;
 
+import com.microel.tdo.pon.Worker;
+import com.microel.tdo.pon.events.OntStatusChangeEvent;
+import com.microel.tdo.pon.terminal.OpticalNetworkTerminal;
 import com.microel.trackerbackend.misc.*;
 import com.microel.trackerbackend.misc.task.counting.*;
+import com.microel.trackerbackend.services.RemoteTelnetService;
+import com.microel.trackerbackend.services.api.controllers.ProxyRemoteConnectionController;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
 import com.microel.trackerbackend.storage.configurations.StompConfig;
@@ -358,6 +363,14 @@ public class StompController {
         sendAll(pingMonitoring, "monitoring", "ping", pingMonitoring.getIp());
     }
 
+    public void outputTelnetStream(RemoteTelnetService.OutputFrame output, String ip, String sessionId) {
+        sendAll(output, "remote", "telnet", ip, sessionId);
+    }
+
+    public void telnetConnectionMessage(ProxyRemoteConnectionController.ConnectionCredentials credentials, Employee employee) {
+        sendToUser(employee.getLogin(), credentials, "remote", "telnet", "connection-message");
+    }
+
     public void changeBillingConfig(BillingConf billingConf) {
         sendAll(billingConf, "billing-config", "change");
     }
@@ -475,5 +488,21 @@ public class StompController {
 
     public void updatingMarkedContracts() {
         sendAll(true, "contract", "marked", "update");
+    }
+
+    public void sendNewOntStatusChangeEvents(List<OntStatusChangeEvent> events) {
+        sendAll(events, "pon", "events", "new", "ont", "status-change");
+    }
+
+    public void sendNewWorkerInQueue(Worker worker) {
+        sendAll(worker, "pon", "worker", "new");
+    }
+
+    public void sendSpentWorkerInQueue(Worker worker) {
+        sendAll(worker, "pon", "worker", "spent");
+    }
+
+    public void sendUpdatedOnt(OpticalNetworkTerminal ont) {
+        sendAll(ont, "pon", "ont", "update");
     }
 }

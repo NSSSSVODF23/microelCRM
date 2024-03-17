@@ -81,7 +81,9 @@ public class FilesWatchService {
     public List<TFile.FileSuggestion> getFileSuggestions(@Nullable String stringQuery) {
         if(stringQuery == null || stringQuery.isBlank()) return List.of();
 
-        final List<String> STRINGS = Arrays.stream(stringQuery.trim().toLowerCase().split(" ")).toList();
+        final List<String> STRINGS = Arrays.stream(stringQuery.trim()
+//                .replaceAll("[^\\d А-я]", "")
+                .toLowerCase().split(" ")).toList();
 
         Page<TFile> filePage = fileRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -382,8 +384,12 @@ public class FilesWatchService {
     public void clearFiles() {
         List<FileSystemItem> idToDelete = new ArrayList<>();
         fileSystemItemRepository.findAll().forEach(fileSystemItem -> {
-            Path path = Path.of(fileSystemItem.getPath());
-            if (!Files.exists(path)) {
+            try{
+                Path path = Path.of(fileSystemItem.getPath());
+                if (!Files.exists(path)) {
+                    idToDelete.add(fileSystemItem);
+                }
+            }catch (Exception e){
                 idToDelete.add(fileSystemItem);
             }
         });
@@ -391,7 +397,7 @@ public class FilesWatchService {
     }
 
     public List<FileSystemItem> getRoot(@Nullable FileSortingTypes sortingType) {
-        return fileSystemItemRepository.findAll((root, query, cb) -> cb.isNull(root.get("parent")), getSortBy(sortingType));
+        return fileSystemItemRepository.findAll((root, query, cb) -> cb.isNull(root.join("parent", JoinType.LEFT)), getSortBy(sortingType));
     }
 
     public List<Directory> getPath(Long id) {

@@ -82,6 +82,8 @@ public class DhcpBinding {
     private NetworkConnectionLocation lastConnectionLocation;
     @Nullable
     private String billingAddress;
+    @Nullable
+    private String portList;
 
     @JsonIgnore
     public String getTextRow(){

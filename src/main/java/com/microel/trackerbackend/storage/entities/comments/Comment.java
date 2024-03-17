@@ -3,13 +3,15 @@ package com.microel.trackerbackend.storage.entities.comments;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.storage.entities.task.Task;
+import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import lombok.*;
-import org.hibernate.annotations.BatchSize;
-import org.hibernate.annotations.OnDelete;
-import org.hibernate.annotations.OnDeleteAction;
+import org.hibernate.annotations.*;
 
 import javax.persistence.*;
+import javax.persistence.CascadeType;
+import javax.persistence.Entity;
+import javax.persistence.Table;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,6 +50,10 @@ public class Comment implements TaskJournalItem {
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     @JsonBackReference
     private Task parent;
+    @ManyToMany
+    @Fetch(FetchMode.SUBSELECT)
+    @JsonIgnore
+    private List<WorkLog> workLogs;
 
     /**
      * Отчищает сообщение от форматирования и оставляет просто текст

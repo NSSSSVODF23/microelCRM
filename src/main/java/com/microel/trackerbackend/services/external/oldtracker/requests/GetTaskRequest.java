@@ -30,10 +30,8 @@ public class GetTaskRequest implements OldTrackerRequest<GetTaskRequest.TaskInfo
     @Override
     public TaskInfo execute() {
         try {
-//            Document document = Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=show_obji&obji=" + taskId + "&from_cat=1")
-//                    .headers(headers).cookies(cookies).maxBodySize(0).get();
             Document document = Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=show_obji&obji=" + taskId + "&from_cat=1")
-                    .headers(headers).cookies(cookies).maxBodySize(0).method(Connection.Method.GET).execute().bufferUp().parse();
+                    .headers(headers).cookies(cookies).maxBodySize(0).method(Connection.Method.GET).timeout(15000).execute().bufferUp().parse();
 
             OldTrackerRequestFactory.throwIsUnknownTask(document, taskId);
 
@@ -50,9 +48,10 @@ public class GetTaskRequest implements OldTrackerRequest<GetTaskRequest.TaskInfo
             String taskStageId = stageElement.val();
             if(taskStageId.isBlank()) throw new ResponseException("Не удалось определить стадию задачи #"+taskId);
             return new TaskInfo(taskClassName, Integer.parseInt(taskStageId));
-        } catch (IOException e) {
-            throw new ResponseException(e.getMessage());
+        } catch (Exception e) {
+            System.out.println("Не удалось получить задачу из старого трекера");
         }
+        return null;
     }
 
     @Data

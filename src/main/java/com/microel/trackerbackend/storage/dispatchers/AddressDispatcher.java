@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.trackerbackend.misc.CharacterTranslation;
-import com.microel.trackerbackend.storage.MatchingFactory;
 import com.microel.trackerbackend.storage.dto.address.AddressDto;
 import com.microel.trackerbackend.storage.dto.mapper.AddressMapper;
 import com.microel.trackerbackend.storage.entities.address.Address;
@@ -14,12 +13,13 @@ import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
 import com.microel.trackerbackend.storage.repositories.AddressRepository;
 import lombok.*;
-import org.apache.commons.math3.analysis.function.Add;
 import org.apache.commons.text.similarity.LevenshteinDistance;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.Join;
 import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
 import java.util.*;
@@ -74,8 +74,66 @@ public class AddressDispatcher {
         return variations;
     }
 
+    /**
+     * Получить {@link AddressLookupRequest} для поиска адресов в БД по поисковой строке.
+     * Будет парсить строку регулярными выражениями, пробовать достать части адреса
+     *
+     * @param query Текстовый запрос
+     * @return Список объектов с частями адреса спаршеных из строки текста, если спарсить строку не удалось, возвращает null.
+     */
+    @Nullable
+    public static AddressLookupRequest parseStringQuery(String query) {
+        int matchSetting = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
+
+        String specialRegex = "^(?<hn>\\d{1,3})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(( с\\.?| стр\\.?| строение|_)(?<hb>\\d{1,3}))?-(?<an>\\d{1,3})";
+
+        Pattern specialPattern = Pattern.compile(specialRegex, matchSetting);
+        Matcher specialMatcher = specialPattern.matcher(query);
+        AddressLookupRequest specialRequest = AddressLookupRequest.of(specialMatcher);
+        if (specialRequest != null)
+            return specialRequest;
+
+        List<String> streetParts = List.of(
+                "(?<street>\\d{1,2}-?[а-я]{1,2} [а-я]+)",
+                "(?<street>\\d{1,2} [а-я]{1,5} [а-я]+)",
+                "(?<street>[а-я]+.? ?[а-я]+.? [а-я]+)",
+                "(?<street>[а-я]+ \\d-?[а-я]{1,3})",
+                "(?<street>\\d{1,2} ?[а-я]{1,5})",
+                "(?<street>[а-я]+.? ?[а-я]+)",
+                "(?<street>[а-я]+)"
+        );
+        List<String> houseParts = List.of(
+                " (?<hn>\\d{1,4})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(( с\\.?| стр\\.?| строение|_)(?<hb>\\d{1,3}))?",
+                ""
+        );
+        List<String> apartParts = List.of(
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (п\\.?|под\\.?|подъезд) ?(?<ent>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))?( (э\\.?|эт\\.?|этаж) ?(?<fl>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                "(( |-| кв.)(?<an>\\d{1,3}))( \\((?<am>[а-я]+)\\))?",
+                ""
+        );
+
+        for (String streetPart : streetParts) {
+            for (String housePart : houseParts) {
+                for (String apartPart : apartParts) {
+                    String rexp = streetPart + housePart + apartPart;
+                    Pattern pattern = Pattern.compile(rexp, matchSetting);
+                    Matcher matcher = pattern.matcher(query);
+                    AddressLookupRequest request = AddressLookupRequest.of(matcher);
+                    if (request != null) {
+                        return request;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
     public List<Long> getAddressIds(FilterModelItem filterModelItem) throws JsonProcessingException {
-        if(!(filterModelItem.getValue() instanceof LinkedHashMap addressExample)) return new ArrayList<>();
+        if (!(filterModelItem.getValue() instanceof LinkedHashMap addressExample)) return new ArrayList<>();
         ObjectMapper objectMapper = new ObjectMapper();
         Address address = objectMapper.convertValue(addressExample, Address.class);
         List<Address> founded = addressRepository.findAll((root, query, cb) -> {
@@ -92,14 +150,14 @@ public class AddressDispatcher {
                 predicates.add(cb.equal(root.get("letter"), address.getLetter()));
             if (address.getBuild() != null) predicates.add(cb.equal(root.get("build"), address.getBuild()));
             if (address.getApartmentNum() != null)
-                predicates.add( cb.equal(root.get("apartmentNum"), address.getApartmentNum()));
+                predicates.add(cb.equal(root.get("apartmentNum"), address.getApartmentNum()));
             query.distinct(true);
             return cb.and(predicates.toArray(Predicate[]::new));
         });
         return founded.stream().map(Address::getAddressId).collect(Collectors.toList());
     }
 
-    public List<Address> getAddressInDBByQuery(String stringQuery){
+    public List<Address> getAddressInDBByQuery(String stringQuery) {
         List<AddressDto> suggestions = getSuggestions(stringQuery, null, null);
         List<Address> founded = addressRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -118,7 +176,7 @@ public class AddressDispatcher {
                 if (suggestion.getBuild() != null)
                     currentAddressPredicates.add(cb.equal(root.get("build"), suggestion.getBuild()));
                 if (suggestion.getApartmentNum() != null)
-                    currentAddressPredicates.add( cb.equal(root.get("apartmentNum"), suggestion.getApartmentNum()));
+                    currentAddressPredicates.add(cb.equal(root.get("apartmentNum"), suggestion.getApartmentNum()));
 
                 predicates.add(cb.and(currentAddressPredicates.toArray(Predicate[]::new)));
             }
@@ -131,7 +189,7 @@ public class AddressDispatcher {
     }
 
     public Address findIdentical(Address addressData) {
-        if(addressData == null) return new Address();
+        if (addressData == null) return new Address();
         // Пробуем найти в базе данных адрес с такими же данными как у addressData кроме id
         try {
             return addressRepository.findAll((root, query, cb) -> {
@@ -144,7 +202,7 @@ public class AddressDispatcher {
                     predicates.add(cb.equal(root.join("street", JoinType.LEFT).get("streetId"), addressData.getStreet().getStreetId()));
                 else predicates.add(cb.isNull(root.join("street")));
 
-                if(addressData.getHouseId() != null)
+                if (addressData.getHouseId() != null)
                     predicates.add(cb.equal(root.get("houseId"), addressData.getHouseId()));
                 else predicates.add(cb.isNull(root.get("houseId")));
 
@@ -219,7 +277,7 @@ public class AddressDispatcher {
         Pattern specialPattern = Pattern.compile(specialRegex, matchSetting);
         Matcher specialMatcher = specialPattern.matcher(query);
         AddressLookupRequest specialRequest = AddressLookupRequest.of(specialMatcher);
-        if (specialRequest != null){
+        if (specialRequest != null) {
             List<House> foundHouses = houseDispatcher.lookupHouses(specialRequest);
             List<Address> collect = foundHouses.stream().filter(house -> !house.isSomeDeleted())
                     .map(house -> house.getAddress(specialRequest.entrance, specialRequest.floor, specialRequest.apartment, specialRequest.apartmentMod)).toList();
@@ -229,7 +287,7 @@ public class AddressDispatcher {
 //        System.out.println("\r\n\r\n----Query '"+query+"' ----");
 
         for (String cityPart : cityParts) {
-            if(!suggestions.isEmpty()) break;
+            if (!suggestions.isEmpty()) break;
             for (String streetPart : streetParts) {
                 for (String housePart : houseParts) {
                     for (String apartPart : apartParts) {
@@ -246,7 +304,7 @@ public class AddressDispatcher {
                             List<Address> collect = foundHouses.stream().filter(house -> !house.isSomeDeleted())
                                     .filter(house -> request.apartment == null | (request.apartment != null && house.getIsApartmentHouse()))
                                     .map(house -> {
-                                        if(isHouseOnly != null && isHouseOnly){
+                                        if (isHouseOnly != null && isHouseOnly) {
                                             return house.getAddress();
                                         }
                                         Address address = house.getAddress(request.entrance, request.floor, request.apartment, request.apartmentMod);
@@ -267,21 +325,21 @@ public class AddressDispatcher {
                                 suggestions.addAll(address);
                             }
                         }
-                        if(!suggestions.isEmpty()) break;
+                        if (!suggestions.isEmpty()) break;
                     }
-                    if(!suggestions.isEmpty()) break;
+                    if (!suggestions.isEmpty()) break;
                 }
-                if(!suggestions.isEmpty()) break;
+                if (!suggestions.isEmpty()) break;
             }
-            if(!suggestions.isEmpty()) break;
+            if (!suggestions.isEmpty()) break;
         }
 
-        if(suggestions.isEmpty()){
-            for (String streetPattern : streetParts){
+        if (suggestions.isEmpty()) {
+            for (String streetPattern : streetParts) {
                 Pattern pattern = Pattern.compile(streetPattern, matchSetting);
                 Matcher matcher = pattern.matcher(query);
                 AddressLookupRequest request = AddressLookupRequest.of(matcher);
-                if(request == null) continue;
+                if (request == null) continue;
                 List<Street> foundStreets = streetDispatcher.containsInName(request.streetName);
                 for (Street street : foundStreets) {
                     List<Address> address = street.getAddress(isAcpConnected);
@@ -297,8 +355,7 @@ public class AddressDispatcher {
         return suggestions
                 .stream()
                 .distinct()
-                .sorted(Comparator.comparingInt(o->levenshteinDistance.apply(finalQuery, o.getAddressName())))
-                .limit(30)
+                .sorted(Comparator.comparingInt(o -> levenshteinDistance.apply(finalQuery, o.getAddressName())))
                 .map(AddressMapper::toDto)
                 .filter(Objects::nonNull)
                 .toList();
@@ -306,7 +363,7 @@ public class AddressDispatcher {
 
     public List<Address> getSuggestions(Long streetId, String houseQuery, @Nullable Boolean isAcpConnected, @Nullable Boolean isHouseOnly) {
         List<Address> suggestions = new ArrayList<>();
-        houseQuery = CharacterTranslation.translate(houseQuery);
+        houseQuery = CharacterTranslation.translate(houseQuery.trim());
 
         int matchSetting = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
 
@@ -333,11 +390,11 @@ public class AddressDispatcher {
                 }
                 if (request.houseNum != null) {
                     List<House> foundHouses = houseDispatcher.getHouse(streetId, request.getHouseNum(), request.getLetter(), request.getFraction(), request.getBuild(), isAcpConnected);
-                            //houseDispatcher.lookup(request, isAcpConnected);
+                    //houseDispatcher.lookup(request, isAcpConnected);
                     List<Address> collect = foundHouses.stream().filter(house -> !house.isSomeDeleted())
                             .filter(house -> request.apartment == null | (request.apartment != null && house.getIsApartmentHouse()))
                             .map(house -> {
-                                if(isHouseOnly != null && isHouseOnly){
+                                if (isHouseOnly != null && isHouseOnly) {
                                     return house.getAddress();
                                 }
                                 return house.getAddress(request.entrance, request.floor, request.apartment, request.apartmentMod);
@@ -345,9 +402,9 @@ public class AddressDispatcher {
                             .toList();
                     suggestions.addAll(collect);
                 }
-                if(!suggestions.isEmpty()) break;
+                if (!suggestions.isEmpty()) break;
             }
-            if(!suggestions.isEmpty()) break;
+            if (!suggestions.isEmpty()) break;
         }
 
         return suggestions;
@@ -389,7 +446,7 @@ public class AddressDispatcher {
                     List<House> houses = new ArrayList<>();
                     List<Street> foundStreets = streetDispatcher.containsInName(request.streetName);
                     for (Street street : foundStreets) {
-                        houses.addAll(street.getHouses().stream().filter(house->house.getAcpHouseBind() != null).toList());
+                        houses.addAll(street.getHouses().stream().filter(house -> house.getAcpHouseBind() != null).toList());
                     }
                     return houses;
                 }
@@ -501,9 +558,9 @@ public class AddressDispatcher {
     @Transactional
     public Address convert(String addressString) {
         int matchSetting = Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
-        String regex = "^(?<street>[а-я\\.\\-\\d]+)( пер\\.)? (?<hn>\\d{1,4})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(_(?<hb>\\d{1,3}))?-?(?<an>\\d{1,3})?";
+        String regex = "^(?<street>[а-я\\.\\-\\d]+)( [а-я-\\.]{1,6})? (?<hn>\\d{1,4})(/(?<hf>\\d{1,3}))?(?<hl>[а-я])?(_(?<hb>\\d{1,3}))?-?(?<an>\\d{1,3})?";
         Pattern pattern = Pattern.compile(regex, matchSetting);
-        Matcher matcher = pattern.matcher(addressString);
+        Matcher matcher = pattern.matcher(addressString.trim());
         AddressLookupRequest lookupRequest = AddressLookupRequest.of(matcher);
         if (lookupRequest != null) {
             House foundHouse = houseDispatcher.lookupBillingHouse(lookupRequest);
@@ -538,41 +595,6 @@ public class AddressDispatcher {
         private Short apartment;
         @Nullable
         private String apartmentMod;
-
-        public String raw() {
-            StringBuilder builder = new StringBuilder();
-            if (cityName != null) {
-                builder.append(cityName);
-            }
-            if (streetName != null) {
-                builder.append(streetName);
-            }
-            if (houseNum != null) {
-                builder.append(houseNum);
-            }
-            if (fraction != null) {
-                builder.append(fraction);
-            }
-            if (letter != null) {
-                builder.append(letter);
-            }
-            if (build != null) {
-                builder.append(build);
-            }
-            if (entrance != null) {
-                builder.append(entrance);
-            }
-            if (floor != null) {
-                builder.append(floor);
-            }
-            if (apartment != null) {
-                builder.append(apartment);
-            }
-            if (apartmentMod != null) {
-                builder.append(apartmentMod);
-            }
-            return builder.toString();
-        }
 
         @Nullable
         public static AddressLookupRequest of(Matcher matcher) {
@@ -621,6 +643,84 @@ public class AddressDispatcher {
                 return request;
             }
             return null;
+        }
+
+        public String raw() {
+            StringBuilder builder = new StringBuilder();
+            if (cityName != null) {
+                builder.append(cityName);
+            }
+            if (streetName != null) {
+                builder.append(streetName);
+            }
+            if (houseNum != null) {
+                builder.append(houseNum);
+            }
+            if (fraction != null) {
+                builder.append(fraction);
+            }
+            if (letter != null) {
+                builder.append(letter);
+            }
+            if (build != null) {
+                builder.append(build);
+            }
+            if (entrance != null) {
+                builder.append(entrance);
+            }
+            if (floor != null) {
+                builder.append(floor);
+            }
+            if (apartment != null) {
+                builder.append(apartment);
+            }
+            if (apartmentMod != null) {
+                builder.append(apartmentMod);
+            }
+            return builder.toString();
+        }
+
+        public Predicate toPredicate(Join<?, Address> join, CriteriaBuilder cb) {
+            List<Predicate> predicates = new ArrayList<>();
+//            if (cityName != null) {
+//                predicates.add(cb.equal(join.get("city"), cityName));
+//            }
+            if (streetName != null) {
+                Join<Address, Street> streetJoin = join.join("street");
+                String lowerCaseStreet = streetName.toLowerCase();
+                predicates.add(
+                        cb.or(
+                                cb.like(cb.lower(streetJoin.get("name")), "%" + lowerCaseStreet + "%"),
+                                cb.like(cb.lower(streetJoin.get("billingAlias")), "%" + lowerCaseStreet + "%"),
+                                cb.like(cb.lower(streetJoin.get("altNames")), "%" + lowerCaseStreet + "%")
+                        )
+                );
+            }
+            if (houseNum != null) {
+                predicates.add(cb.equal(join.get("houseNum"), houseNum));
+            }
+            if (fraction != null) {
+                predicates.add(cb.equal(join.get("fraction"), fraction));
+            }
+            if (letter != null) {
+                predicates.add(cb.equal(join.get("letter"), letter));
+            }
+            if (build != null) {
+                predicates.add(cb.equal(join.get("build"), build));
+            }
+            if (entrance != null) {
+                predicates.add(cb.equal(join.get("entrance"), entrance));
+            }
+            if (floor != null) {
+                predicates.add(cb.equal(join.get("floor"), floor));
+            }
+            if (apartment != null) {
+                predicates.add(cb.equal(join.get("apartmentNum"), apartment));
+            }
+            if (apartmentMod != null) {
+                predicates.add(cb.equal(join.get("apartmentMod"), apartmentMod));
+            }
+            return cb.and(predicates.toArray(Predicate[]::new));
         }
     }
 }

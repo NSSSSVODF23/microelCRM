@@ -35,10 +35,11 @@ public class EditTaskRequest implements OldTrackerRequest<Void> {
                 body.put(field.getFieldName(), field.getData());
             }
             Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=show_obji&obji="+taskId+"&from_cat=1")
-                    .headers(headers).cookies(cookies).data(body).method(Connection.Method.POST).execute();
+                    .headers(headers).cookies(cookies).data(body).method(Connection.Method.POST).timeout(15000).execute();
             return null;
-        } catch (IOException e) {
-            throw new ResponseException(e.getMessage());
+        } catch (Exception e) {
+            System.out.println("Не удалось отредактировать задачу в старом трекере");
         }
+        return null;
     }
 }

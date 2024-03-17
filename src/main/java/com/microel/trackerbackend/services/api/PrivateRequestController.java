@@ -1,7 +1,5 @@
 package com.microel.trackerbackend.services.api;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.controllers.telegram.Utils;
@@ -10,8 +8,6 @@ import com.microel.trackerbackend.misc.accounting.MonthlySalaryReportTable;
 import com.microel.trackerbackend.misc.accounting.TDocumentFactory;
 import com.microel.trackerbackend.misc.network.NetworkRemoteControl;
 import com.microel.trackerbackend.misc.sorting.TaskJournalSortingTypes;
-import com.microel.trackerbackend.modules.transport.ChangeTaskObserversDTO;
-import com.microel.trackerbackend.modules.transport.IDuration;
 import com.microel.trackerbackend.parsers.addresses.AddressParser;
 import com.microel.trackerbackend.parsers.oldtracker.AddressCorrectingPool;
 import com.microel.trackerbackend.parsers.oldtracker.OldTracker;
@@ -19,10 +15,7 @@ import com.microel.trackerbackend.parsers.oldtracker.OldTrackerParserSettings;
 import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.services.FilesWatchService;
 import com.microel.trackerbackend.services.PhyPhoneService;
-import com.microel.trackerbackend.services.external.acp.AcpClient;
-import com.microel.trackerbackend.services.external.acp.types.*;
 import com.microel.trackerbackend.services.external.billing.BillingPayType;
-import com.microel.trackerbackend.services.external.billing.ApiBillingController;
 import com.microel.trackerbackend.services.external.oldtracker.OldTrackerService;
 import com.microel.trackerbackend.services.external.oldtracker.task.TaskClassOT;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
@@ -30,11 +23,7 @@ import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
 import com.microel.trackerbackend.storage.dispatchers.*;
 import com.microel.trackerbackend.storage.dto.address.AddressDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
-import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
 import com.microel.trackerbackend.storage.dto.mapper.CommentMapper;
-import com.microel.trackerbackend.storage.dto.task.TaskListDto;
-import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
-import com.microel.trackerbackend.storage.entities.acp.commutator.FdbItem;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.House;
@@ -42,11 +31,9 @@ import com.microel.trackerbackend.storage.entities.address.Street;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.SuperMessage;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
-import com.microel.trackerbackend.storage.entities.comments.FileType;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
-import com.microel.trackerbackend.storage.entities.comments.TaskJournalItem;
+import com.microel.trackerbackend.storage.entities.comments.FileType;
 import com.microel.trackerbackend.storage.entities.comments.dto.CommentData;
-import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.equipment.ClientEquipment;
 import com.microel.trackerbackend.storage.entities.filesys.FileSystemItem;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
@@ -54,28 +41,19 @@ import com.microel.trackerbackend.storage.entities.salary.PaidAction;
 import com.microel.trackerbackend.storage.entities.salary.PaidWork;
 import com.microel.trackerbackend.storage.entities.salary.PaidWorkGroup;
 import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
-import com.microel.trackerbackend.storage.entities.task.Task;
-import com.microel.trackerbackend.storage.entities.task.TaskFieldsSnapshot;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.utils.TaskTag;
 import com.microel.trackerbackend.storage.entities.team.Employee;
-import com.microel.trackerbackend.storage.entities.team.Observer;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.entities.team.util.*;
 import com.microel.trackerbackend.storage.entities.templating.*;
 import com.microel.trackerbackend.storage.entities.templating.documents.DocumentTemplate;
-import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
 import com.microel.trackerbackend.storage.exceptions.*;
-import com.microel.trackerbackend.storage.repositories.PhyPhoneInfoRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.imgscalr.Scalr;
-import org.javatuples.Triplet;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.util.Pair;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -94,9 +72,6 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Timestamp;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -105,22 +80,18 @@ import java.util.stream.Collectors;
 @Slf4j
 @RequestMapping("api/private")
 public class PrivateRequestController {
-    private final PhyPhoneInfoRepository phyPhoneInfoRepository;
     private final WireframeDispatcher wireframeDispatcher;
     private final TaskDispatcher taskDispatcher;
     private final StreetDispatcher streetDispatcher;
     private final HouseDispatcher houseDispatcher;
     private final CityDispatcher cityDispatcher;
     private final CommentDispatcher commentDispatcher;
-    private final ModelItemDispatcher modelItemDispatcher;
     private final EmployeeDispatcher employeeDispatcher;
     private final AttachmentDispatcher attachmentDispatcher;
     private final DepartmentDispatcher departmentsDispatcher;
     private final PositionDispatcher positionDispatcher;
-    private final TaskEventDispatcher taskEventDispatcher;
     private final StompController stompController;
     private final TaskTagDispatcher taskTagDispatcher;
-    private final TaskFieldsSnapshotDispatcher taskFieldsSnapshotDispatcher;
     private final NotificationDispatcher notificationDispatcher;
     private final WorkLogDispatcher workLogDispatcher;
     private final ChatDispatcher chatDispatcher;
@@ -133,8 +104,6 @@ public class PrivateRequestController {
     private final PaidWorkDispatcher paidWorkDispatcher;
     private final WorkCalculationDispatcher workCalculationDispatcher;
     private final WorkingDayDispatcher workingDayDispatcher;
-    private final ApiBillingController apiBillingController;
-    private final AcpClient acpClient;
     private final ClientEquipmentDispatcher clientEquipmentDispatcher;
     private final FilesWatchService filesWatchService;
     private final PhyPhoneService phyPhoneService;
@@ -142,30 +111,31 @@ public class PrivateRequestController {
 
     public PrivateRequestController(WireframeDispatcher wireframeDispatcher, TaskDispatcher taskDispatcher,
                                     StreetDispatcher streetDispatcher, HouseDispatcher houseDispatcher, CityDispatcher cityDispatcher,
-                                    CommentDispatcher commentDispatcher, ModelItemDispatcher modelItemDispatcher,
+                                    CommentDispatcher commentDispatcher,
                                     EmployeeDispatcher employeeDispatcher, AttachmentDispatcher attachmentDispatcher,
                                     DepartmentDispatcher departmentsDispatcher, PositionDispatcher positionDispatcher,
-                                    TaskEventDispatcher taskEventDispatcher, StompController stompController,
-                                    TaskTagDispatcher taskTagDispatcher, TaskFieldsSnapshotDispatcher taskFieldsSnapshotDispatcher,
+                                    StompController stompController,
+                                    TaskTagDispatcher taskTagDispatcher,
                                     NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher,
                                     ChatDispatcher chatDispatcher, TelegramController telegramController,
-                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher, PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher, PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher, WorkingDayDispatcher workingDayDispatcher, ApiBillingController apiBillingController, AcpClient acpClient, ClientEquipmentDispatcher clientEquipmentDispatcher, FilesWatchService filesWatchService, PhyPhoneService phyPhoneService,
-                                    PhyPhoneInfoRepository phyPhoneInfoRepository, OldTrackerService oldTrackerService) {
+                                    OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher,
+                                    PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher,
+                                    PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher,
+                                    WorkingDayDispatcher workingDayDispatcher, ClientEquipmentDispatcher clientEquipmentDispatcher,
+                                    FilesWatchService filesWatchService, PhyPhoneService phyPhoneService,
+                                    OldTrackerService oldTrackerService) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.streetDispatcher = streetDispatcher;
         this.houseDispatcher = houseDispatcher;
         this.cityDispatcher = cityDispatcher;
         this.commentDispatcher = commentDispatcher;
-        this.modelItemDispatcher = modelItemDispatcher;
         this.employeeDispatcher = employeeDispatcher;
         this.attachmentDispatcher = attachmentDispatcher;
         this.departmentsDispatcher = departmentsDispatcher;
         this.positionDispatcher = positionDispatcher;
-        this.taskEventDispatcher = taskEventDispatcher;
         this.stompController = stompController;
         this.taskTagDispatcher = taskTagDispatcher;
-        this.taskFieldsSnapshotDispatcher = taskFieldsSnapshotDispatcher;
         this.notificationDispatcher = notificationDispatcher;
         this.workLogDispatcher = workLogDispatcher;
         this.chatDispatcher = chatDispatcher;
@@ -178,12 +148,9 @@ public class PrivateRequestController {
         this.paidWorkDispatcher = paidWorkDispatcher;
         this.workCalculationDispatcher = workCalculationDispatcher;
         this.workingDayDispatcher = workingDayDispatcher;
-        this.apiBillingController = apiBillingController;
-        this.acpClient = acpClient;
         this.clientEquipmentDispatcher = clientEquipmentDispatcher;
         this.filesWatchService = filesWatchService;
         this.phyPhoneService = phyPhoneService;
-        this.phyPhoneInfoRepository = phyPhoneInfoRepository;
         this.oldTrackerService = oldTrackerService;
     }
 
@@ -357,199 +324,26 @@ public class PrivateRequestController {
         return ResponseEntity.ok().build();
     }
 
-    // Создание новой задачи
-    @PostMapping("task")
-    public ResponseEntity<Task> createTask(@RequestBody Task.CreationBody body, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-
-        try {
-            // Создаём задачу в базе данных
-            Task createdTask = taskDispatcher.createTask(body, employee);
-
-            Set<Employee> observers = createdTask.getAllEmployeesObservers(employee);
-            // Создаем оповещение о новой задаче
-            notificationDispatcher.createNotification(observers, Notification.taskCreated(createdTask));
-
-            createdTask.getAllEmployeesObservers().forEach(observer -> {
-                WireframeTaskCounter wireframeTaskCounter = new WireframeTaskCounter();
-                Long wireframeId = createdTask.getModelWireframe().getWireframeId();
-                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
-                wireframeTaskCounter.setId(wireframeId);
-                wireframeTaskCounter.setNum(incomingTasksCount);
-                stompController.updateIncomingTaskCounter(observer.getLogin(), wireframeTaskCounter);
-            });
-
-            // Если в задаче при создании были дочерние задачи, обновляем информацию в них
-            if (createdTask.getChildren() != null)
-                createdTask.getChildren().forEach(child -> {
-                    stompController.updateTask(child);
-
-                    TaskEvent taskChildEvent = taskEventDispatcher.appendEvent(
-                            TaskEvent.linkedToChildTask(createdTask, Set.of(child), employee)
-                    );
-                    stompController.createTaskEvent(createdTask.getTaskId(), taskChildEvent);
-
-                    TaskEvent taskParentEvent = taskEventDispatcher.appendEvent(
-                            TaskEvent.linkedToParentTask(child, createdTask, employee)
-                    );
-                    stompController.createTaskEvent(child.getTaskId(), taskParentEvent);
-                });
-
-            // Если задача создавалась как дочерняя, то обновляем информацию в родительской задаче
-            if (createdTask.getParent() != null) {
-                try {
-                    Task parentTask = taskDispatcher.getTask(createdTask.getParent());
-                    stompController.updateTask(parentTask);
-
-                    TaskEvent taskParentEvent = taskEventDispatcher.appendEvent(TaskEvent.linkedToParentTask(createdTask, parentTask, employee));
-                    stompController.createTaskEvent(createdTask.getTaskId(), taskParentEvent);
-
-                    TaskEvent taskTargetEvent = taskEventDispatcher.appendEvent(TaskEvent.linkedToChildTask(parentTask, Set.of(createdTask), employee));
-                    stompController.createTaskEvent(parentTask.getTaskId(), taskTargetEvent);
-
-                } catch (EntryNotFound e) {
-                    throw new ResponseException("Не удалось получить родительскую задачу");
-                }
-            }
-
-            return ResponseEntity.ok(createdTask);
-        } catch (IllegalFields | EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Удаление задачи
-    @DeleteMapping("task/{id}")
-    public ResponseEntity<?> deleteTask(@PathVariable Long id, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        try {
-            Task task = taskDispatcher.deleteTask(id, employee);
-            Set<Employee> observers = task.getAllEmployeesObservers(employee);
-            notificationDispatcher.createNotification(observers, Notification.taskDeleted(task, employee));
-        } catch (EntryNotFound e) {
-            throw new ResponseException("Задача с идентификатором " + id + " не найдена в базе данных");
-        }
-        return ResponseEntity.ok().build();
-    }
-
-    // Получение задачи по идентификатору
-    @GetMapping("task/{id}")
-    public ResponseEntity<Task> getTask(@PathVariable Long id) {
-        try {
-            return ResponseEntity.ok(taskDispatcher.getTask(id));
-        } catch (EntryNotFound e) {
-            throw new ResponseException("Задача c id:" + id + " не найдена");
-        }
-    }
-
-    // Получение коренного родителя задачи по идентификатору
-    @GetMapping("task/{id}/root")
-    public ResponseEntity<Task> getRootTask(@PathVariable Long id) {
-        try {
-            return ResponseEntity.ok(taskDispatcher.getRootTask(id));
-        } catch (EntryNotFound e) {
-            throw new ResponseException("Задача c id:" + id + " не найдена");
-        }
-    }
-
-    // Получение полей задачи по идентификатору
-    @GetMapping("task/{id}/fields")
-    public ResponseEntity<List<ModelItem>> getTaskFields(@PathVariable Long id) {
-        return ResponseEntity.ok(modelItemDispatcher.getFieldsTask(id));
-    }
-
-    // Получение страницу с задачами используя фильтрацию
-    @PostMapping("tasks/{page}")
-    public ResponseEntity<Page<TaskListDto>> getTasks(@PathVariable Integer page, @Nullable @RequestBody TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        if (condition == null) {
-            return ResponseEntity.ok(taskDispatcher.getTasks(page, 15, null, null).map(TaskListDto::of));
-        }
-        condition.clean();
-
-        Instant startDBRequest = Instant.now();
-
-        Page<Task> tasks;
-        if (condition.getOnlyMy() != null && condition.getOnlyMy()) {
-            tasks = taskDispatcher.getTasks(page, 15, condition, employee);
-        } else {
-            tasks = taskDispatcher.getTasks(page, 15, condition, null);
-        }
-
-        Instant endDBRequest = Instant.now();
-        Duration dbDuration = Duration.between(startDBRequest, endDBRequest);
-
-        return ResponseEntity.ok()
-                .header("Server-Timing", "db;desc=\"DB Reading\";dur=" + dbDuration.toMillis())
-                .body(tasks.map(TaskListDto::of));
-    }
-
-    @GetMapping("task/{id}/type-list/available-to-change")
-    public ResponseEntity<List<TaskStage>> getAvailableTaskTypesToChange(@PathVariable Long id, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        return ResponseEntity.ok(taskDispatcher.getAvailableTaskTypesToChange(id));
-    }
-
-    @GetMapping("task/{id}/directory-list/available-to-change")
-    public ResponseEntity<List<TaskTypeDirectory>> getAvailableDirectoriesToChange(@PathVariable Long id, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        return ResponseEntity.ok(taskDispatcher.getAvailableTaskDirectoryToChange(id));
-    }
-
-    // Получает страницу с задачами принадлежащими текущему наблюдателю
-    @GetMapping("tasks/incoming/{page}")
-    public ResponseEntity<Page<Task>> getIncomingTasks(@PathVariable Integer page, TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        condition.clean();
-        return ResponseEntity.ok(taskDispatcher.getIncomingTasks(page, condition, employee));
-    }
-
-    @GetMapping("task/{taskId}/check-compatibility/{otTaskId}")
-    public ResponseEntity<Map<String,Object>> checkCompatibility(@PathVariable Long taskId, @PathVariable Long otTaskId, HttpServletRequest  request) {
-        Employee employee = getEmployeeFromRequest(request);
-        try{
-            taskDispatcher.checkCompatibility(taskId, otTaskId, employee);
-            return ResponseEntity.ok(null);
-        }catch (ResponseException e){
-            return ResponseEntity.ok(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @PatchMapping("task/{taskId}/connect-to/{otTaskId}")
-    public ResponseEntity<Void> connectToOldTracker(@PathVariable Long taskId, @PathVariable Long otTaskId, HttpServletRequest  request) {
-        Employee employee = getEmployeeFromRequest(request);
-        taskDispatcher.connectToOldTracker(taskId, otTaskId, employee);
-        return ResponseEntity.ok().build();
-    }
-
-    //changeTaskStageInOldTracker(taskId: number, taskStageId: number) {
-    //        return this.sendPatch(`api/private/task/${taskId}/old-tracker-stage/${taskStageId}/change`, {});
-    //    }
-    @PatchMapping("task/{taskId}/old-tracker-stage/{taskStageId}/change")
-    public ResponseEntity<Void> changeTaskStageInOldTracker(@PathVariable Long taskId, @PathVariable Integer taskStageId, HttpServletRequest  request) {
-        Employee employee = getEmployeeFromRequest(request);
-        taskDispatcher.changeTaskStageInOldTracker(taskId, taskStageId, employee);
+    @PatchMapping("house/{id}/to-apartments-building")
+    public ResponseEntity<Void> makeHouseAnApartmentsBuilding(@PathVariable Long id) {
+        houseDispatcher.makeHouseAnApartmentsBuilding(id);
         return ResponseEntity.ok().build();
     }
 
     @GetMapping("wireframe/{id}/filter-fields")
-    public ResponseEntity<List<FilterModelItem>> getFiltrationFields(@PathVariable Long id){
+    public ResponseEntity<List<FilterModelItem>> getFiltrationFields(@PathVariable Long id) {
         return ResponseEntity.ok(wireframeDispatcher.getFiltrationFields(id));
     }
 
-    @GetMapping("tasks/by-login/{login}")
-    public ResponseEntity<Page<Task>> getTasksByLogin(@PathVariable String login, @RequestParam Integer page) {
-        return ResponseEntity.ok(taskDispatcher.getTasksByLogin(login, page, 5));
-    }
 
     @GetMapping("wireframe/{id}/stages")
     public ResponseEntity<List<TaskStage>> getStages(@PathVariable Long id, HttpServletRequest request) {
         Employee employee = getEmployeeFromRequest(request);
         Wireframe wireframe = wireframeDispatcher.getWireframeById(id);
-        if(wireframe == null) throw new EntryNotFound("Шаблон не найден");
+        if (wireframe == null) throw new EntryNotFound("Шаблон не найден");
         List<TaskStage> stages = wireframe.getStages();
         taskDispatcher.getIncomingTasksCount(employee, id);
-        if(stages == null) return ResponseEntity.ok(List.of());
+        if (stages == null) return ResponseEntity.ok(List.of());
         return ResponseEntity.ok(stages);
     }
 
@@ -558,224 +352,11 @@ public class PrivateRequestController {
         return ResponseEntity.ok(taskDispatcher.getWireframeDashboardStatistic(id));
     }
 
-    // Получает количество задач принадлежащих текущему наблюдателю
-    @GetMapping("tasks/incoming/count")
-    public ResponseEntity<Long> getCountIncomingTasks(HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        return ResponseEntity.ok(taskDispatcher.getIncomingTasksCount(employee));
-    }
-
-    // Получает количество задач принадлежащих текущему наблюдателю отфильтрованы по шаблонам
-    @GetMapping("tasks/incoming/wireframe/{wireframeId}/count")
-    public ResponseEntity<Long> getCountIncomingTasksWireframe(@PathVariable Long wireframeId, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        return ResponseEntity.ok(taskDispatcher.getIncomingTasksCount(employee, wireframeId));
-    }
-
-    @GetMapping("tasks/wireframe/by-tags/count")
-    public ResponseEntity<Map<Long,Long>> getCountTasksWireframeByTag(@RequestParam List<Long> wireframeIds) {
-        return ResponseEntity.ok(taskDispatcher.getTasksCountByTags(wireframeIds));
-    }
-
-    @GetMapping("tasks/incoming/wireframe/by-tags/count")
-    public ResponseEntity<Map<Long,Long>> getCountIncomingTasksWireframeByTag(@RequestParam List<Long> wireframeIds, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        return ResponseEntity.ok(taskDispatcher.getIncomingTasksCountByTags(employee, wireframeIds));
-    }
-
-    @GetMapping("tasks/incoming/wireframe/{wireframeId}/by-stages/count")
-    public ResponseEntity<Map<String,Long>> getCountIncomingTasksByStages(@PathVariable Long wireframeId, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        return ResponseEntity.ok(taskDispatcher.getIncomingTasksCountByStages(employee, wireframeId));
-    }
-
-    @GetMapping("tasks/wireframe/{wireframeId}/by-stages/count")
-    public ResponseEntity<Map<String,Long>> getCountTasksByStages(@PathVariable Long wireframeId) {
-        return ResponseEntity.ok(taskDispatcher.getTasksCountByStages(wireframeId));
-    }
-
-    @PostMapping("tasks/count")
-    public ResponseEntity<Long> getCountTasks(@RequestBody TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
-//        Employee employee = getEmployeeFromRequest(request);
-        return ResponseEntity.ok(taskDispatcher.getTasksCount(condition));
-    }
 
     @PostMapping("tags/catalog/list")
-    public ResponseEntity<List<TagWithTaskCountItem>> getTagsListFromCatalog(@RequestBody TaskDispatcher.FiltrationConditions condition, HttpServletRequest request){
+    public ResponseEntity<List<TagWithTaskCountItem>> getTagsListFromCatalog(@RequestBody TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
 //       Employee employee = getEmployeeFromRequest(request);
-       return ResponseEntity.ok(taskDispatcher.getTagsListFromCatalog(condition));
-    }
-
-    // Получает количество всех не закрытых задач по шаблонам
-    @GetMapping("tasks/wireframe/{wireframeId}/count")
-    public ResponseEntity<Long> getCountTasksWireframe(@PathVariable Long wireframeId) {
-        return ResponseEntity.ok(taskDispatcher.getTasksCount(wireframeId));
-    }
-
-    // Получает список с задачами запланированных на определенный период
-    @GetMapping("tasks/scheduled")
-    public ResponseEntity<List<Task>> getScheduledTasks(@RequestParam Timestamp start, @RequestParam Timestamp end,
-                                                        HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        return ResponseEntity.ok(taskDispatcher.getScheduledTasks(employee, start, end));
-    }
-
-    // Сдвигает даты актуальности на определенный промежуток времени
-    @PatchMapping("task/{taskId}/scheduled/move")
-    public ResponseEntity<Task> moveTaskScheduled(@PathVariable Long taskId, @RequestBody IDuration delta, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        try {
-            Task task = taskDispatcher.moveTaskScheduled(taskId, delta);
-            TaskEvent taskEvent;
-            // Создаем события в журнале задачи если даты изменились
-            if (task.getActualFrom() != null) {
-                taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeActualFrom(task, task.getActualFrom().toInstant(), employee));
-                stompController.createTaskEvent(taskId, taskEvent);
-            }
-            if (task.getActualTo() != null) {
-                taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeActualTo(task, task.getActualTo().toInstant(), employee));
-                stompController.createTaskEvent(taskId, taskEvent);
-            }
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-
-    // Получение страницы с задачами которые не находятся ни в одной стадии
-    @GetMapping("tasks/template/{templateId}/stage")
-    public ResponseEntity<Page<Task>> getActiveTasksByNullStage(@PathVariable Long templateId, @RequestParam Long offset, @RequestParam Integer limit) {
-        return ResponseEntity.ok().body(taskDispatcher.getActiveTasksByStage(templateId, null, offset, limit));
-    }
-
-    // Получение страницы с задачами из конкретной стадии
-    @GetMapping("tasks/template/{templateId}/stage/{stageId}")
-    public ResponseEntity<Page<Task>> getActiveTasksByStage(@PathVariable Long templateId, @PathVariable String stageId, @RequestParam Long offset, @RequestParam Integer limit) {
-        return ResponseEntity.ok().body(taskDispatcher.getActiveTasksByStage(templateId, stageId, offset, limit));
-    }
-
-    // Получение списка идентификаторов задач без стадии
-    @GetMapping("tasks/template/{templateId}/stage/taskIdOnly")
-    public ResponseEntity<List<Long>> getActiveTaskIdsByNullStage(@PathVariable Long templateId) {
-        return ResponseEntity.ok().body(taskDispatcher.getActiveTaskIdsByStage(templateId, null));
-    }
-
-    // Получение списка идентификаторов задач из конкретной стадии
-    @GetMapping("tasks/template/{templateId}/stage/{stageId}/taskIdOnly")
-    public ResponseEntity<List<Long>> getActiveTaskIdsByStage(@PathVariable Long templateId, @PathVariable String stageId) {
-        return ResponseEntity.ok().body(taskDispatcher.getActiveTaskIdsByStage(templateId, stageId));
-    }
-
-    // Изменение стадии задачи
-    @PatchMapping("task/{taskId}/stage")
-    public ResponseEntity<Task> changeTaskStage(@PathVariable Long taskId, @RequestBody Map<String, String> body, HttpServletRequest request) {
-        try {
-            Employee employeeFromRequest = getEmployeeFromRequest(request);
-            Task task = taskDispatcher.changeTaskStage(taskId, body.get("stageId"));
-
-            Long wireframeId = task.getModelWireframe().getWireframeId();
-
-            task.getAllEmployeesObservers().forEach(observer -> {
-                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
-                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
-                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
-                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
-                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
-            });
-
-            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
-            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
-            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
-            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
-            stompController.updateTagTaskCounter(tasksCountByTags);
-
-            Set<Employee> observers = task.getAllEmployeesObservers(employeeFromRequest);
-            notificationDispatcher.createNotification(observers, Notification.taskStageChanged(task, employeeFromRequest));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeStage(task, task.getCurrentStage(), employeeFromRequest));
-            stompController.createTaskEvent(taskId, taskEvent);
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Отсоединяет задачу от родительской
-    @PatchMapping("task/{taskId}/unlink-parent")
-    public ResponseEntity<Task> unlinkParentTask(@PathVariable Long taskId, HttpServletRequest request) {
-        try {
-            Pair<Task, Task> taskTaskPair = taskDispatcher.unlinkFromParent(taskId);
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.unlinkFromParentTask(taskTaskPair.getFirst(), taskTaskPair.getSecond(), getEmployeeFromRequest(request)));
-            TaskEvent parentTaskEvent = taskEventDispatcher.appendEvent(TaskEvent.unlinkChildTask(taskTaskPair.getSecond(), Set.of(taskTaskPair.getFirst()), getEmployeeFromRequest(request)));
-            stompController.createTaskEvent(taskId, taskEvent);
-            stompController.createTaskEvent(taskTaskPair.getSecond().getTaskId(), parentTaskEvent);
-            return ResponseEntity.ok(taskTaskPair.getFirst());
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Устанавливает родительскую задачу
-    @PatchMapping("task/{taskId}/link-to-parent")
-    public ResponseEntity<Task> changeLinkToParentTask(@PathVariable Long taskId, @RequestBody Map<String, Long> body, HttpServletRequest request) {
-        try {
-            Triplet<Task, Task, Task> taskTriplet = taskDispatcher.changeLinkToParentTask(taskId, body.get("parentTaskId"));
-            Employee author = getEmployeeFromRequest(request);
-            TaskEvent targetTaskEvent = taskEventDispatcher.appendEvent(TaskEvent.linkedToParentTask(taskTriplet.getValue0(), taskTriplet.getValue1(), author));
-            stompController.createTaskEvent(taskId, targetTaskEvent);
-            TaskEvent parentTaskEvent = taskEventDispatcher.appendEvent(TaskEvent.linkedToChildTask(taskTriplet.getValue1(), Set.of(taskTriplet.getValue0()), author));
-            stompController.createTaskEvent(taskTriplet.getValue1().getTaskId(), parentTaskEvent);
-            if (taskTriplet.getValue2() != null) {
-                TaskEvent previousParentTasksEvent = taskEventDispatcher.appendEvent(TaskEvent.unlinkChildTask(taskTriplet.getValue2(), Set.of(taskTriplet.getValue0()), author));
-                stompController.createTaskEvent(taskTriplet.getValue2().getTaskId(), previousParentTasksEvent);
-            }
-            return ResponseEntity.ok(taskTriplet.getValue0());
-        } catch (EntryNotFound | IllegalFields e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Добавляет в задачу ссылки на дочерние задачи
-    @PatchMapping("task/{taskId}/append-links-to-children")
-    public ResponseEntity<Task> appendLinksToChildrenTask(@PathVariable Long taskId, @RequestBody Set<Long> childIds, HttpServletRequest request) {
-        try {
-            Triplet<Task, List<Task>, List<Pair<Task, Task>>> complexOfTasks = taskDispatcher.appendLinksToChildrenTask(taskId, childIds);
-            Employee author = getEmployeeFromRequest(request);
-            TaskEvent targetTaskEvent = taskEventDispatcher.appendEvent(TaskEvent.linkedToChildTask(complexOfTasks.getValue0(), new HashSet<>(complexOfTasks.getValue1()), author));
-            stompController.createTaskEvent(taskId, targetTaskEvent);
-            complexOfTasks.getValue1().forEach(childTasks -> {
-                TaskEvent childTaskEvent = taskEventDispatcher.appendEvent(TaskEvent.linkedToParentTask(childTasks, complexOfTasks.getValue0(), author));
-                stompController.createTaskEvent(childTasks.getTaskId(), childTaskEvent);
-            });
-            complexOfTasks.getValue2().forEach(previousParentChild -> {
-                TaskEvent previousParentTasksEvent = taskEventDispatcher.appendEvent(TaskEvent.unlinkChildTask(previousParentChild.getFirst(), Set.of(previousParentChild.getSecond()), author));
-                stompController.createTaskEvent(previousParentChild.getFirst().getTaskId(), previousParentTasksEvent);
-            });
-            return ResponseEntity.ok(complexOfTasks.getValue0());
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Устанавливает теги задачи
-    @PatchMapping("task/{taskId}/tags")
-    public ResponseEntity<Task> changeTaskTags(@PathVariable Long taskId, @RequestBody Set<TaskTag> body, HttpServletRequest request) {
-        try {
-            Task task = taskDispatcher.modifyTags(taskId, body);
-
-            task.getAllEmployeesObservers().forEach(observer->{
-                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
-                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
-            });
-            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
-            stompController.updateTagTaskCounter(tasksCountByTags);
-
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeTags(task, body, getEmployeeFromRequest(request)));
-            stompController.createTaskEvent(taskId, taskEvent);
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
+        return ResponseEntity.ok(taskDispatcher.getTagsListFromCatalog(condition));
     }
 
     // Создает тег задачи
@@ -798,7 +379,7 @@ public class PrivateRequestController {
     public ResponseEntity<TaskTag> updateTaskTag(@RequestBody TaskTag.Form form) {
         form.throwIfIncomplete();
         try {
-            if(form.getId() == null) throw new ResponseException("Не установлен id тега в запросе");
+            if (form.getId() == null) throw new ResponseException("Не установлен id тега в запросе");
             TaskTag modifyTag = taskTagDispatcher.modify(form);
             stompController.updateTaskTag(modifyTag);
             return ResponseEntity.ok(modifyTag);
@@ -873,209 +454,6 @@ public class PrivateRequestController {
             stompController.deleteComment(CommentMapper.toDto(comment), comment.getParent().getTaskId().toString());
             return ResponseEntity.ok(comment);
         } catch (EntryNotFound | NotOwner e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Получает страницу с комментариями и событиями в конкретной задаче
-    @GetMapping("task/{id}/journal")
-    public ResponseEntity<Page<TaskJournalItem>> getTaskJournal(@PathVariable Long id, @RequestParam Long offset, @RequestParam @Nullable TaskJournalSortingTypes sorting, @RequestParam Integer limit) {
-        Page<Comment> comments = commentDispatcher.getComments(id, offset, limit, sorting).map(CommentMapper::fromDto);
-        List<TaskJournalItem> commentItems = comments.getContent().stream().map(commentDto -> (TaskJournalItem) commentDto).collect(Collectors.toList());
-        if (comments.getTotalElements() == 0L) {
-            List<TaskEvent> taskEvents = taskEventDispatcher.getTaskEvents(id, sorting);
-            // Concat events and comments
-            List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).toList();
-            commentItems.addAll(taskEventsItems);
-            if(sorting != null) {
-                switch (sorting) {
-                    case CREATE_DATE_ASC -> commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated));
-                    case CREATE_DATE_DESC ->
-                            commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
-                }
-            } else {
-                commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
-            }
-        } else if (comments.isLast()) {
-            Comment firstComment = comments.getContent().get(0);
-            List<TaskEvent> taskEvents = new ArrayList<>();
-            if (offset == 0) {
-                taskEvents = taskEventDispatcher.getTaskEvents(id, sorting);
-            } else if (offset > 0) {
-                if(sorting == TaskJournalSortingTypes.CREATE_DATE_ASC){
-                    taskEvents = taskEventDispatcher.getTaskEventsTo(id, firstComment.getCreated(), sorting);
-                }else{
-                    taskEvents = taskEventDispatcher.getTaskEventsFrom(id, firstComment.getCreated(), sorting);
-                }
-            }
-            // Concat events and comments and sort by creation date
-            List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).toList();
-            commentItems.addAll(taskEventsItems);
-            if(sorting != null) {
-                switch (sorting) {
-                    case CREATE_DATE_ASC -> commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated));
-                    case CREATE_DATE_DESC ->
-                            commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
-                }
-            } else {
-                commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
-            }
-        } else {
-            Comment firstComment = comments.getContent().get(0);
-            Comment lastComment = comments.getContent().get(comments.getContent().size() - 1);
-            List<TaskEvent> taskEvents = new ArrayList<>();
-            if (offset == 0) {
-                if(sorting == TaskJournalSortingTypes.CREATE_DATE_ASC){
-                    taskEvents = taskEventDispatcher.getTaskEventsFrom(id, firstComment.getCreated(), sorting);
-                }else{
-                    taskEvents = taskEventDispatcher.getTaskEventsTo(id, lastComment.getCreated(), sorting);
-                }
-            } else if (offset > 0) {
-                taskEvents = taskEventDispatcher.getTaskEvents(id, firstComment.getCreated(), lastComment.getCreated(), sorting);
-            }
-            // Concat events and comments and sort by creation date
-            List<TaskJournalItem> taskEventsItems = taskEvents.stream().map(taskEvent -> (TaskJournalItem) taskEvent).toList();
-            commentItems.addAll(taskEventsItems);
-            if(sorting != null) {
-                switch (sorting) {
-                    case CREATE_DATE_ASC -> commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated));
-                    case CREATE_DATE_DESC ->
-                            commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
-                }
-            } else {
-                commentItems.sort(Comparator.comparing(TaskJournalItem::getCreated).reversed());
-            }
-        }
-
-        return ResponseEntity.ok(new PageImpl<>(commentItems, Pageable.unpaged(), comments.getTotalElements()));
-    }
-
-    // Изменяет наблюдателей в задаче
-    @PatchMapping("task/{id}/observers")
-    public ResponseEntity<Task> changeTaskObservers(@PathVariable Long id, @RequestBody ChangeTaskObserversDTO body, HttpServletRequest request) {
-        try {
-            Employee employeeFromRequest = getEmployeeFromRequest(request);
-            Task previousTask = taskDispatcher.getTask(id);
-            Set<Employee> previousObservers = new HashSet<>(previousTask.getAllEmployeesObservers());
-
-            Task task = taskDispatcher.changeTaskObservers(id, body.getDepartmentObservers(), body.getPersonalObservers());
-            Set<Employee> newObservers = new HashSet<>(task.getAllEmployeesObservers(employeeFromRequest));
-
-            // Получаем Set новых наблюдателей из разницы newObservers и previousObserver
-            Set<Employee> employeesObservers = new HashSet<>(newObservers);
-            employeesObservers.removeAll(previousObservers);
-            employeesObservers.remove(employeeFromRequest);
-
-            notificationDispatcher.createNotification(employeesObservers, Notification.youObserver(task));
-
-            List<Observer> observers = new ArrayList<>();
-            observers.addAll(task.getEmployeesObservers());
-            observers.addAll(task.getDepartmentsObservers());
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeObservers(task, observers, employeeFromRequest));
-
-            Long wireframeId = task.getModelWireframe().getWireframeId();
-
-            Set<Employee> allEmployeesObservers = task.getAllEmployeesObservers();
-            allEmployeesObservers.addAll(previousObservers);
-
-            allEmployeesObservers.forEach(observer -> {
-                Long incomingTasksCount = taskDispatcher.getIncomingTasksCount(observer, wireframeId);
-                Map<String, Long> incomingTasksCountByStages = taskDispatcher.getIncomingTasksCountByStages(observer, wireframeId);
-                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
-                Map<Long, Map<Long, Long>> incomingTasksCountByTags = taskDispatcher.getIncomingTasksCountByTags(observer);
-                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
-            });
-
-            Long tasksCount = taskDispatcher.getTasksCount(task.getModelWireframe().getWireframeId());
-            Map<String, Long> tasksCountByStages = taskDispatcher.getTasksCountByStages(wireframeId);
-            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
-            Map<Long, Map<Long, Long>> tasksCountByTags = taskDispatcher.getTasksCountByTags();
-            stompController.updateTagTaskCounter(tasksCountByTags);
-
-            stompController.createTaskEvent(id, taskEvent);
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Изменяет ответственного в задаче
-    @PatchMapping("task/{id}/responsible")
-    public ResponseEntity<Task> changeTaskResponsible(@PathVariable Long id, @RequestBody Employee body, HttpServletRequest request) {
-        try {
-            Employee employeeFromRequest = getEmployeeFromRequest(request);
-            Task task = taskDispatcher.changeTaskResponsible(id, body);
-            Set<Employee> observers = task.getAllEmployeesObservers(employeeFromRequest);
-            notificationDispatcher.createNotification(observers, Notification.youResponsible(task));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeResponsible(task, body, employeeFromRequest));
-            stompController.createTaskEvent(id, taskEvent);
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound | IllegalFields e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Удаляет ответственного в задаче
-    @PatchMapping("task/{id}/unbind-responsible")
-    public ResponseEntity<Task> unbindTaskResponsible(@PathVariable Long id, HttpServletRequest request) {
-        try {
-            Task task = taskDispatcher.unbindTaskResponsible(id);
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.unbindResponsible(task, getEmployeeFromRequest(request)));
-            stompController.createTaskEvent(id, taskEvent);
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Изменяет дату начала выполнения задачи
-    @PatchMapping("task/{id}/actual-from")
-    public ResponseEntity<Task> changeTaskActualFrom(@PathVariable Long id, @RequestBody Instant body, HttpServletRequest request) {
-        try {
-            Task task = taskDispatcher.changeTaskActualFrom(id, body);
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeActualFrom(task, body, getEmployeeFromRequest(request)));
-            stompController.createTaskEvent(id, taskEvent);
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound | IllegalFields e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Изменяет дату окончания выполнения задачи
-    @PatchMapping("task/{id}/actual-to")
-    public ResponseEntity<Task> changeTaskActualTo(@PathVariable Long id, @RequestBody Instant body, HttpServletRequest request) {
-        try {
-            Task task = taskDispatcher.changeTaskActualTo(id, body);
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.changeActualTo(task, body, getEmployeeFromRequest(request)));
-            stompController.createTaskEvent(id, taskEvent);
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound | IllegalFields e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Удаляет дату начала выполнения задачи
-    @PatchMapping("task/{id}/clear-actual-from-date")
-    public ResponseEntity<Task> clearTaskActualFromDate(@PathVariable Long id, HttpServletRequest request) {
-        try {
-            Task task = taskDispatcher.clearTaskActualFrom(id);
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.clearActualFrom(task, getEmployeeFromRequest(request)));
-            stompController.createTaskEvent(id, taskEvent);
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Удаляет дату окончания выполнения задачи
-    @PatchMapping("task/{id}/clear-actual-to-date")
-    public ResponseEntity<Task> clearTaskActualToDate(@PathVariable Long id, HttpServletRequest request) {
-        try {
-            Task task = taskDispatcher.clearTaskActualTo(id);
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.clearActualTo(task, getEmployeeFromRequest(request)));
-            stompController.createTaskEvent(id, taskEvent);
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound e) {
             throw new ResponseException(e.getMessage());
         }
     }
@@ -1200,127 +578,6 @@ public class PrivateRequestController {
             } catch (IOException e) {
                 response.setStatus(HttpStatus.NOT_FOUND.value());
             }
-        }
-    }
-
-    // Получает список файлов прикрепленных к задаче
-    @GetMapping("task/{taskId}/attachments")
-    public ResponseEntity<List<Attachment>> getAllTaskAttachments(@PathVariable Long taskId) {
-        if (taskId == null) throw new ResponseException("Укажите корректный идентификатор задачи");
-        return ResponseEntity.ok(attachmentDispatcher.getByTask(taskId));
-    }
-
-    // Получает количество файлов прикрепленных к задаче
-    @GetMapping("task/{taskId}/attachments/count")
-    public ResponseEntity<Integer> getAllTaskAttachmentsCount(@PathVariable Long taskId) {
-        if (taskId == null) throw new ResponseException("Укажите корректный идентификатор задачи");
-        return ResponseEntity.ok(attachmentDispatcher.getCountByTask(taskId));
-    }
-
-    // Назначает монтажников на задачу
-    @PostMapping("task/{taskId}/assign-installers")
-    public ResponseEntity<Void> assignInstallers(@PathVariable Long taskId, @RequestBody WorkLog.AssignBody body, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        try {
-            WorkLog workLog = taskDispatcher.assignInstallers(taskId, body, employee);
-            List<Employee> acceptedEmployees = workLogDispatcher.getAcceptedEmployees(workLog.getEmployees());
-            telegramController.assignInstallers(workLog, employee, acceptedEmployees);
-            stompController.createWorkLog(workLog);
-            stompController.createChat(Objects.requireNonNull(ChatMapper.toDto(workLog.getChat())));
-            Set<Employee> observers = workLog.getTask().getAllEmployeesObservers(employee);
-            notificationDispatcher.createNotification(observers, Notification.taskProcessed(workLog));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.createdWorkLog(workLog.getTask(), workLog, employee));
-            stompController.createTaskEvent(taskId, taskEvent);
-        } catch (Throwable e) {
-            taskDispatcher.abortAssignation(taskId, employee);
-            throw new ResponseException(e.getMessage());
-        }
-        return ResponseEntity.ok().build();
-    }
-
-    // Принудительно забирает задачу у монтажников
-    @PostMapping("task/{taskId}/force-close-work-log")
-    public ResponseEntity<Void> forceCloseWorkLog(@PathVariable Long taskId, @RequestBody String reasonOfClosing, HttpServletRequest request) {
-        try {
-            WorkLog taskWorkPair = taskDispatcher.forceCloseWorkLog(taskId, reasonOfClosing, getEmployeeFromRequest(request));
-            stompController.closeChat(taskWorkPair.getChat());
-            stompController.closeWorkLog(taskWorkPair);
-
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.forceCloseWorkLog(taskWorkPair.getTask(), taskWorkPair, getEmployeeFromRequest(request)));
-            stompController.createTaskEvent(taskId, taskEvent);
-
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-        return ResponseEntity.ok().build();
-    }
-
-    @PatchMapping("task/move-to-directory")
-    public ResponseEntity<Void> moveTaskToDirectory(@RequestBody TaskDispatcher.MovingToDirectoryForm form, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        List<Task> tasks = taskDispatcher.moveToDirectory(form);
-        for (Task task : tasks) {
-            Set<Employee> observers = task.getAllEmployeesObservers(employee);
-            notificationDispatcher.createNotification(observers, Notification.taskMovedToDirectory(task, employee));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.movedToDirectory(task, employee));
-            stompController.createTaskEvent(task.getTaskId(), taskEvent);
-        }
-        return ResponseEntity.ok().build();
-    }
-
-
-    // Закрывает задачу
-    @PatchMapping("task/{taskId}/close")
-    public ResponseEntity<Task> closeTask(@PathVariable Long taskId, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        try {
-            Task task = taskDispatcher.close(taskId, employee, true);
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound | IllegalFields e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Вновь открывает задачу
-    @PatchMapping("task/{taskId}/reopen")
-    public ResponseEntity<Task> reopenTask(@PathVariable Long taskId, HttpServletRequest request) {
-        Employee employee = getEmployeeFromRequest(request);
-        try {
-            Task task = taskDispatcher.reopen(taskId, employee);
-
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound | IllegalFields e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Редактирует информацию в задаче
-    @PatchMapping("task/{taskId}/edit-fields")
-    public ResponseEntity<Task> editTask(@PathVariable Long taskId, @RequestBody List<ModelItem> modelItems, HttpServletRequest request) {
-        try {
-            Employee employee = getEmployeeFromRequest(request);
-            TaskFieldsSnapshotDispatcher.SnapshotBuilder snapshotBuilder = taskFieldsSnapshotDispatcher.builder().beforeEditing(taskId, employee);
-            Task task = taskDispatcher.edit(taskId, modelItems, employee);
-            snapshotBuilder.afterEditing().flush();
-            Set<Employee> observers = task.getAllEmployeesObservers(employee);
-            notificationDispatcher.createNotification(observers, Notification.taskEdited(task, employee));
-            TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.editFields(task, employee));
-            stompController.createTaskEvent(taskId, taskEvent);
-            return ResponseEntity.ok(task);
-        } catch (EntryNotFound | IllegalFields e) {
-            throw new ResponseException(e.getMessage());
-        } catch (JsonProcessingException e) {
-            throw new ResponseException("Ошибка при обработке изменений");
-        }
-    }
-
-    // Получает список с историей редактирования задачи
-    @GetMapping("task/{taskId}/edit-snapshots")
-    public ResponseEntity<List<TaskFieldsSnapshot>> getTaskEditSnapshots(@PathVariable Long taskId) {
-        try {
-            return ResponseEntity.ok(taskFieldsSnapshotDispatcher.getTaskFieldsSnapshots(taskId));
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
         }
     }
 
@@ -1504,7 +761,7 @@ public class PrivateRequestController {
     @PostMapping("call-to-phone")
     public ResponseEntity<Void> callUp(@RequestBody PhyPhoneService.CallUpRequest callUpRequest, HttpServletRequest request) {
         Employee currentUser = getEmployeeFromRequest(request);
-        if(currentUser.getPhyPhoneInfo() == null) throw new ResponseException("К аккаунту не привязан телефон");
+        if (currentUser.getPhyPhoneInfo() == null) throw new ResponseException("К аккаунту не привязан телефон");
         phyPhoneService.callUp(currentUser.getPhyPhoneInfo(), callUpRequest);
         return ResponseEntity.ok().build();
     }
@@ -1711,17 +968,6 @@ public class PrivateRequestController {
         return ResponseEntity.ok(chatDispatcher.getMyActiveChats(employee));
     }
 
-    // Получает активный чат задачи по taskId
-    @GetMapping("task/{taskId}/active-chat")
-    public ResponseEntity<Chat> getActiveChat(@PathVariable Long taskId) {
-        try {
-            WorkLog activeWorkLog = workLogDispatcher.getActiveWorkLogByTaskId(taskId);
-            return ResponseEntity.ok(activeWorkLog.getChat());
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
     // Отправляет список адресов как подсказки к автодополнению
     @GetMapping("suggestions/address")
     public ResponseEntity<List<AddressDto>> getAddressSuggestions(@RequestParam String query,
@@ -1732,9 +978,9 @@ public class PrivateRequestController {
 
     @GetMapping("suggestions/address/alt")
     public ResponseEntity<List<Address>> getAddressSuggestions(@RequestParam String query,
-                                                                  @RequestParam Long streetId,
-                                                                  @RequestParam @Nullable Boolean isAcpConnected,
-                                                                  @RequestParam @Nullable Boolean isHouseOnly) {
+                                                               @RequestParam Long streetId,
+                                                               @RequestParam @Nullable Boolean isAcpConnected,
+                                                               @RequestParam @Nullable Boolean isHouseOnly) {
         return ResponseEntity.ok(addressDispatcher.getSuggestions(streetId, query, isAcpConnected, isHouseOnly));
     }
 
@@ -1960,153 +1206,6 @@ public class PrivateRequestController {
         return ResponseEntity.ok(workingDayDispatcher.getWorkingDay(date, login));
     }
 
-    @GetMapping("acp/dhcp/bindings")
-    public ResponseEntity<List<DhcpBinding>> getDhcpBindings(@RequestParam String login) {
-        return ResponseEntity.ok(acpClient.getBindingsByLogin(login));
-    }
-
-    @GetMapping("acp/dhcp/binding/{login}/logs/{page}")
-    public ResponseEntity<LogsRequest> getDhcpBindingsLogs(@PathVariable String login, @PathVariable Integer page) {
-        return ResponseEntity.ok(acpClient.getLogsByLogin(login, page));
-    }
-
-    @GetMapping("acp/vlan/{id}/dhcp/bindings/{page}")
-    public ResponseEntity<Page<DhcpBinding>> getDhcpBindingsByVlan(@PathVariable Integer page, @PathVariable Integer id, @RequestParam String excludeLogin) {
-        return ResponseEntity.ok(acpClient.getDhcpBindingsByVlan(page, id, excludeLogin));
-    }
-
-    @GetMapping("acp/dhcp/bindings/{page}/last")
-    public ResponseEntity<Page<DhcpBinding>> getLastBindings(@PathVariable Integer page,
-                                                             @RequestParam @Nullable Short state,
-                                                             @RequestParam @Nullable String macaddr,
-                                                             @RequestParam @Nullable String login,
-                                                             @RequestParam @Nullable String ip,
-                                                             @RequestParam @Nullable Integer vlan,
-                                                             @RequestParam @Nullable Integer buildingId,
-                                                             @RequestParam @Nullable Integer commutator,
-                                                             @RequestParam @Nullable Integer port) {
-        if(commutator == null)
-            return ResponseEntity.ok(acpClient.getLastBindings(page, state, macaddr, login, ip, vlan, buildingId, null));
-
-        return ResponseEntity.ok(acpClient.getLastBindings(page, state, macaddr, login, ip, vlan, buildingId, commutator, port));
-    }
-
-    @GetMapping("acp/dhcp/binding/{id}/ncl-history")
-    public ResponseEntity<AcpClient.NCLHistoryWrapper> getNetworkConnectionLocation(@PathVariable Integer id) {
-        return ResponseEntity.ok(acpClient.getNetworkConnectionLocationHistory(id));
-    }
-
-    @PostMapping("acp/dhcp/binding/auth")
-    public ResponseEntity<Void> authDhcpBinding(@RequestBody DhcpBinding.AuthForm form) {
-        apiBillingController.getUserInfo(form.getLogin());
-        acpClient.authDhcpBinding(form);
-        return ResponseEntity.ok().build();
-    }
-
-    @GetMapping("acp/buildings")
-    public ResponseEntity<List<AcpHouse>> getBuildings(@Nullable @RequestParam String query) {
-        return ResponseEntity.ok(acpClient.getHouses(query));
-    }
-
-    @GetMapping("acp/commutators/{page}/page")
-    public ResponseEntity<Page<SwitchBaseInfo>> getCommutators(@PathVariable Integer page,
-                                                               @RequestParam @Nullable String name,
-                                                               @RequestParam @Nullable String ip,
-                                                               @RequestParam @Nullable Integer buildingId) {
-        return ResponseEntity.ok(acpClient.getCommutators(page, name, ip, buildingId, 15));
-    }
-
-    @GetMapping("acp/commutators/vlan/{vlan}")
-    public ResponseEntity<List<Switch>> getCommutatorsByVlan(@PathVariable Integer vlan) {
-        return ResponseEntity.ok(acpClient.getCommutatorsByVlan(vlan));
-    }
-
-    @GetMapping("acp/commutators/search")
-    public ResponseEntity<List<SwitchWithAddress>> searchCommutators(@RequestParam @Nullable String query) {
-        return ResponseEntity.ok(acpClient.searchCommutators(query));
-    }
-
-    @GetMapping("acp/commutator/{id}")
-    public ResponseEntity<SwitchWithAddress> getCommutator(@PathVariable Integer id) {
-        return ResponseEntity.ok(acpClient.getCommutator(id));
-    }
-
-    @GetMapping("acp/commutator/{id}/editing-preset")
-    public ResponseEntity<SwitchEditingPreset> getCommutatorEditingPreset(@PathVariable Integer id) {
-        return ResponseEntity.ok(acpClient.getCommutatorEditingPreset(id));
-    }
-
-    @PostMapping("acp/commutator/{id}/get-remote-update")
-    public ResponseEntity<Void> getCommutatorRemoteUpdate(@PathVariable Integer id) {
-        acpClient.getCommutatorRemoteUpdate(id);
-        return ResponseEntity.ok().build();
-    }
-
-    @PostMapping("acp/commutators/vlan/{vlan}/get-remote-update")
-    public ResponseEntity<Void> getCommutatorsByVlanRemoteUpdate(@PathVariable Integer vlan) {
-        acpClient.getCommutatorsByVlanRemoteUpdate(vlan);
-        return ResponseEntity.ok().build();
-    }
-
-    @PostMapping("acp/commutators/get-remote-update")
-    public ResponseEntity<Void> getCommutatorsRemoteUpdate() {
-        acpClient.getAllCommutatorsRemoteUpdate();
-        return ResponseEntity.ok().build();
-    }
-
-    @GetMapping("acp/commutator/port/{id}/fdb")
-    public ResponseEntity<List<FdbItem>> getCommutatorFdb(@PathVariable Long id) {
-        return ResponseEntity.ok(acpClient.getFdbByPort(id));
-    }
-
-
-    @PostMapping("acp/commutator")
-    public ResponseEntity<Void> createCommutator(@RequestBody Switch.Form form) {
-        if (!form.isValid()) throw new IllegalFields("Неверно заполнена форма создания коммутатора");
-        Switch createdCommutator = acpClient.createCommutator(form);
-        return ResponseEntity.ok().build();
-    }
-
-    @PatchMapping("acp/commutator/{id}")
-    public ResponseEntity<Void> updateCommutator(@PathVariable Integer id, @RequestBody Switch.Form form) {
-        if (!form.isValid()) throw new IllegalFields("Неверно заполнена форма редактирования коммутатора");
-        Switch updatedCommutator = acpClient.updateCommutator(id, form);
-        return ResponseEntity.ok().build();
-    }
-
-    @DeleteMapping("acp/commutator/{id}")
-    public ResponseEntity<Void> deleteCommutator(@PathVariable Integer id) {
-        acpClient.deleteCommutator(id);
-        return ResponseEntity.ok().build();
-    }
-
-    @GetMapping("acp/commutator/check-exist/name")
-    public ResponseEntity<Boolean> checkCommutatorNameExist(@RequestParam String name) {
-        return ResponseEntity.ok(acpClient.checkCommutatorNameExist(name));
-    }
-
-    @GetMapping("acp/commutator/check-exist/ip")
-    public ResponseEntity<Boolean> checkCommutatorIpExist(@RequestParam String ip) {
-        return ResponseEntity.ok(acpClient.checkCommutatorIpExist(ip));
-    }
-
-    @GetMapping("acp/commutator/models")
-    public ResponseEntity<List<SwitchModel>> getCommutatorModels(@RequestParam @Nullable String query) {
-        return ResponseEntity.ok(acpClient.getCommutatorModels(query));
-    }
-
-    @GetMapping("acp/commutator/model/{id}")
-    public ResponseEntity<SwitchModel> getCommutatorModel(@PathVariable Integer id) {
-        return ResponseEntity.ok(acpClient.getCommutatorModel(id));
-    }
-
-    @GetMapping("acp/building/{id}/address")
-    public ResponseEntity<Address> getBuildingAddress(@PathVariable Integer id) {
-        House houseByBind = houseDispatcher.getByAcpBindId(id);
-        if (houseByBind == null) return ResponseEntity.ok(null);
-        return ResponseEntity.ok(houseByBind.getAddress());
-    }
-
     @GetMapping("remote-control/{ip}/check-access")
     public Mono<ResponseEntity<NetworkRemoteControl>> checkAccess(@PathVariable String ip) {
         if (ip == null) throw new IllegalFields("Не указан IP адрес");
@@ -2149,12 +1248,12 @@ public class PrivateRequestController {
     }
 
     @GetMapping("types/files-sorting")
-    public ResponseEntity<List<Map<String,String>>> getFilesSortingTypes() {
+    public ResponseEntity<List<Map<String, String>>> getFilesSortingTypes() {
         return ResponseEntity.ok(FilesWatchService.FileSortingTypes.getList());
     }
 
     @GetMapping("types/phy-phone-models")
-    public ResponseEntity<List<Map<String,String>>> getPhyPhoneModelsTypes() {
+    public ResponseEntity<List<Map<String, String>>> getPhyPhoneModelsTypes() {
         return ResponseEntity.ok(PhyPhoneInfo.PhyPhoneModel.getList());
     }
 
@@ -2185,17 +1284,6 @@ public class PrivateRequestController {
         }
     }
 
-    @GetMapping("configuration/acp")
-    public ResponseEntity<AcpConf> getAcpConfiguration() {
-        return ResponseEntity.ok(acpClient.getConfiguration());
-    }
-
-    @PostMapping("configuration/acp")
-    public ResponseEntity<Void> updateAcpConfiguration(@RequestBody AcpConf conf) {
-        acpClient.setConfiguration(conf);
-        return ResponseEntity.ok().build();
-    }
-
     @GetMapping("client-equipments")
     public ResponseEntity<List<ClientEquipment>> getClientEquipment(@Nullable @RequestParam String query, @Nullable @RequestParam Boolean isDeleted) {
         return ResponseEntity.ok(clientEquipmentDispatcher.get(query, isDeleted));
@@ -2204,12 +1292,12 @@ public class PrivateRequestController {
     @GetMapping("client-equipments/suggestions")
     public ResponseEntity<List<Map<String, String>>> getClientEquipment(@Nullable @RequestParam String query) {
         return ResponseEntity.ok(clientEquipmentDispatcher.get(query, false).stream()
-                        .map(equipment -> {
-                            return Map.of(
-                                    "label", equipment.getName(),
-                                    "value", equipment.getClientEquipmentId().toString()
-                            );
-                        })
+                .map(equipment -> {
+                    return Map.of(
+                            "label", equipment.getName(),
+                            "value", equipment.getClientEquipmentId().toString()
+                    );
+                })
                 .collect(Collectors.toList()));
     }
 
@@ -2281,7 +1369,7 @@ public class PrivateRequestController {
 
     @PostMapping("files/load")
     public ResponseEntity<Void> filesLoad(@RequestBody List<FilesWatchService.LoadFileEvent> events, HttpServletRequest request) {
-        for(FilesWatchService.LoadFileEvent event : events) {
+        for (FilesWatchService.LoadFileEvent event : events) {
             filesWatchService.loadFile(event.getName(), event.getData(), event.getTargetDirectoryId());
         }
         return ResponseEntity.ok().build();
@@ -2294,9 +1382,9 @@ public class PrivateRequestController {
 
     @GetMapping("file/{id}")
     public void getTFile(@PathVariable Long id,
-                                  @RequestHeader(value = "Range", required = false) String rangeHeader,
-                                  HttpServletResponse response) {
-        TFile tFile = filesWatchService.getFileById(id).orElseThrow(()->new ResponseException("Файл не найден"));
+                         @RequestHeader(value = "Range", required = false) String rangeHeader,
+                         HttpServletResponse response) {
+        TFile tFile = filesWatchService.getFileById(id).orElseThrow(() -> new ResponseException("Файл не найден"));
 
         try {
             OutputStream os = response.getOutputStream();
@@ -2310,7 +1398,7 @@ public class PrivateRequestController {
                 if (rangeHeader == null) {
                     response.setHeader("Content-Type", tFile.getMimeType());
                     response.setHeader("Content-Length", String.valueOf(fileSize));
-                    response.setHeader("Content-Disposition", "inline;filename="+tFile.getName());
+                    response.setHeader("Content-Disposition", "inline;filename=" + tFile.getName());
 
                     response.setStatus(HttpStatus.OK.value());
                     long pos = 0;
@@ -2341,7 +1429,7 @@ public class PrivateRequestController {
                 response.setHeader("Content-Length", contentLength);
                 response.setHeader("Accept-Ranges", "bytes");
                 response.setHeader("Content-Range", "bytes" + " " + rangeStart + "-" + rangeEnd + "/" + fileSize);
-                response.setHeader("Content-Disposition", "inline;filename="+tFile.getName());
+                response.setHeader("Content-Disposition", "inline;filename=" + tFile.getName());
                 response.setStatus(HttpStatus.PARTIAL_CONTENT.value());
                 long pos = rangeStart;
                 file.seek(pos);
@@ -2366,7 +1454,7 @@ public class PrivateRequestController {
     public void getTFileThumbnail(@PathVariable Long id,
                                   @RequestHeader(value = "Range", required = false) String rangeHeader,
                                   HttpServletResponse response) {
-        TFile tFile = filesWatchService.getFileById(id).orElseThrow(()->new ResponseException("Файл не найден"));
+        TFile tFile = filesWatchService.getFileById(id).orElseThrow(() -> new ResponseException("Файл не найден"));
 
         try {
             OutputStream os = response.getOutputStream();
@@ -2380,7 +1468,7 @@ public class PrivateRequestController {
                 if (rangeHeader == null) {
                     response.setHeader("Content-Type", tFile.getMimeType());
                     response.setHeader("Content-Length", String.valueOf(fileSize));
-                    response.setHeader("Content-Disposition", "inline;filename="+tFile.getName());
+                    response.setHeader("Content-Disposition", "inline;filename=" + tFile.getName());
 
                     response.setStatus(HttpStatus.OK.value());
                     long pos = 0;
@@ -2411,7 +1499,7 @@ public class PrivateRequestController {
                 response.setHeader("Content-Length", contentLength);
                 response.setHeader("Accept-Ranges", "bytes");
                 response.setHeader("Content-Range", "bytes" + " " + rangeStart + "-" + rangeEnd + "/" + fileSize);
-                response.setHeader("Content-Disposition", "inline;filename="+tFile.getName());
+                response.setHeader("Content-Disposition", "inline;filename=" + tFile.getName());
                 response.setStatus(HttpStatus.PARTIAL_CONTENT.value());
                 long pos = rangeStart;
                 file.seek(pos);
@@ -2434,7 +1522,7 @@ public class PrivateRequestController {
 
     @GetMapping("accounting/monthly-salary-report-table")
     public void getMonthlySalaryReportTable(@RequestParam Long date, HttpServletResponse response) {
-        org.javatuples.Pair<Date,Date> monthBoundaries = Utils.getMonthBoundaries(new Date(date));
+        org.javatuples.Pair<Date, Date> monthBoundaries = Utils.getMonthBoundaries(new Date(date));
         Map<Date, List<WorkingDay>> workingDaysByOffsiteEmployees = workingDayDispatcher.getWorkingDaysByOffsiteEmployees(monthBoundaries.getValue0(), monthBoundaries.getValue1());
         MonthlySalaryReportTable document = TDocumentFactory.createMonthlySalaryReportTable(workingDaysByOffsiteEmployees, monthBoundaries.getValue0(), monthBoundaries.getValue1());
         document.sendByResponse(response);

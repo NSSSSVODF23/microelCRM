@@ -1,7 +1,7 @@
 package com.microel.trackerbackend.controllers.configuration.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.microel.trackerbackend.controllers.configuration.AbstractConfiguration;
+import com.microel.confstore.AbstractConfiguration;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -16,6 +16,11 @@ public class TelegramConf implements AbstractConfiguration {
     private String botName;
     private String dhcpNotificationChatId;
 
+
+    @Override
+    public String fileName() {
+        return "telegram.conf";
+    }
 
     @Override
     @JsonIgnore

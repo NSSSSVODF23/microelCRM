@@ -15,6 +15,7 @@ import com.microel.trackerbackend.storage.dto.mapper.WorkLogMapper;
 import com.microel.trackerbackend.storage.dto.task.WorkLogDto;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
+import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.task.*;
@@ -26,10 +27,7 @@ import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.AlreadyClosed;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
-import com.microel.trackerbackend.storage.repositories.TypesOfContractsRepository;
-import com.microel.trackerbackend.storage.repositories.WorkLogRepository;
-import com.microel.trackerbackend.storage.repositories.WorkLogTargetFileRepository;
-import com.microel.trackerbackend.storage.repositories.WorkReportRepository;
+import com.microel.trackerbackend.storage.repositories.*;
 import lombok.Data;
 import org.hibernate.Hibernate;
 import org.springframework.context.annotation.Lazy;
@@ -68,6 +66,7 @@ public class WorkLogDispatcher {
     private final TypesOfContractsRepository typesOfContractsRepository;
     private final AddressDispatcher addressDispatcher;
     private final TelegramController telegramController;
+    private final CommentRepository commentRepository;
 
     public WorkLogDispatcher(WorkLogRepository workLogRepository, EmployeeDispatcher employeeDispatcher,
                              TaskEventDispatcher taskEventDispatcher, @Lazy TaskDispatcher taskDispatcher,
@@ -75,7 +74,8 @@ public class WorkLogDispatcher {
                              WorkReportRepository workReportRepository, WorkLogTargetFileRepository workLogTargetFileRepository,
                              OldTrackerService oldTrackerService, FilesWatchService filesWatchService,
                              TypesOfContractsRepository typesOfContractsRepository, AddressDispatcher addressDispatcher,
-                             @Lazy TelegramController telegramController) {
+                             @Lazy TelegramController telegramController,
+                             CommentRepository commentRepository) {
         this.workLogRepository = workLogRepository;
         this.employeeDispatcher = employeeDispatcher;
         this.taskEventDispatcher = taskEventDispatcher;
@@ -89,6 +89,7 @@ public class WorkLogDispatcher {
         this.typesOfContractsRepository = typesOfContractsRepository;
         this.addressDispatcher = addressDispatcher;
         this.telegramController = telegramController;
+        this.commentRepository = commentRepository;
     }
 
     @Scheduled(cron = "0 0 12 * * *")
@@ -178,6 +179,7 @@ public class WorkLogDispatcher {
                 .workReports(new HashSet<>())
                 .acceptedEmployees(new HashSet<>())
                 .calculated(false)
+                .comments(new ArrayList<>())
                 .build();
 
 
@@ -199,6 +201,10 @@ public class WorkLogDispatcher {
                     targetFiles.add(file.toWorkLogTargetFile());
                 });
             }
+        }
+        if(assignBody.getComments() != null && !assignBody.getComments().isEmpty()) {
+            List<Comment> comments = commentRepository.findAllById(assignBody.getComments());
+            workLog.appendAllComments(comments);
         }
 
         workLog.setTargetFiles(targetFiles);
@@ -230,6 +236,10 @@ public class WorkLogDispatcher {
                 .task(task)
                 .isForceClosed(false)
                 .employees(installersReportForm.getInstallers())
+                .targetFiles(new ArrayList<>())
+                .deferredReport(false)
+                .concludedContracts(new ArrayList<>())
+                .taskIsClearlyCompleted(true)
                 .creator(creator)
                 .closed(creatingDate)
                 .acceptedEmployees(

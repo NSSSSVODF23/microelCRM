@@ -1,7 +1,7 @@
 package com.microel.trackerbackend.parsers.oldtracker;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
+import com.microel.trackerbackend.controllers.configuration.Configuration;
 import com.microel.trackerbackend.controllers.configuration.FailedToReadConfigurationException;
 import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigurationException;
 import com.microel.trackerbackend.misc.CircularQueue;
@@ -44,7 +44,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class OldTracker {
     @JsonIgnore
-    private final ConfigurationStorage configurationStorage;
+    private final Configuration configuration;
     @JsonIgnore
     private final AddressDispatcher addressDispatcher;
     @JsonIgnore
@@ -74,9 +74,9 @@ public class OldTracker {
     @JsonIgnore
     private List<WireframeDto> wireframeDtoList = new ArrayList<>();
 
-    public OldTracker(ConfigurationStorage configurationStorage, AddressDispatcher addressDispatcher, StreetDispatcher streetDispatcher,
+    public OldTracker(Configuration configuration, AddressDispatcher addressDispatcher, StreetDispatcher streetDispatcher,
                       TaskDispatcher taskDispatcher, EmployeeDispatcher employeeDispatcher, CityDispatcher cityDispatcher, StompController stompController, WireframeDispatcher wireframeDispatcher) {
-        this.configurationStorage = configurationStorage;
+        this.configuration = configuration;
         this.addressDispatcher = addressDispatcher;
         this.streetDispatcher = streetDispatcher;
         this.taskDispatcher = taskDispatcher;
@@ -84,10 +84,10 @@ public class OldTracker {
         this.stompController = stompController;
         this.wireframeDispatcher = wireframeDispatcher;
         cityDispatcher.getCities().forEach(city -> cityMap.put(city.getName(), city));
-        this.settings = configurationStorage.loadOrDefault(OldTrackerParserSettings.class, new OldTrackerParserSettings());
+        this.settings = configuration.loadOrDefault(OldTrackerParserSettings.class, new OldTrackerParserSettings());
         try {
-            this.notCreatedTasksPool = configurationStorage.load(UncreatedTasksPool.class);
-            this.addressCorrectingPool = configurationStorage.load(AddressCorrectingPool.class);
+            this.notCreatedTasksPool = configuration.load(UncreatedTasksPool.class);
+            this.addressCorrectingPool = configuration.load(AddressCorrectingPool.class);
         } catch (FailedToReadConfigurationException ignored) {
         }
     }
@@ -154,7 +154,7 @@ public class OldTracker {
 
     private void saveSettings() {
         try {
-            configurationStorage.save(settings);
+            configuration.save(settings);
         } catch (FailedToWriteConfigurationException ignore) {
         }
     }
@@ -251,7 +251,7 @@ public class OldTracker {
                     TaskDto uncreated = taskFactory.createAccident(login, null, phone, description, workReport);
                     notCreatedTasksPool.put(uniqueTaskCreationID, uncreated);
                     try {
-                        configurationStorage.save(addressCorrectingPool);
+                        configuration.save(addressCorrectingPool);
                     } catch (FailedToWriteConfigurationException ex) {
                         log.error("Не удалось записать AddressCorrectingPool в файл");
                     }
@@ -287,7 +287,7 @@ public class OldTracker {
                     TaskDto uncreated = taskFactory.createConnection(takenFrom, type, login, password, fullName.toString(), null, phone, advertisingSource, techWork);
                     notCreatedTasksPool.put(uniqueTaskCreationID, uncreated);
                     try {
-                        configurationStorage.save(addressCorrectingPool);
+                        configuration.save(addressCorrectingPool);
                     } catch (FailedToWriteConfigurationException ex) {
                         log.error("Не удалось записать AddressCorrectingPool в файл");
                     }
@@ -314,7 +314,7 @@ public class OldTracker {
                     TaskDto uncreated = taskFactory.createPrivateSectorVD(district, null, phone, name, takenFrom);
                     notCreatedTasksPool.put(uniqueTaskCreationID, uncreated);
                     try {
-                        configurationStorage.save(addressCorrectingPool);
+                        configuration.save(addressCorrectingPool);
                     } catch (FailedToWriteConfigurationException ex) {
                         log.error("Не удалось записать AddressCorrectingPool в файл");
                     }
@@ -341,7 +341,7 @@ public class OldTracker {
                     TaskDto uncreated = taskFactory.createPrivateSectorRM(gardening, null, name, phone, advertisingSource);
                     notCreatedTasksPool.put(uniqueTaskCreationID, uncreated);
                     try {
-                        configurationStorage.save(addressCorrectingPool);
+                        configuration.save(addressCorrectingPool);
                     } catch (FailedToWriteConfigurationException ex) {
                         log.error("Не удалось записать AddressCorrectingPool в файл");
                     }

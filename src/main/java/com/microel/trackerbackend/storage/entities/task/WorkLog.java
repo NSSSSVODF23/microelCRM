@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonManagedReference;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.filemanager.FileData;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
+import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
@@ -84,6 +85,19 @@ public class WorkLog {
     @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @BatchSize(size = 25)
     private List<Contract> concludedContracts;
+
+    @ManyToMany(mappedBy = "workLogs")
+    @Fetch(FetchMode.SUBSELECT)
+    @JsonIgnore
+    private List<Comment> comments;
+
+    public void appendAllComments(List<Comment> comments) {
+        if (this.getComments() == null) this.setComments(new ArrayList<>());
+        for(Comment comment : comments) {
+            comment.getWorkLogs().add(this);
+            this.getComments().add(comment);
+        }
+    }
 
     public void addConcludedContract(TypesOfContracts typeOfContract, Long count) {
         if (concludedContracts == null)
@@ -250,7 +264,7 @@ public class WorkLog {
     public Float getSalaryByEmployee(Employee employee) {
         if (!getCalculated() || getWorkCalculations() == null || getWorkCalculations().isEmpty()) return null;
         WorkCalculation employeeCalculation = getWorkCalculations().stream().filter(workCalculation -> workCalculation.getEmployee().equals(employee)).findFirst().orElse(null);
-        if (employeeCalculation == null) return null;
+        if (employeeCalculation == null) throw new ResponseException("Отсутствует привязка расчета сотрудника "+employee.getFullName()+" к работе #"+getWorkLogId());
         return employeeCalculation.getSumWithoutNDFL();
     }
 
@@ -281,6 +295,8 @@ public class WorkLog {
         private List<FileData> files;
         @Nullable
         private List<TFile.FileSuggestion> serverFiles;
+        @Nullable
+        private List<Long> comments;
     }
 
     @Getter

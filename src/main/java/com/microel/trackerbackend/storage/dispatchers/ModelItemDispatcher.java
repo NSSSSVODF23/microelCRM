@@ -16,6 +16,7 @@ import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
 import com.microel.trackerbackend.storage.repositories.ModelItemRepository;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
@@ -193,26 +194,26 @@ public class ModelItemDispatcher {
         return modelItemRepository.saveAll(modelItems);
     }
 
-    public List<Long> getTaskIdsByGlobalSearch(String globalSearchValue) {
-
-        // Фильтруем таблицу с данными по задачам
-        List<ModelItem> modelItems = modelItemRepository.findAll((root, query, cb) ->
-                cb.and(cb.isTrue(
-                        cb.function("fts", Boolean.class, root.get("stringData"), cb.literal(globalSearchValue))
-                )));
-
-        return modelItems.stream().map(modelItem -> modelItem.getTask().getTaskId()).collect(Collectors.toList());
-    }
-
-    public List<Long> getTaskIdsByAddresses(List<Address> addresses) {
-
-        List<ModelItem> modelItems = modelItemRepository.findAll((root, query, cb) -> {
-            Join<ModelItem, Address> addressJoin = root.join("addressData", JoinType.LEFT);
-            return cb.and(addressJoin.in(addresses));
-        });
-
-        return modelItems.stream().map(modelItem -> modelItem.getTask().getTaskId()).collect(Collectors.toList());
-    }
+//    public List<Long> getTaskIdsByGlobalSearch(String globalSearchValue) {
+//
+//        // Фильтруем таблицу с данными по задачам
+//        List<ModelItem> modelItems = modelItemRepository.findAll((root, query, cb) ->
+//                cb.and(cb.isTrue(
+//                        cb.function("fts", Boolean.class, root.get("stringData"), cb.literal(globalSearchValue))
+//                )));
+//
+//        return modelItems.stream().map(modelItem -> modelItem.getTask().getTaskId()).collect(Collectors.toList());
+//    }
+//
+//    public List<Long> getTaskIdsByAddresses(List<Address> addresses) {
+//
+//        List<ModelItem> modelItems = modelItemRepository.findAll((root, query, cb) -> {
+//            Join<ModelItem, Address> addressJoin = root.join("addressData", JoinType.LEFT);
+//            return cb.and(addressJoin.in(addresses));
+//        });
+//
+//        return modelItems.stream().map(modelItem -> modelItem.getTask().getTaskId()).collect(Collectors.toList());
+//    }
 
     public List<ModelItem> getFieldsTask(Long id) {
         return modelItemRepository.findAllByTask_TaskId(id);

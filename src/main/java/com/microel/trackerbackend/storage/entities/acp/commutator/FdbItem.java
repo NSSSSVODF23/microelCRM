@@ -45,4 +45,17 @@ public class FdbItem {
     public int hashCode() {
         return Objects.hash(getVid(), getVlanName(), getMac(), getPortId(), getDynamic());
     }
+
+    @Data
+    public static class PortWithMac{
+        private String port;
+        private String mac;
+
+        public static PortWithMac of(FdbItem fdbItem){
+            PortWithMac port = new PortWithMac();
+            port.setPort(fdbItem.getPortInfo().getName());
+            port.setMac(fdbItem.getMac());
+            return port;
+        }
+    }
 }

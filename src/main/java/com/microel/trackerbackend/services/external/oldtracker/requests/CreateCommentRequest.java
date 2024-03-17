@@ -33,10 +33,11 @@ public class CreateCommentRequest implements OldTrackerRequest<Void> {
             body.put("obji_action", "0");
             body.put("doc_id", "0");
             Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=show_obji&obji="+taskId+"&from_cat=1")
-                    .headers(headers).cookies(cookies).data(body).method(Connection.Method.POST).execute();
+                    .headers(headers).cookies(cookies).data(body).method(Connection.Method.POST).timeout(15000).execute();
             return null;
-        } catch (IOException e) {
-            throw new ResponseException(e.getMessage());
+        } catch (Exception e) {
+            System.out.println("Не удалось создать комментарий");
         }
+        return null;
     }
 }

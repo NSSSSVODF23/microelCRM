@@ -88,13 +88,17 @@ public class TFile extends FileSystemItem {
             if(createThumbnail) {
                 Path thumbnailPath = null;
                 if (tFile.getType() == FileType.PHOTO) {
-                    Files.createDirectories(thumbnailsPath);
-                    BufferedImage bufferedImage = ImageIO.read(file);
-                    BufferedImage newImage = new BufferedImage(bufferedImage.getWidth(), bufferedImage.getHeight(), BufferedImage.TYPE_INT_RGB);
-                    newImage.createGraphics().drawImage(bufferedImage, 0, 0, Color.white, null);
-                    BufferedImage resized = Scalr.resize(newImage, 250);
-                    thumbnailPath = thumbnailsPath.resolve(UUID.randomUUID() + ".jpg");
-                    ImageIO.write(resized, "jpg", thumbnailPath.toFile());
+                    try {
+                        Files.createDirectories(thumbnailsPath);
+                        BufferedImage bufferedImage = ImageIO.read(file);
+                        BufferedImage newImage = new BufferedImage(bufferedImage.getWidth(), bufferedImage.getHeight(), BufferedImage.TYPE_INT_RGB);
+                        newImage.createGraphics().drawImage(bufferedImage, 0, 0, Color.white, null);
+                        BufferedImage resized = Scalr.resize(newImage, 250);
+                        thumbnailPath = thumbnailsPath.resolve(UUID.randomUUID() + ".jpg");
+                        ImageIO.write(resized, "jpg", thumbnailPath.toFile());
+                    }catch (Throwable ignored) {
+                        System.out.println("Не удалось создать миниатюру фото "+file);
+                    }
                 } else if (tFile.getType() == FileType.VIDEO) {
                     try (VideoFile videoFile = Videos.open(file.getPath())) {
                         Files.createDirectories(thumbnailsPath);
@@ -169,5 +173,18 @@ public class TFile extends FileSystemItem {
         file.setThumbnail(getThumbnail());
         file.setCreatedAt(getCreatedAt());
         return file;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TFile tFile)) return false;
+        if (!super.equals(o)) return false;
+        return Objects.equals(getFileSystemItemId(), tFile.getFileSystemItemId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), getFileSystemItemId());
     }
 }

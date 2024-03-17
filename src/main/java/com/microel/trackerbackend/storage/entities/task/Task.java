@@ -77,7 +77,7 @@ public class Task {
     @OrderBy(value = "name")
     @BatchSize(size = 25)
 //    @Fetch(FetchMode.SUBSELECT)
-    private Set<TaskTag> tags;
+    private List<TaskTag> tags;
 
     @ManyToOne
     @OnDelete(action = OnDeleteAction.NO_ACTION)
@@ -244,7 +244,7 @@ public class Task {
     public List<ModelItem> getListItemFields() {
         List<ModelItem> collect = modelWireframe.getAllFields().stream()
                 .filter(f -> f.getListViewIndex() != null)
-                .sorted(Comparator.comparing(FieldItem::getListViewIndex))
+                .sorted(Comparator.nullsLast(Comparator.comparing(FieldItem::getListViewIndex)))
                 .map(fieldItem -> fields.stream().filter(f -> f.getId().equals(fieldItem.getId())).findFirst().orElse(null))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
@@ -328,7 +328,7 @@ public class Task {
         tags = tagsAppend.stream().peek(f -> {
             f.setTask(new HashSet<>());
             f.getTask().add(this);
-        }).collect(Collectors.toSet());
+        }).collect(Collectors.toList());
     }
 
     public Set<Employee> getAllEmployeesObservers(Employee exclude) {
@@ -351,6 +351,8 @@ public class Task {
     }
 
     public void appendEvent(TaskEvent taskEvent) {
+        if(getTaskEvents() == null)
+            setTaskEvents(new ArrayList<>());
         getTaskEvents().add(taskEvent);
     }
 

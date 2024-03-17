@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.services.api.StompController;
+import com.microel.trackerbackend.storage.entities.acp.AcpHouse;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.House;
@@ -20,6 +21,8 @@ import javax.persistence.criteria.JoinType;
 import javax.persistence.criteria.Predicate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Component
@@ -92,16 +95,24 @@ public class HouseDispatcher {
             predicates.add(cb.equal(root.get("houseNum"), request.getHouseNum()));
             if (request.getFraction() != null) {
                 predicates.add(cb.equal(root.get("fraction"), request.getFraction()));
+            }else{
+                predicates.add(cb.isNull(root.get("fraction")));
             }
             if (request.getLetter() != null) {
                 predicates.add(cb.equal(root.get("letter"), request.getLetter()));
+            }else{
+                predicates.add(cb.isNull(root.get("letter")));
             }
             if (request.getBuild() != null) {
                 predicates.add(cb.equal(root.get("build"), request.getBuild()));
+            }else{
+                predicates.add(cb.isNull(root.get("build")));
             }
-            if (request.getApartment() != null){
-                predicates.add(cb.isTrue(root.get("isApartmentHouse")));
-            }
+//            if (request.getApartment() != null){
+//                predicates.add(cb.isTrue(root.get("isApartmentHouse")));
+//            }else{
+//
+//            }
             return cb.and(cb.or(streetNamesPredicates.toArray(Predicate[]::new)), cb.and(predicates.toArray(Predicate[]::new)));
         }).stream().findFirst().orElse(null);
     }
@@ -278,5 +289,21 @@ public class HouseDispatcher {
             }
             return cb.and(predicates.toArray(Predicate[]::new));
         }, Sort.by(Sort.Direction.DESC, "houseId", "letter", "fraction", "build"));
+    }
+
+    public void makeHouseAnApartmentsBuilding(Long id) {
+        House house = houseRepository.findById(id).orElseThrow(() -> new EntryNotFound("Дом не найден"));
+        house.setIsApartmentHouse(true);
+        stompController.updateHouse(houseRepository.save(house));
+    }
+
+    public Map<Integer, House> getByExternalHouseIds(Set<Integer> externalHouseIds) {
+        List<House> houses = houseRepository.findAll((root, query, cb) -> {
+            Join<House, AcpHouse> acpHouseBindJoin = root.join("acpHouseBind", JoinType.LEFT);
+            return cb.and(acpHouseBindJoin.get("buildingId").in(externalHouseIds));
+        });
+        return houses.stream()
+                .filter(house -> house.getAcpHouseBind() != null)
+                .collect(Collectors.toMap(house -> house.getAcpHouseBind().getBuildingId(), house -> house, (o1, o2) -> o2));
     }
 }

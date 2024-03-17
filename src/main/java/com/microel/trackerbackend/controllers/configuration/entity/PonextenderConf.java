@@ -11,26 +11,26 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class AcpConf implements AbstractConfiguration {
+public class PonextenderConf implements AbstractConfiguration {
 
-    private String acpFlexConnectorEndpoint;
+    private String ponextenderUrl;
 
     @Override
     public String fileName() {
-        return "acp.conf";
+        return "ponextender.conf";
     }
 
     @Override
     @JsonIgnore
     public Boolean isFilled() {
-        if (acpFlexConnectorEndpoint == null || acpFlexConnectorEndpoint.isBlank()) return false;
+        if (ponextenderUrl == null || ponextenderUrl.isBlank()) return false;
         return true;
     }
 
     @Override
     public String toString() {
         return "AcpConf{" +
-                "acpFlexConnectorEndpoint='" + acpFlexConnectorEndpoint + '\'' +
+                "ponextenderUrl='" + ponextenderUrl + '\'' +
                 '}';
     }
 }

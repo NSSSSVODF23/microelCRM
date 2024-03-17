@@ -1,9 +1,11 @@
 package com.microel.trackerbackend.services.external.billing;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.marcospassos.phpserializer.Serializer;
 import com.marcospassos.phpserializer.SerializerBuilder;
-import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
+import com.microel.trackerbackend.controllers.configuration.Configuration;
 import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigurationException;
 import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.services.api.ResponseException;
@@ -41,15 +43,88 @@ public class ApiBillingController {
     private final LinkedHashMap<Object, Object> rqMap = new LinkedHashMap<>();
     private final Map<String, Object> argsMap = new HashMap<>();
     private final Serializer serializer = new SerializerBuilder().build();
-    private final ConfigurationStorage configStorage;
+    private final Configuration configStorage;
     private final StompController stompController;
     private BillingConf billingConf;
 
-    public ApiBillingController(ConfigurationStorage configStorage, StompController stompController) throws MalformedURLException {
+    public ApiBillingController(Configuration configStorage, StompController stompController) throws MalformedURLException {
         this.configStorage = configStorage;
         billingConf = configStorage.loadOrDefault(BillingConf.class, new BillingConf());
         this.stompController = stompController;
         authenticate();
+    }
+
+    public static String getUserStatusName(Integer state, @Nullable Integer tstate) {
+        if (state == null) return "Нет статуса";
+        if (tstate == null) tstate = 0;
+        switch (state) {
+            case 1 -> {
+                switch (tstate) {
+                    case 1 -> {
+                        return "Активный";
+                    }
+                    case 3 -> {
+                        return "Отл. платеж";
+                    }
+                }
+                return "Активный";
+            }
+            case 5 -> {
+                return "Приостановлен";
+            }
+            case 7 -> {
+                switch (tstate) {
+                    case 8 -> {
+                        return "Нет денег";
+                    }
+                    case 9 -> {
+                        return "Отл. платеж просрочен";
+                    }
+                }
+                return "Нет денег";
+            }
+            case 11 -> {
+                return "Отключен>30дн";
+            }
+            default -> {
+                return "Неактивный";
+            }
+        }
+    }
+
+    public static String getUserStatusColor(Integer state, @Nullable Integer tstate) {
+        if (state == null) return "red";
+        if (tstate == null) tstate = 0;
+        switch (state) {
+            case 1 -> {
+                switch (tstate) {
+                    case 1 -> {
+                        return "#7CE065";
+                    }
+                    case 3 -> {
+                        return "#78D3E3";
+                    }
+                }
+                return "#7CE065";
+            }
+            case 5 -> {
+                return "#A1A6E3";
+            }
+            case 7 -> {
+                switch (tstate) {
+                    case 8 -> {
+                        return "#F2CC5A";
+                    }
+                    case 9 -> {
+                        return "#D15151";
+                    }
+                }
+                return "#F2CC5A";
+            }
+            default -> {
+                return "#D15151";
+            }
+        }
     }
 
     private void authenticate() throws MalformedURLException {
@@ -120,19 +195,66 @@ public class ApiBillingController {
         }
     }
 
-    public String getCalculateCountingLives(CountingLivesForm form){
+    public List<UserItemData> getUserSuggestions(String stringQuery) {
+        Pattern loginPattern = Pattern.compile("^(BIZ)?(\\d{8}|[A-z.\\d-@]+)");
+        Pattern addressPattern = Pattern.compile("^((?<st>[А-я.\\d-]+) )?(?<ha>\\d{1,3}(/\\d{1,3})?[А-я]*(_\\d{1,3})?(-\\d{1,3})?)");
+        Matcher loginMatcher = loginPattern.matcher(stringQuery);
+        Matcher addressMatcher = addressPattern.matcher(stringQuery);
+        if(addressMatcher.find()){
+            String street = null;
+            String house = null;
+            try {
+                street = addressMatcher.group("st");
+            }catch (Exception ignored){}
+            try {
+                house = addressMatcher.group("ha");
+            }catch (Exception ignored){}
+            if(street != null && house != null){
+                String finalHouse = house;
+                List<UserItemData> usersByAddress = getUsersByAddress(street, false)
+                        .stream()
+                        .filter(f -> f.addr.contains(finalHouse))
+                        .sorted(Comparator.comparing(UserItemData::getAddr))
+                        .toList();
+                if(!usersByAddress.isEmpty())
+                    return usersByAddress;
+            }
+            if(street != null){
+                List<UserItemData> usersByAddress = getUsersByAddress(street, false)
+                        .stream()
+                        .sorted(Comparator.comparing(UserItemData::getAddr))
+                        .toList();
+                if(!usersByAddress.isEmpty())
+                    return usersByAddress;
+            }
+            if(house != null){
+                List<UserItemData> usersByAddress = getUsersByAddress(house, false)
+                        .stream()
+                        .sorted(Comparator.comparing(UserItemData::getAddr))
+                        .toList();
+                if(!usersByAddress.isEmpty())
+                    return usersByAddress;
+            }
+        }
+        if(loginMatcher.find()) {
+            return getUsersByLogin(stringQuery, false);
+        }
+        return List.of();
+    }
+
+    public String getCalculateCountingLives(CountingLivesForm form) {
         List<UserItemData> usersByAddress = getUsersByAddress(form.getAddress().getBillingAddress(), true);
-        if(usersByAddress == null || usersByAddress.isEmpty()){
+        if (usersByAddress == null || usersByAddress.isEmpty()) {
             usersByAddress = getUsersByAddress(form.getAddress().getBillingAddress(true), true);
         }
-        if(usersByAddress == null || usersByAddress.isEmpty()){
+        if (usersByAddress == null || usersByAddress.isEmpty()) {
             return "Живых пользователей нет";
         }
         List<UserItemData> lives = usersByAddress.stream().filter(UserItemData::getIsActive).filter(f -> f.isApartNumberInRange(form.getStartApart(), form.getEndApart())).toList();
-        if(lives.isEmpty()) return "Живых пользователей нет";
+        if (lives.isEmpty()) return "Живых пользователей нет";
 
-        return "Живые: " + lives.stream().sorted((o1,o2)->Comparator.nullsLast(Integer::compareTo).compare(o1.getApartNumber(), o2.getApartNumber()))
-                .map(UserItemData::getAddressOrName).collect(Collectors.joining(", ")) + "  Кол-во: "+ lives.size();
+        return "Живые: " + lives.stream().sorted((o1, o2) -> Comparator.nullsLast(Integer::compareTo).compare(o1.getApartNumber(), o2.getApartNumber()))
+                .map(UserItemData::getAddressOrName).collect(Collectors.joining(", ")) + "  Кол-во: " + lives.size();
     }
 
     public TotalUserInfo getUserInfo(String login) {
@@ -244,14 +366,82 @@ public class ApiBillingController {
         }
     }
 
+    public TotalUserInfo testUser() {
+        ObjectMapper objectMapper = new ObjectMapper();
+        try {
+            return objectMapper.readValue("{\n" +
+                    "    \"ibase\": {\n" +
+                    "        \"addr\": \"Строителей 6--\",\n" +
+                    "        \"coment\": \"\",\n" +
+                    "        \"credit\": 0.0,\n" +
+                    "        \"ddog\": \"2017-03-27T21:00:00.000+00:00\",\n" +
+                    "        \"fio\": \"тестовый логин\",\n" +
+                    "        \"money\": 0.0,\n" +
+                    "        \"ndog\": \"test\",\n" +
+                    "        \"phone\": \"-\"\n" +
+                    "    },\n" +
+                    "    \"karma\": 7,\n" +
+                    "    \"newTarif\": {\n" +
+                    "        \"cntDhcp\": \"0\",\n" +
+                    "        \"cntVpn\": \"0\",\n" +
+                    "        \"dstate\": \"2024-02-22 16:16:14\",\n" +
+                    "        \"edate\": \"2024-02-22T12:32:23.000+00:00\",\n" +
+                    "        \"endstate\": null,\n" +
+                    "        \"extIp\": \"\",\n" +
+                    "        \"hdate\": \"2024-01-22T12:32:23.000+00:00\",\n" +
+                    "        \"intIp\": \"\",\n" +
+                    "        \"ipDhcp\": \"\",\n" +
+                    "        \"ipNat\": \"\",\n" +
+                    "        \"ipUser\": \"\",\n" +
+                    "        \"ipVpn\": \"\",\n" +
+                    "        \"last\": \"1999-12-31T21:00:00.000+00:00\",\n" +
+                    "        \"lastDhcp\": null,\n" +
+                    "        \"lastVpn\": null,\n" +
+                    "        \"ndog\": \"test\",\n" +
+                    "        \"online\": 0,\n" +
+                    "        \"pstate\": 11,\n" +
+                    "        \"speed\": 100,\n" +
+                    "        \"staj\": 20,\n" +
+                    "        \"state\": 11,\n" +
+                    "        \"tarif\": \"NewHomePromo3\",\n" +
+                    "        \"tspeed\": 100,\n" +
+                    "        \"tstate\": 10,\n" +
+                    "        \"uname\": \"test\",\n" +
+                    "        \"xservice\": \"\",\n" +
+                    "        \"isPossibleEnableDeferredPayment\": false,\n" +
+                    "        \"isServiceSuspended\": false,\n" +
+                    "        \"userStatusName\": \"Отключен>30дн\",\n" +
+                    "        \"userStatusColor\": \"#D15151\"\n" +
+                    "    },\n" +
+                    "    \"oldTarif\": [\n" +
+                    "        {\n" +
+                    "            \"adate\": null,\n" +
+                    "            \"edate\": null,\n" +
+                    "            \"hdate\": null,\n" +
+                    "            \"mdate\": null,\n" +
+                    "            \"price\": 0.0,\n" +
+                    "            \"service\": \"\",\n" +
+                    "            \"state\": 0,\n" +
+                    "            \"stype\": 0,\n" +
+                    "            \"iext\": 0\n" +
+                    "        }\n" +
+                    "    ],\n" +
+                    "    \"state\": \"OK\",\n" +
+                    "    \"uname\": \"test\"\n" +
+                    "}", TotalUserInfo.class);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
     @Getter
     @Setter
-    public static class CountingLivesForm{
+    public static class CountingLivesForm {
         private Address address;
         private Integer startApart;
         private Integer endApart;
 
-        public static CountingLivesForm of(Address address, Integer startApart, Integer endApart){
+        public static CountingLivesForm of(Address address, Integer startApart, Integer endApart) {
             CountingLivesForm form = new CountingLivesForm();
             form.setAddress(address);
             form.setStartApart(startApart);
@@ -303,16 +493,16 @@ public class ApiBillingController {
         }
 
         @JsonIgnore
-        public Boolean getIsActive(){
+        public Boolean getIsActive() {
             return state == 1 || state == 7;
         }
 
         @JsonIgnore
         @Nullable
-        public String getApartName(){
+        public String getApartName() {
             Pattern apartPattern = Pattern.compile("[^-]+-(.+)");
             Matcher apartMatcher = apartPattern.matcher(addr);
-            if(apartMatcher.find()){
+            if (apartMatcher.find()) {
                 return apartMatcher.group(1).replaceAll(" \\(\\d{0,2}\\.?\\d{0,2}\\)", "");
             }
             return null;
@@ -321,7 +511,7 @@ public class ApiBillingController {
         @JsonIgnore
         public String getAddressOrName() {
             String apartName = getApartName();
-            if(apartName == null || apartName.isBlank()) return uname;
+            if (apartName == null || apartName.isBlank()) return uname;
             return apartName;
         }
 
@@ -329,61 +519,30 @@ public class ApiBillingController {
         @Nullable
         public Integer getApartNumber() {
             String apartName = getApartName();
-            if(apartName == null) return null;
+            if (apartName == null) return null;
             Pattern digitPattern = Pattern.compile("(\\d+)");
             Matcher digitMatcher = digitPattern.matcher(apartName);
-            if(digitMatcher.find()) {
+            if (digitMatcher.find()) {
                 return Integer.parseInt(digitMatcher.group(1));
             }
             return null;
         }
 
         @JsonIgnore
-        public Boolean isApartNumberInRange(int start, int end){
+        public Boolean isApartNumberInRange(int start, int end) {
             Integer apartNumber = getApartNumber();
-            if(apartNumber !=null) {
+            if (apartNumber != null) {
                 return apartNumber >= start && apartNumber <= end;
             }
             return true;
         }
 
         public String getStateName() {
-            if (state == null) return "Статус не указан";
-            switch (state) {
-                case 1 -> {
-                    return "Активный";
-                }
-                case 5 -> {
-                    return "Приостановлен";
-                }
-                case 7 -> {
-                    return "Нет денег";
-                }
-                case 11 -> {
-                    return "Отключен>30дн";
-                }
-                default -> {
-                    return "Неактивный";
-                }
-            }
+            return ApiBillingController.getUserStatusName(state, null);
         }
 
         public String getStateColor() {
-            if (state == null) return "#F75555";
-            switch (state) {
-                case 1 -> {
-                    return "#2C8EEF";
-                }
-                case 5 -> {
-                    return "#B744F7";
-                }
-                case 7 -> {
-                    return "#FF842B";
-                }
-                default -> {
-                    return "#F75555";
-                }
-            }
+            return ApiBillingController.getUserStatusColor(state, null);
         }
     }
 
@@ -548,74 +707,11 @@ public class ApiBillingController {
         }
 
         public String getUserStatusName() {
-            if (state == null || tstate == null) return "Нет статуса";
-            switch (state) {
-                case 1 -> {
-                    switch (tstate) {
-                        case 1 -> {
-                            return "Активный";
-                        }
-                        case 3 -> {
-                            return "Отл. платеж";
-                        }
-                    }
-                    return "Активный";
-                }
-                case 5 -> {
-                    return "Приостановлен";
-                }
-                case 7 -> {
-                    switch (tstate) {
-                        case 8 -> {
-                            return "Нет денег";
-                        }
-                        case 9 -> {
-                            return "Отл. платеж просрочен";
-                        }
-                    }
-                    return "Нет денег";
-                }
-                case 11 ->{
-                    return "Отключен>30дн";
-                }
-                default -> {
-                    return "Неактивный";
-                }
-            }
+            return ApiBillingController.getUserStatusName(state, tstate);
         }
 
         public String getUserStatusColor() {
-            if (state == null || tstate == null) return "red";
-            switch (state) {
-                case 1 -> {
-                    switch (tstate) {
-                        case 1 -> {
-                            return "#7CE065";
-                        }
-                        case 3 -> {
-                            return "#78D3E3";
-                        }
-                    }
-                    return "#7CE065";
-                }
-                case 5 -> {
-                    return "#A1A6E3";
-                }
-                case 7 -> {
-                    switch (tstate) {
-                        case 8 -> {
-                            return "#F2CC5A";
-                        }
-                        case 9 -> {
-                            return "#D15151";
-                        }
-                    }
-                    return "#F2CC5A";
-                }
-                default -> {
-                    return "#D15151";
-                }
-            }
+            return ApiBillingController.getUserStatusColor(state, tstate);
         }
 
         public Boolean getIsPossibleEnableDeferredPayment() {
@@ -809,9 +905,9 @@ public class ApiBillingController {
                     return "Смена тарифа";
                 }
                 case "P_FPAY" -> {
-                    if(money <0){
+                    if (money < 0) {
                         return "Списание";
-                    }else{
+                    } else {
                         return "Пополнение";
                     }
                 }

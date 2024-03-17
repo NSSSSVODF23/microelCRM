@@ -105,21 +105,25 @@ public class CommentDispatcher {
         stompController.updateTask(savedTask);
 
         if(currentUser.isHasOldTrackerCredentials() && targetTask.getOldTrackerTaskId() != null){
-            OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(currentUser.getOldTrackerCredentials().getUsername(), currentUser.getOldTrackerCredentials().getPassword());
-            requestFactory.createComment(targetTask.getOldTrackerTaskId(), comment.getMessage()).execute();
-            requestFactory.close().execute();
+            try {
+                OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(currentUser.getOldTrackerCredentials().getUsername(), currentUser.getOldTrackerCredentials().getPassword());
+                requestFactory.createComment(targetTask.getOldTrackerTaskId(), comment.getMessage()).execute();
+                requestFactory.close().execute();
+            }catch (Exception ignored){
+                System.out.println("Не удалось оставить комментарий в старом трекере");
+            }
         }
 
         return comment;
     }
 
-    public List<Long> getTaskIdsByGlobalSearch(String globalSearchValue) {
-        Page<Comment> comments = commentRepository.findAll(((root, query, cb) ->
-                cb.and(cb.isTrue(
-                        cb.function("fts", Boolean.class, root.get("message"), cb.literal(globalSearchValue))))
-        ), Pageable.unpaged());
-        return comments.stream().map(comment -> comment.getParent().getTaskId()).collect(Collectors.toList());
-    }
+//    public List<Long> getTaskIdsByGlobalSearch(String globalSearchValue) {
+//        Page<Comment> comments = commentRepository.findAll(((root, query, cb) ->
+//                cb.and(cb.isTrue(
+//                        cb.function("fts", Boolean.class, root.get("message"), cb.literal(globalSearchValue))))
+//        ), Pageable.unpaged());
+//        return comments.stream().map(comment -> comment.getParent().getTaskId()).collect(Collectors.toList());
+//    }
 
     public Comment update(Comment editedComment, Employee employeeWhoMadeTheChange) throws NotOwner, IllegalFields, EntryNotFound {
 

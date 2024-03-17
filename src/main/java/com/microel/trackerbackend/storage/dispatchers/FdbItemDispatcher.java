@@ -1,11 +1,17 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
+import com.microel.trackerbackend.storage.entities.acp.commutator.AcpCommutator;
 import com.microel.trackerbackend.storage.entities.acp.commutator.FdbItem;
 import com.microel.trackerbackend.storage.entities.acp.commutator.PortInfo;
 import com.microel.trackerbackend.storage.repositories.FdbItemRepository;
 import com.microel.trackerbackend.storage.repositories.PortInfoRepository;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
+import javax.persistence.criteria.Join;
+import javax.persistence.criteria.JoinType;
+import javax.persistence.criteria.Predicate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -37,4 +43,13 @@ public class FdbItemDispatcher {
     }
 
 
+    public List<FdbItem> getFdbByCommutator(Long commutatorId) {
+        return fdbItemRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            Join<FdbItem, PortInfo> portInfoJoin = root.join("portInfo", JoinType.LEFT);
+            Join<PortInfo, AcpCommutator> commutatorJoin = portInfoJoin.join("commutator", JoinType.LEFT);
+            predicates.add(cb.equal(commutatorJoin.get("externalId"), commutatorId));
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }, Sort.by("portInfo.name"));
+    }
 }

@@ -25,7 +25,8 @@ public class NewTaskIdRequest implements OldTrackerRequest<Long> {
     @Override
     public Long execute() {
         try {
-            Document request = Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=create_obji&obj_sel=" + taskClassId + "&from_cat=1").headers(headers).cookies(cookies).post();
+            Document request = Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=create_obji&obj_sel=" + taskClassId + "&from_cat=1")
+                    .timeout(15000).headers(headers).cookies(cookies).post();
             String attrValue = request.getElementsByTag("META").get(0).attr("CONTENT");
             Pattern pattern = Pattern.compile("main\\.php\\?mode=show_obji&obji=(\\d+)");
             Matcher matcher = pattern.matcher(attrValue);
@@ -34,8 +35,9 @@ public class NewTaskIdRequest implements OldTrackerRequest<Long> {
             }else{
                 throw new ResponseException("Не удалось получить новый идентификатор задачи в старом трекере");
             }
-        } catch (IOException e) {
-            throw new ResponseException(e.getMessage());
+        } catch (Exception e) {
+            System.out.println("Не удалось получить идентификатор новой задачи");
         }
+        return null;
     }
 }

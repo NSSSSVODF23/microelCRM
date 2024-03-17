@@ -50,6 +50,10 @@ public class TaskTag {
         return unbindAfterClose != null && unbindAfterClose;
     }
 
+    public SimpleTag toSimpleTag() {
+        return new SimpleTag(name, color);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -85,5 +89,13 @@ public class TaskTag {
                     .unbindAfterClose(unbindAfterClose)
                     .build();
         }
+    }
+
+    @Data
+    public static class SimpleTag {
+        @NonNull
+        private String name;
+        @NonNull
+        private String color;
     }
 }

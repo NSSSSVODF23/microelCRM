@@ -36,7 +36,7 @@ public class NetworkRemoteControl {
     }
 
     private Mono<NetworkRemoteControl> checkWebAccess(){
-        Short[] potentialHttpPorts = {80, 8080, 81, 8081, 8888, 280, 591, 777, 5080, 8080, 8090};
+        Short[] potentialHttpPorts = {80, 8080, 81, 8081, 8888, 280, 591, 777, 5080, 8090};
         Short[] potentialHttpsPorts = {443, 5083, 5443, 8083, 8443};
         CustomWebClientFactory webClientFactory = new CustomWebClientFactory();
         List<Mono<Short>> httpEndpoint = Arrays.stream(potentialHttpPorts).map(port -> webClientFactory.createGetResponse("http://" + ip, port)).toList();

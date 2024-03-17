@@ -2,7 +2,8 @@ package com.microel.trackerbackend.services.external.acp;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
+import com.microel.tdo.dynamictable.TablePaging;
+import com.microel.trackerbackend.controllers.configuration.Configuration;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.modules.exceptions.Unconfigured;
 import com.microel.trackerbackend.parsers.commutator.AbstractRemoteAccess;
@@ -18,15 +19,13 @@ import com.microel.trackerbackend.storage.entities.acp.commutator.*;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 import org.hibernate.Hibernate;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.http.RequestEntity;
 import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Async;
@@ -48,7 +47,6 @@ import java.util.stream.Collectors;
 @Service
 public class AcpClient {
     private final RestTemplate restTemplate = new RestTemplateBuilder().build();
-    private final ConfigurationStorage configurationStorage;
     private final HouseDispatcher houseDispatcher;
     private final AcpCommutatorDispatcher acpCommutatorDispatcher;
     private final PortInfoDispatcher portInfoDispatcher;
@@ -58,15 +56,16 @@ public class AcpClient {
     private final RAFactory remoteAccessFactory;
     private final CommutatorsAvailabilityCheckService availabilityCheckService;
     private final StompController stompController;
+    private final Configuration configurationService;
     private AcpConf configuration;
 
-    public AcpClient(ConfigurationStorage configurationStorage, HouseDispatcher houseDispatcher,
+    public AcpClient(Configuration configurationService, HouseDispatcher houseDispatcher,
                      AcpCommutatorDispatcher acpCommutatorDispatcher, PortInfoDispatcher portInfoDispatcher,
                      FdbItemDispatcher fdbItemDispatcher, NetworkConnectionLocationDispatcher networkConnectionLocationDispatcher,
                      RAFactory remoteAccessFactory, @Lazy CommutatorsAvailabilityCheckService availabilityCheckService,
                      StompController stompController) {
-        this.configurationStorage = configurationStorage;
-        configuration = configurationStorage.loadOrDefault(AcpConf.class, new AcpConf());
+        this.configurationService = configurationService;
+        this.configuration = configurationService.loadOrDefault(AcpConf.class, new AcpConf());
         this.houseDispatcher = houseDispatcher;
         this.acpCommutatorDispatcher = acpCommutatorDispatcher;
         this.portInfoDispatcher = portInfoDispatcher;
@@ -88,6 +87,21 @@ public class AcpClient {
         List<DhcpBinding> bindings = Arrays.stream(dhcpBindings).sorted(Comparator.comparing(DhcpBinding::getSessionTime).reversed()).collect(Collectors.toList());
         bindings.forEach(this::prepareBinding);
         return bindings;
+    }
+
+    public Page<DhcpBinding> getBindingsByLogin(String login, Integer page, @Nullable BindingFilter filter) {
+        RequestEntity.BodyBuilder request = RequestEntity.post(url(Map.of(), "user", login, "bindings", page.toString()));
+        RestPage<DhcpBinding> responseBody;
+        if(filter != null) {
+            responseBody = restTemplate.exchange(request.body(filter), new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
+            }).getBody();
+        }else{
+            responseBody = restTemplate.exchange(request.build(), new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
+            }).getBody();
+        }
+        if(responseBody == null) return Page.empty();
+        responseBody.forEach(this::prepareBinding);
+        return responseBody;
     }
 
     /**
@@ -224,12 +238,34 @@ public class AcpClient {
         });
     }
 
+    public Page<SwitchBaseInfo> getCommutatorsTable(TablePaging paging) {
+        RequestEntity.BodyBuilder request = RequestEntity.post(url(Map.of(), "commutators", "table"));
+        RestPage<Switch> responseBody = restTemplate.exchange(request.body(paging), new ParameterizedTypeReference<RestPage<Switch>>() {
+        }).getBody();
+        if(responseBody == null) throw new ResponseException("Ошибка при обращении к ACP");
+        Map<Integer, String> commutatorModelsNames = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
+        Set<Integer> externalHouseIds = new HashSet<>();
+        responseBody.forEach(sw->{
+            externalHouseIds.add(sw.getBuildId());
+        });
+        Map<Integer, House> houses = houseDispatcher.getByExternalHouseIds(externalHouseIds);
+        return responseBody.map(commutator -> {
+            AcpCommutator additionalInfo = acpCommutatorDispatcher.getById(commutator.getId());
+            commutator.setAdditionalInfo(additionalInfo);
+            SwitchBaseInfo switchBaseInfo = SwitchBaseInfo.from(commutator, commutatorModelsNames.get(commutator.getSwmodelId().intValue()));
+            if(commutator.getBuildId() != null) {
+                House house = houses.get(commutator.getBuildId());
+                switchBaseInfo.setAddress(house != null ? house.getAddressName() : "");
+            }
+            return switchBaseInfo;
+        });
+    }
+
     public Page<Switch> getCommutatorsWithAdditionalInfo(Integer page, Integer pageSize) {
         Map<String, String> query = new HashMap<>();
         if (pageSize != null) query.put("pageSize", pageSize.toString());
         RequestEntity<Void> request = RequestEntity.get(url(query, "commutators", page.toString())).build();
-        RestPage<Switch> responseBody = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<Switch>>() {
-        }).getBody();
+        RestPage<Switch> responseBody = restTemplate.exchange(request, new ParameterizedTypeReference<RestPage<Switch>>() {}).getBody();
         if(responseBody == null) throw new ResponseException("Ошибка при обращении к ACP");
         Map<Integer, String> commutatorModelsNames = getCommutatorModels(null).stream().collect(Collectors.toMap(SwitchModel::getId, SwitchModel::getName));
         return responseBody.map(commutator -> {
@@ -284,6 +320,17 @@ public class AcpClient {
         }
     }
 
+    @Nullable
+    private <T> T post(Class<T> clazz, Map<String, String> query, Object request, String... params) {
+        try {
+            T object = this.restTemplate.postForObject(url(query, params), request, clazz);
+            if (object == null) return null;
+            return object;
+        } catch (RestClientException e) {
+            throw new ResponseException("Ошибка при обращении к ACP");
+        }
+    }
+
     private String url(Map<String, String> query, String... params) {
         checkConfiguration();
         UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(configuration.getAcpFlexConnectorEndpoint() + String.join("/", params));
@@ -304,7 +351,7 @@ public class AcpClient {
     public void setConfiguration(AcpConf conf) {
         if (!conf.isFilled()) throw new IllegalFields("Конфигурация не заполнена");
         configuration = conf;
-        configurationStorage.save(configuration);
+        configurationService.save(configuration);
         stompController.changeAcpConfig(configuration);
     }
 
@@ -595,6 +642,125 @@ public class AcpClient {
         return new NCLHistoryWrapper(new Timestamp(start), new Timestamp(end), items);
     }
 
+    public List<TopologyStreet> getTopology() {
+        TopologyStreet[] topology = get(TopologyStreet[].class, Map.of(), "topology");
+        if(topology == null) return new ArrayList<>();
+        return Arrays.asList(topology);
+    }
+
+    public AcpHouse getBuilding(Integer id) {
+        return get(AcpHouse.class, Map.of(), "building", id.toString());
+    }
+
+    public List<CommutatorListItem> getCommutatorsByBuildingId(Integer id) {
+        CommutatorListItem[] commutatorsByBuildingId = get(CommutatorListItem[].class, Map.of(), "building", id.toString(), "commutators");
+        if(commutatorsByBuildingId == null) return new ArrayList<>();
+        return Arrays.stream(commutatorsByBuildingId).collect(Collectors.toList());
+    }
+
+    public Page<DhcpBinding> getBindingsByBuildingId(Integer id, Integer page, @Nullable BindingFilter filter) {
+        RequestEntity.BodyBuilder request = RequestEntity.post(url(Map.of(), "building", id.toString(), "bindings", page.toString()));
+        RestPage<DhcpBinding> responseBody;
+        if(filter != null) {
+            responseBody = restTemplate.exchange(request.body(filter), new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
+            }).getBody();
+        }else{
+            responseBody = restTemplate.exchange(request.build(), new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
+            }).getBody();
+        }
+        if(responseBody == null) return Page.empty();
+        responseBody.forEach(this::prepareBinding);
+        return responseBody;
+    }
+
+    public Page<DhcpBinding> getBindingsByVlan(Integer vlan, Integer page, @Nullable BindingFilter filter) {
+        RequestEntity.BodyBuilder request = RequestEntity.post(url(Map.of(), "vlan", vlan.toString(), "bindings", page.toString()));
+        RestPage<DhcpBinding> responseBody;
+        if(filter != null) {
+            responseBody = restTemplate.exchange(request.body(filter), new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
+            }).getBody();
+        }else{
+            responseBody = restTemplate.exchange(request.build(), new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
+            }).getBody();
+        }
+        if(responseBody == null) return Page.empty();
+        responseBody.forEach(this::prepareBinding);
+        return responseBody;
+    }
+
+    public Page<DhcpBinding> getBindingsFromBuildingByLogin(String login, Integer page, @Nullable BindingFilter filter) {
+        RequestEntity.BodyBuilder request = RequestEntity.post(url(Map.of(), "user", login, "bindings-from-building", page.toString()));
+        RestPage<DhcpBinding> responseBody;
+        if(filter != null) {
+            responseBody = restTemplate.exchange(request.body(filter), new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
+            }).getBody();
+        }else{
+            responseBody = restTemplate.exchange(request.build(), new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
+            }).getBody();
+        }
+        if(responseBody == null) return Page.empty();
+        responseBody.forEach(this::prepareBinding);
+        return responseBody;
+    }
+
+    public Page<DhcpBinding> getBindingsByCommutator(Long commutatorId, Integer page, @Nullable BindingFilter filter) {
+        List<FdbItem.PortWithMac> fdbByCommutator = fdbItemDispatcher.getFdbByCommutator(commutatorId).stream().map(FdbItem.PortWithMac::of).toList();
+        if(fdbByCommutator.isEmpty())
+            return Page.empty();
+
+        RequestEntity.BodyBuilder request = RequestEntity.post(url(Map.of(), "fdb", "bindings", page.toString()));
+        RestPage<DhcpBinding> responseBody;
+        if(filter != null) {
+            filter.setMacs(fdbByCommutator);
+            responseBody = restTemplate.exchange(request.body(filter), new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
+            }).getBody();
+        }else{
+            responseBody = restTemplate.exchange(request.body(BindingFilter.from(fdbByCommutator)), new ParameterizedTypeReference<RestPage<DhcpBinding>>() {
+            }).getBody();
+        }
+        if(responseBody == null) return Page.empty();
+
+        responseBody.forEach(this::prepareBinding);
+
+        BindingFilter.SortItem portsSorting = filter != null && filter.getSort() != null ?
+                filter.getSort().stream().filter(sortItem -> sortItem.field.equals("ports")).findFirst().orElse(null) : null;
+
+        List<DhcpBinding> dhcpBindings = responseBody.stream().peek(binding -> {
+            String macaddr = binding.getMacaddr();
+            String portList = fdbByCommutator.stream()
+                    .filter(fdb -> fdb.getMac().equals(macaddr))
+                    .map(FdbItem.PortWithMac::getPort)
+                    .collect(Collectors.joining(", "));
+            binding.setPortList(portList);
+        }).toList();
+
+        if(portsSorting != null){
+            Comparator<DhcpBinding> bindingComparator = Comparator.nullsLast(Comparator.comparing(DhcpBinding::getPortList));
+            if(portsSorting.order < 0) bindingComparator =  bindingComparator.reversed();
+            return new PageImpl<>(dhcpBindings.stream().sorted(bindingComparator).toList(), responseBody.getPageable(), responseBody.getTotalElements());
+        }
+
+        return new PageImpl<>(dhcpBindings, responseBody.getPageable(), responseBody.getTotalElements());
+    }
+
+    public Page<DhcpBinding> getBindingsTable(TablePaging paging) {
+        RequestEntity.BodyBuilder request = RequestEntity.post(url(Map.of(), "bindings", "table"));
+        RestPage<DhcpBinding> responseBody = restTemplate.exchange(request.body(paging), new ParameterizedTypeReference<RestPage<DhcpBinding>>() {}).getBody();
+        if(responseBody == null) return Page.empty();
+        responseBody.forEach(this::prepareBinding);
+        return responseBody;
+    }
+
+    @Nullable
+    public DhcpBinding getActiveBinding(String login) {
+        return get(DhcpBinding.class, Map.of(), "user", login, "active-binding");
+    }
+
+    @Nullable
+    public Integer getBuildingIdByVlan(Integer vlan) {
+        return get(Integer.class, Map.of(), "vlan", vlan.toString(), "building-id");
+    }
+
     @Getter
     @Setter
     @AllArgsConstructor
@@ -655,6 +821,67 @@ public class AcpClient {
         @Override
         public int hashCode() {
             return Objects.hash(getId(), getName());
+        }
+    }
+
+    @Data
+    public static class TopologyStreet {
+        private String streetName;
+        private List<TopologyHouse> houses;
+
+        public static TopologyStreet of(Street street, List<TopologyHouse> topologyHouses) {
+            TopologyStreet topologyStreet = new TopologyStreet();
+            topologyStreet.setStreetName(street.getName());
+            topologyStreet.setHouses(topologyHouses);
+            return topologyStreet;
+        }
+    }
+
+    @Data
+    public static class TopologyHouse {
+        private Integer buildingId;
+        private String houseNum;
+
+        public static TopologyHouse of(Building building) {
+            TopologyHouse house = new TopologyHouse();
+            house.setBuildingId(building.getId());
+            house.setHouseNum(building.getHouseNum());
+            return house;
+        }
+    }
+
+    @Data
+    public static class CommutatorListItem {
+        private Integer id;
+        private String ip;
+        private String name;
+        private String model;
+        private String type;
+        @Nullable
+        private CommutatorListItem uplink;
+    }
+
+    @Data
+    public static class BindingFilter {
+        private Integer size;
+        @Nullable
+        private String status;
+        @Nullable
+        private List<SortItem> sort;
+        @Nullable
+        private List<FdbItem.PortWithMac> macs;
+
+        @Data
+        public static class SortItem{
+            private String field;
+            private Integer order;
+        }
+
+        public static BindingFilter from(List<FdbItem.PortWithMac> macs){
+            BindingFilter filter = new BindingFilter();
+            filter.setSize(25);
+            filter.setMacs(macs);
+            return filter;
         }
     }
 }

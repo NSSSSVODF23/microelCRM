@@ -1,6 +1,8 @@
 package com.microel.trackerbackend.controllers.configuration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.microel.confstore.AbstractConfiguration;
+import com.microel.confstore.ConfigurationStorage;
 import com.microel.trackerbackend.controllers.configuration.entity.AcpConf;
 import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.controllers.configuration.entity.DefaultCitiesConf;
@@ -9,47 +11,33 @@ import com.microel.trackerbackend.parsers.oldtracker.AddressCorrectingPool;
 import com.microel.trackerbackend.parsers.oldtracker.OldTrackerParserSettings;
 import com.microel.trackerbackend.parsers.oldtracker.UncreatedTasksPool;
 import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
-@Component
-public class ConfigurationStorage {
-    private final String PATH = "./configurations/";
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final Map<Class, String> fileNames = Map.of(
-            TelegramConf.class, "telegram.conf",
-            BillingConf.class, "billing.conf",
-            AcpConf.class, "acp.conf",
-            OldTrackerParserSettings.class, "oldTracker.conf",
-            DefaultCitiesConf.class, "defaultCities.conf",
-            AddressCorrectingPool.class, "addressCorrectingPool.json",
-            UncreatedTasksPool.class, "uncreatedTasksPool.json"
-    );
+@Service
+public class Configuration {
+    private final ConfigurationStorage configurationStorage;
 
-    public ConfigurationStorage() {
-        try {
-            Files.createDirectories(Path.of(PATH));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public Configuration() {
+        this.configurationStorage = new ConfigurationStorage(null);
     }
 
     public void save(AbstractConfiguration configuration) throws FailedToWriteConfigurationException {
         try {
-            Files.writeString(Path.of(PATH + fileNames.get(configuration.getClass())),objectMapper.writeValueAsString(configuration));
-        } catch (IOException e) {
+            configurationStorage.save(configuration);
+        } catch (Exception e) {
             throw new FailedToWriteConfigurationException(e.getMessage());
         }
     }
 
     public <T extends AbstractConfiguration> T load(Class<T> configurationClass) throws FailedToReadConfigurationException {
         try {
-            String rawConfig = Files.readString(Path.of(PATH + fileNames.get(configurationClass)));
-            return objectMapper.readValue(rawConfig, configurationClass);
-        } catch (IOException e) {
+            return configurationStorage.load(configurationClass);
+        } catch (Exception e) {
             throw new FailedToReadConfigurationException(e.getMessage());
         }
     }

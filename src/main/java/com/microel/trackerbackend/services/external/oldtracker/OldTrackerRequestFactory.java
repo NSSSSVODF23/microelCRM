@@ -27,9 +27,10 @@ public class OldTrackerRequestFactory {
         setUsername(username);
         setPassword(password);
         try {
-            Connection.Response response = Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=list_objis").headers(getAuthHeader()).method(Connection.Method.GET).ignoreHttpErrors(true).execute();
+            Connection.Response response = Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=list_objis")
+                    .headers(getAuthHeader()).method(Connection.Method.GET).ignoreHttpErrors(true).timeout(7000).execute();
             setCookies(response.cookies());
-        } catch (IOException e) {
+        } catch (Exception e) {
             throw new ResponseException(e.getMessage());
         }
     }

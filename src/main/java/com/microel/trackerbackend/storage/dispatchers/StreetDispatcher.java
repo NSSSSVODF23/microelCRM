@@ -1,6 +1,6 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
-import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
+import com.microel.trackerbackend.controllers.configuration.Configuration;
 import com.microel.trackerbackend.controllers.configuration.FailedToReadConfigurationException;
 import com.microel.trackerbackend.controllers.configuration.entity.DefaultCitiesConf;
 import com.microel.trackerbackend.misc.CharacterTranslation;
@@ -8,7 +8,6 @@ import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.entities.address.City;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.address.Street;
-import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.repositories.StreetRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -33,17 +32,17 @@ import java.util.stream.Collectors;
 public class StreetDispatcher {
     private final StreetRepository streetRepository;
     private final CityDispatcher cityDispatcher;
-    private final ConfigurationStorage configurationStorage;
+    private final Configuration configuration;
     private final StompController stompController;
 
-    public StreetDispatcher(StreetRepository streetRepository, CityDispatcher cityDispatcher, ConfigurationStorage configurationStorage, StompController stompController) {
+    public StreetDispatcher(StreetRepository streetRepository, CityDispatcher cityDispatcher, Configuration configuration, StompController stompController) {
         this.streetRepository = streetRepository;
         this.cityDispatcher = cityDispatcher;
-        this.configurationStorage = configurationStorage;
+        this.configuration = configuration;
         this.stompController = stompController;
         if (cityDispatcher.getCount() == 0L) {
             try {
-                DefaultCitiesConf conf = configurationStorage.load(DefaultCitiesConf.class);
+                DefaultCitiesConf conf = configuration.load(DefaultCitiesConf.class);
                 conf.forEach(cityDef -> {
                     City city = cityDispatcher.create(cityDef.name);
                     saveAll(cityDef.streets, city);

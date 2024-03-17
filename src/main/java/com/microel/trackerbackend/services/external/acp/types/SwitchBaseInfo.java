@@ -3,6 +3,7 @@ package com.microel.trackerbackend.services.external.acp.types;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.lang.Nullable;
 
 @Getter
 @Setter
@@ -17,6 +18,8 @@ public class SwitchBaseInfo {
     private Short type;
     private Boolean isHasError;
     private String errorMessage;
+    @Nullable
+    private String address;
 
     public static SwitchBaseInfo from(Switch sw, String model) {
         return SwitchBaseInfo.builder()

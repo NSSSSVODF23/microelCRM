@@ -18,6 +18,16 @@
     </properties>
     <dependencies>
         <dependency>
+            <groupId>com.microel</groupId>
+            <artifactId>confstore</artifactId>
+            <version>1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.microel</groupId>
+            <artifactId>tdo</artifactId>
+            <version>1.0</version>
+        </dependency>
+        <dependency>
             <groupId>com.openhtmltopdf</groupId>
             <artifactId>openhtmltopdf-core</artifactId>
             <version>1.0.6</version>

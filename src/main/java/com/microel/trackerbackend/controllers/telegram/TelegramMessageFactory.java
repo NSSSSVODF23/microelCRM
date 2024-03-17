@@ -13,6 +13,7 @@ import com.microel.trackerbackend.storage.entities.acp.NetworkConnectionLocation
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
+import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.task.Contract;
 import com.microel.trackerbackend.storage.entities.task.Task;
@@ -874,6 +875,20 @@ public class TelegramMessageFactory {
         mediaList.get(0).setCaption(message);
         SendMediaGroup sendMediaGroup = new SendMediaGroup(chatId, mediaList);
         return new GroupMessageExecutor(sendMediaGroup, context);
+    }
+
+    public AbstractExecutor<Message> workComments(List<Comment> comments) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Комментарии:\n");
+        for(Comment comment : comments){
+            sb.append(comment.getCreator().getFullName()).append(": ").append(Decorator.bold(comment.getSimpleText())).append("\n");
+        }
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(sb.toString())
+                .parseMode("HTML")
+                .build();
+        return new MessageExecutor<>(sendMessage, context);
     }
 
     /**

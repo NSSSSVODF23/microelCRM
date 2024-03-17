@@ -1,7 +1,7 @@
 package com.microel.trackerbackend.controllers.telegram;
 
 import com.microel.trackerbackend.CustomException;
-import com.microel.trackerbackend.controllers.configuration.ConfigurationStorage;
+import com.microel.trackerbackend.controllers.configuration.Configuration;
 import com.microel.trackerbackend.controllers.configuration.FailedToReadConfigurationException;
 import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigurationException;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
@@ -24,10 +24,12 @@ import com.microel.trackerbackend.storage.dispatchers.*;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.chat.ChatMessageDto;
 import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
+import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.chat.*;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
+import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
@@ -35,10 +37,14 @@ import com.microel.trackerbackend.storage.entities.task.WorkLogTargetFile;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
+import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.*;
+import com.microel.trackerbackend.storage.repositories.CommentRepository;
+import com.microel.trackerbackend.storage.repositories.ModelItemRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,6 +62,8 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.BotSession;
 import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
 
+import javax.persistence.criteria.Join;
+import javax.persistence.criteria.JoinType;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -75,7 +83,9 @@ import static java.util.Comparator.comparingInt;
 @Component
 @Transactional
 public class TelegramController {
-    private final ConfigurationStorage configurationStorage;
+    private final ModelItemRepository modelItemRepository;
+    private final CommentRepository commentRepository;
+    private final Configuration configuration;
     private final TaskDispatcher taskDispatcher;
     private final WorkLogDispatcher workLogDispatcher;
     private final ChatDispatcher chatDispatcher;
@@ -100,11 +110,13 @@ public class TelegramController {
     @Nullable
     private BotSession mainBotSession;
 
-    public TelegramController(ConfigurationStorage configurationStorage, TaskDispatcher taskDispatcher, WorkLogDispatcher workLogDispatcher,
+    public TelegramController(Configuration configuration, TaskDispatcher taskDispatcher, WorkLogDispatcher workLogDispatcher,
                               ChatDispatcher chatDispatcher, ChatMessageDispatcher chatMessageDispatcher, EmployeeDispatcher employeeDispatcher,
                               StompController stompController, AttachmentDispatcher attachmentDispatcher, ApiBillingController apiBillingController,
-                              AddressDispatcher addressDispatcher, HouseDispatcher houseDispatcher, WorkingDayDispatcher workingDayDispatcher, AcpClient acpClient, FilesWatchService filesWatchService) {
-        this.configurationStorage = configurationStorage;
+                              AddressDispatcher addressDispatcher, HouseDispatcher houseDispatcher, WorkingDayDispatcher workingDayDispatcher, AcpClient acpClient, FilesWatchService filesWatchService,
+                              CommentRepository commentRepository,
+                              ModelItemRepository modelItemRepository) {
+        this.configuration = configuration;
         this.taskDispatcher = taskDispatcher;
         this.workLogDispatcher = workLogDispatcher;
         this.chatDispatcher = chatDispatcher;
@@ -119,7 +131,7 @@ public class TelegramController {
         this.acpClient = acpClient;
         this.filesWatchService = filesWatchService;
         try {
-            telegramConf = configurationStorage.load(TelegramConf.class);
+            telegramConf = configuration.load(TelegramConf.class);
             initializeMainBot();
         } catch (FailedToReadConfigurationException e) {
             log.warn("Конфигурация для Telegram не найдена");
@@ -128,6 +140,8 @@ public class TelegramController {
         } catch (IOException e) {
             log.error(e.getMessage());
         }
+        this.commentRepository = commentRepository;
+        this.modelItemRepository = modelItemRepository;
     }
 
     private void initializeApi() throws TelegramApiException {
@@ -281,9 +295,9 @@ public class TelegramController {
                 TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Чат не является группой").execute();
                 return false;
             }
-            telegramConf = configurationStorage.loadOrDefault(TelegramConf.class, new TelegramConf());
+            telegramConf = configuration.loadOrDefault(TelegramConf.class, new TelegramConf());
             telegramConf.setDhcpNotificationChatId(chatId.toString());
-            configurationStorage.save(telegramConf);
+            configuration.save(telegramConf);
             stompController.changeTelegramConfig(telegramConf);
             TelegramMessageFactory.create(chatId, mainBot).simpleMessage("Установлена группа для получения уведомлений о DHCP").execute();
             return true;
@@ -328,6 +342,11 @@ public class TelegramController {
             SuperMessage systemMessage = chatDispatcher.createSystemMessage(chatFromWorkLog.getChatId(), "\uD83D\uDC77\uD83C\uDFFB\u200D♂️" + employee.getFullName() + " принял задачу и подключился к чату", this);
             String targetDescription = workLog.getTargetDescription();
             List<WorkLogTargetFile> files = workLog.getTargetFiles();
+            WorkLog finalWorkLog = workLog;
+            List<Comment> comments = commentRepository.findAll((root, query, cb) -> {
+                Join<Comment, WorkLog> workLogJoin = root.join("workLogs", JoinType.LEFT);
+                return cb.and(workLogJoin.get("workLogId").in(finalWorkLog.getWorkLogId()));
+            }, Sort.by("created"));
             // Отправляем обновления в интерфейс пользователя
             broadcastUpdatesToWeb(systemMessage);
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
@@ -354,6 +373,9 @@ public class TelegramController {
                     }else if (targetDescription != null && !targetDescription.isBlank()){
                         groupChatFactory.workTargetMessage(targetDescription, null).execute();
                     }
+                    if(!comments.isEmpty()){
+                        groupChatFactory.workComments(comments).execute();
+                    }
                 }
             }
             if (files != null && !files.isEmpty()) {
@@ -364,6 +386,9 @@ public class TelegramController {
                 }
             }else if (targetDescription != null && !targetDescription.isBlank()){
                 messageFactory.workTargetMessage(targetDescription, null).execute();
+            }
+            if(!comments.isEmpty()){
+                messageFactory.workComments(comments).execute();
             }
             return true;
         }));
@@ -875,13 +900,15 @@ public class TelegramController {
                 Employee employee = getEmployeeByChat(chatId);
                 OperatingMode operatingMode = operatingModes.get(employee);
                 if(operatingMode == null) {
-                    String messageText = update.getMessage().getText();
-                    if(messageText.equals("Зарплата")){
+                    boolean processed = false;
+                    String messageText = update.getMessage().getText().trim().toLowerCase();
+                    if(messageText.equals("зарплата")){
                         Integer salarySumByDateRange = workingDayDispatcher.getSalarySumByDateRange(employee, DateRange.thisMonth());
                         messageFactory.simpleMessage("Зарплата за текущий месяц: "+Decorator.bold(salarySumByDateRange+" руб.")).execute();
-                        return true;
+                        processed = true;
                     }
-                    return false;
+
+                    return processed;
                 }
                 switch (operatingMode){
                     case REPORT_SENDING -> {
@@ -975,6 +1002,73 @@ public class TelegramController {
         mainBot.subscribe(new TelegramGroupMessageReactor(update -> {
             try {
                 sendMessageFromTlgGroupChat(update.getMessage());
+
+                Long userId = update.getMessage().getFrom().getId();
+                TelegramMessageFactory messageFactory = TelegramMessageFactory.create(update.getMessage().getChatId(), mainBot);
+                Employee employee = getEmployeeByChat(userId);
+                String messageText = update.getMessage().getText().trim().toLowerCase();
+
+                if(messageText.contains("схему") && employee.getOffsite()){
+                    try {
+                        WorkLog workLog = workLogDispatcher.getAcceptedWorkLogByEmployee(employee);
+                        List<ModelItem> addressFields = modelItemRepository.findAll((root, query, cb) -> {
+                            Join<ModelItem, Task> taskJoin = root.join("task", JoinType.LEFT);
+                            return cb.and(
+                                    cb.equal(taskJoin, workLog.getTask()),
+                                    cb.equal(root.get("wireframeFieldType"), WireframeFieldType.ADDRESS)
+                            );
+                        });
+                        Set<TFile> files = new HashSet<>();
+                        for(ModelItem addressField : addressFields) {
+                            Address address = addressField.getAddressData();
+                            if(address == null) continue;
+
+                            List<String> streetNames = new ArrayList<>();
+
+                            if(address.getStreet().getName() != null && !address.getStreet().getName().isBlank())
+                                streetNames.add(address.getStreet().getName());
+                            if(address.getStreet().getBillingAlias() != null && !address.getStreet().getBillingAlias().isBlank())
+                                streetNames.add(address.getStreet().getBillingAlias());
+                            if(address.getStreet().getAltNames() != null && !address.getStreet().getAltNames().isBlank())
+                                streetNames.addAll(List.of(address.getStreet().getAltNames().split(",")));
+
+                            for(String streetName : streetNames){
+                                List<TFile> fileSuggestions = filesWatchService.searchFiles(streetName + " " + address.getHouseNamePart() + ".png", null);
+                                if(!fileSuggestions.isEmpty()) {
+                                    files.addAll(fileSuggestions);
+                                    break;
+                                }
+                            }
+                        }
+
+                        if(!files.isEmpty()){
+                            for (TFile file : files) {
+                                messageFactory.file(file).execute();
+                            }
+                        }
+                    }catch (Exception ignored){}
+                }
+
+                if(messageText.contains("живых") && employee.getOffsite()){
+                    WorkLog workLog = workLogDispatcher.getAcceptedWorkLogByEmployee(employee);
+                    List<ModelItem> addressFields = modelItemRepository.findAll((root, query, cb) -> {
+                        Join<ModelItem, Task> taskJoin = root.join("task", JoinType.LEFT);
+                        return cb.and(
+                                cb.equal(taskJoin, workLog.getTask()),
+                                cb.equal(root.get("wireframeFieldType"), WireframeFieldType.ADDRESS)
+                        );
+                    });
+                    for(ModelItem addressField : addressFields) {
+                        Address address = addressField.getAddressData();
+                        if (address == null) continue;
+                        String calculateCountingLives = apiBillingController.getCalculateCountingLives(ApiBillingController.CountingLivesForm.of(address, 1, 500));
+                        messageFactory.simpleMessage(
+                                Decorator.underline(address.getAddressName()) + ":\n" +
+                                        calculateCountingLives
+                        ).execute();
+                    }
+                }
+
                 return true;
             }catch (Exception e){
                 return false;
@@ -1120,7 +1214,7 @@ public class TelegramController {
 
     public void changeTelegramConf(TelegramConf telegramConf) throws
             FailedToWriteConfigurationException, TelegramApiException, IOException {
-        configurationStorage.save(telegramConf);
+        configuration.save(telegramConf);
         this.telegramConf = telegramConf;
         stompController.changeTelegramConfig(telegramConf);
         initializeMainBot();

@@ -55,7 +55,7 @@ public class CommutatorsAvailabilityCheckService {
 
     @Async
     @Transactional
-    @Scheduled(fixedDelay = 40000L, initialDelay = 10000L)
+//    @Scheduled(fixedDelay = 40000L, initialDelay = 10000L)
     public void getAllCommutators() {
         ExecutorService executorService = Executors.newFixedThreadPool(3);
         for (Switch comm : cachedCommutators) {

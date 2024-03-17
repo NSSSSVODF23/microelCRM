@@ -1,6 +1,6 @@
 package com.microel.trackerbackend.controllers.configuration.entity;
 
-import com.microel.trackerbackend.controllers.configuration.AbstractConfiguration;
+import com.microel.confstore.AbstractConfiguration;
 
 import java.util.ArrayList;
 
@@ -8,6 +8,11 @@ public class DefaultCitiesConf extends ArrayList<DefaultCitiesConf.CityDef> impl
     public static class CityDef{
         public String name;
         public ArrayList<String> streets;
+    }
+
+    @Override
+    public String fileName() {
+        return "defaultCities.conf";
     }
 
     @Override

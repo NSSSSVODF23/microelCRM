@@ -65,6 +65,8 @@ public class BillingRequestController {
 
     @GetMapping("user/{login}")
     public ResponseEntity<ApiBillingController.TotalUserInfo> getBillingUserInfo(@PathVariable String login) {
+        if(login.equals("test"))
+            return ResponseEntity.ok(apiBillingController.testUser());
         return ResponseEntity.ok(apiBillingController.getUserInfo(login));
     }
 
@@ -415,6 +417,11 @@ public class BillingRequestController {
         apiBillingController.getUpdatedUserAndPushUpdate(login);
 
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("suggestions/user")
+    public ResponseEntity<List<ApiBillingController.UserItemData>> getUserSuggestions(@RequestParam String query) {
+        return ResponseEntity.ok(apiBillingController.getUserSuggestions(query));
     }
 
     @PostMapping("counting-lives")
