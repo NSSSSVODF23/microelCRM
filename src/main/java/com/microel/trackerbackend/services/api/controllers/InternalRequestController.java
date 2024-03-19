@@ -3,6 +3,7 @@ package com.microel.trackerbackend.services.api.controllers;
 import com.microel.tdo.pon.Worker;
 import com.microel.tdo.pon.events.OntStatusChangeEvent;
 import com.microel.tdo.pon.terminal.OpticalNetworkTerminal;
+import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.services.api.StompController;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -18,15 +19,18 @@ import java.util.List;
 @RequestMapping("api/internal")
 public class InternalRequestController {
     private final StompController stompController;
+    private final TelegramController telegramController;
 
-    public InternalRequestController(StompController stompController) {
+    public InternalRequestController(StompController stompController, TelegramController telegramController) {
         this.stompController = stompController;
+        this.telegramController = telegramController;
     }
 
 
     @PostMapping("pon/event/ont/status/change")
     public ResponseEntity<Void> receiveOntStatusChangeEvent(@RequestBody List<OntStatusChangeEvent> events) {
         stompController.sendNewOntStatusChangeEvents(events);
+        telegramController.sendOntEvents(events);
         return ResponseEntity.ok().build();
     }
 

@@ -282,4 +282,17 @@ public class EmployeeDispatcher {
             return cb.and(predicates.toArray(Predicate[]::new));
         });
     }
+
+    @Transactional
+    public void editTrackOlt(Employee employee, @Nullable String olt) {
+        if(employee.getTelegramOptions() == null) {
+            TelegramOptions telegramOptions = TelegramOptions.createDefault();
+            telegramOptions.setTrackTerminal(olt);
+            employee.setTelegramOptions(telegramOptions);
+            employeeRepository.save(employee);
+        }else{
+            employee.getTelegramOptions().setTrackTerminal(olt);
+            employeeRepository.save(employee);
+        }
+    }
 }

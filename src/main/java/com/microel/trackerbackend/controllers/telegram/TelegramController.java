@@ -1,5 +1,7 @@
 package com.microel.trackerbackend.controllers.telegram;
 
+import com.microel.tdo.pon.OpticalLineTerminal;
+import com.microel.tdo.pon.events.OntStatusChangeEvent;
 import com.microel.trackerbackend.CustomException;
 import com.microel.trackerbackend.controllers.configuration.Configuration;
 import com.microel.trackerbackend.controllers.configuration.FailedToReadConfigurationException;
@@ -17,6 +19,7 @@ import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
 import com.microel.trackerbackend.services.external.billing.ApiBillingController;
+import com.microel.trackerbackend.services.external.pon.PonextenderClient;
 import com.microel.trackerbackend.services.filemanager.FileData;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
 import com.microel.trackerbackend.services.filemanager.exceptions.WriteError;
@@ -27,7 +30,9 @@ import com.microel.trackerbackend.storage.dto.mapper.ChatMapper;
 import com.microel.trackerbackend.storage.entities.address.Address;
 import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.chat.Chat;
-import com.microel.trackerbackend.storage.entities.chat.*;
+import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
+import com.microel.trackerbackend.storage.entities.chat.SuperMessage;
+import com.microel.trackerbackend.storage.entities.chat.TelegramMessageBind;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
@@ -37,11 +42,13 @@ import com.microel.trackerbackend.storage.entities.task.WorkLogTargetFile;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
+import com.microel.trackerbackend.storage.entities.team.util.TelegramOptions;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.*;
 import com.microel.trackerbackend.storage.repositories.CommentRepository;
 import com.microel.trackerbackend.storage.repositories.ModelItemRepository;
+import com.microel.trackerbackend.storage.repositories.TelegramOptionsRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
@@ -83,6 +90,7 @@ import static java.util.Comparator.comparingInt;
 @Component
 @Transactional
 public class TelegramController {
+    private final TelegramOptionsRepository telegramOptionsRepository;
     private final ModelItemRepository modelItemRepository;
     private final CommentRepository commentRepository;
     private final Configuration configuration;
@@ -99,6 +107,7 @@ public class TelegramController {
     private final WorkingDayDispatcher workingDayDispatcher;
     private final AcpClient acpClient;
     private final FilesWatchService filesWatchService;
+    private final PonextenderClient ponextenderClient;
     private final Map<String, List<Message>> groupedMessagesFromTelegram = new ConcurrentHashMap<>();
     private final Map<Employee, OperatingMode> operatingModes = new ConcurrentHashMap<>();
     private final Map<Employee, List<Message>> reportMessages = new ConcurrentHashMap<>();
@@ -115,7 +124,8 @@ public class TelegramController {
                               StompController stompController, AttachmentDispatcher attachmentDispatcher, ApiBillingController apiBillingController,
                               AddressDispatcher addressDispatcher, HouseDispatcher houseDispatcher, WorkingDayDispatcher workingDayDispatcher, AcpClient acpClient, FilesWatchService filesWatchService,
                               CommentRepository commentRepository,
-                              ModelItemRepository modelItemRepository) {
+                              ModelItemRepository modelItemRepository, PonextenderClient ponextenderClient,
+                              TelegramOptionsRepository telegramOptionsRepository) {
         this.configuration = configuration;
         this.taskDispatcher = taskDispatcher;
         this.workLogDispatcher = workLogDispatcher;
@@ -130,6 +140,7 @@ public class TelegramController {
         this.workingDayDispatcher = workingDayDispatcher;
         this.acpClient = acpClient;
         this.filesWatchService = filesWatchService;
+        this.ponextenderClient = ponextenderClient;
         try {
             telegramConf = configuration.load(TelegramConf.class);
             initializeMainBot();
@@ -142,6 +153,7 @@ public class TelegramController {
         }
         this.commentRepository = commentRepository;
         this.modelItemRepository = modelItemRepository;
+        this.telegramOptionsRepository = telegramOptionsRepository;
     }
 
     private void initializeApi() throws TelegramApiException {
@@ -163,6 +175,7 @@ public class TelegramController {
         List<BotCommand> commands = List.of(
                 new BotCommand("current_task", "Текущая задача"),
                 new BotCommand("another_task", "Список моих задач"),
+                new BotCommand("options", "Настройки"),
                 new BotCommand("check_alive", "Проверить живых"),
                 new BotCommand("house_sessions", "Получить сессии в доме"),
                 new BotCommand("commutator_sessions", "Получить сессии коммутатора"),
@@ -236,6 +249,20 @@ public class TelegramController {
             }
         }));
 
+        mainBot.subscribe(new TelegramCommandReactor("/options", update -> {
+            Long chatId = update.getMessage().getChatId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            try {
+                Employee employee = getEmployeeByChat(chatId);
+                messageFactory.optionsMenu(employee.getTelegramOptions()).execute();
+                return true;
+            } catch (Exception e) {
+                messageFactory.simpleMessage(e.getMessage()).execute();
+                return false;
+            }
+        }));
+
+
         mainBot.subscribe(new TelegramCommandReactor("/check_alive", update -> {
             Long chatId = update.getMessage().getChatId();
             try {
@@ -303,6 +330,61 @@ public class TelegramController {
             return true;
         }));
 
+        mainBot.subscribe(new TelegramCallbackReactor("t_opt", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if (data != null) {
+                try {
+                    Employee employee = getEmployeeByChat(chatId);
+                    try {
+                        messageFactory.deleteMessage(messageId).execute();
+                        if ("ch_track_olt".equals(data.getString())) {
+                            List<OpticalLineTerminal> oltList = ponextenderClient.getOltList();
+                            messageFactory.trackOltSettings(employee, oltList).execute();
+                        } else {
+                            messageFactory.answerCallback(callbackId, "Неизвестное меню").execute();
+                        }
+                        messageFactory.answerCallback(callbackId, null).execute();
+                        return true;
+                    } catch (EmptyResponse e) {
+                        messageFactory.answerCallback(callbackId, "Не удалось найти информацию о пользователе").execute();
+                    }
+                } catch (Exception e) {
+                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+                }
+            }
+            return false;
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("set_track_olt", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if (data != null) {
+                try {
+                    Employee employee = getEmployeeByChat(chatId);
+                    try {
+                        messageFactory.deleteMessage(messageId).execute();
+                        switch (data.getString()) {
+                            case "null" -> employeeDispatcher.editTrackOlt(employee, null);
+                            case "all" -> employeeDispatcher.editTrackOlt(employee, "all");
+                            default -> employeeDispatcher.editTrackOlt(employee, data.toString());
+                        }
+                        messageFactory.answerCallback(callbackId, "Настройка сохранена").execute();
+                        return true;
+                    } catch (EmptyResponse e) {
+                        messageFactory.answerCallback(callbackId, "Не удалось найти информацию о пользователе").execute();
+                    }
+                } catch (Exception e) {
+                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+                }
+            }
+            return false;
+        }));
+
         mainBot.subscribe(new TelegramCallbackReactor("main_menu", (u, data) -> {
             if (data == null) return false;
             Long chatId = u.getCallbackQuery().getMessage().getChatId();
@@ -329,7 +411,7 @@ public class TelegramController {
 
             try {
                 workLog = workLogDispatcher.acceptWorkLog(data.getLong(), chatId);
-            }catch (CustomException e){
+            } catch (CustomException e) {
                 TelegramMessageFactory.create(chatId, mainBot).answerCallback(callbackId, e.getMessage()).execute();
                 return false;
             }
@@ -351,43 +433,43 @@ public class TelegramController {
             broadcastUpdatesToWeb(systemMessage);
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
             messageFactory.currentActiveTask(workLog.getTask()).execute();
-            if(employee.isHasGroup()){
+            if (employee.isHasGroup()) {
                 Set<String> employeesWithEqualGroups = workLog.getEmployees().stream()
                         .filter(Employee::isHasGroup)
-                        .filter(emp->Objects.equals(employee.getTelegramGroupChatId(), emp.getTelegramGroupChatId()))
+                        .filter(emp -> Objects.equals(employee.getTelegramGroupChatId(), emp.getTelegramGroupChatId()))
                         .map(Employee::getLogin)
                         .collect(Collectors.toSet());
                 boolean alreadySentTaskInfoToGroup = workLog.getAcceptedEmployees().stream()
                         .map(AcceptingEntry::getLogin)
                         .filter(login -> !Objects.equals(login, employee.getLogin()))
                         .anyMatch(employeesWithEqualGroups::contains);
-                if(!alreadySentTaskInfoToGroup || workLog.getGangLeader() != null) {
+                if (!alreadySentTaskInfoToGroup || workLog.getGangLeader() != null) {
                     TelegramMessageFactory groupChatFactory = TelegramMessageFactory.create(employee.getTelegramGroupChatId(), mainBot);
                     groupChatFactory.currentActiveTaskForGroupChat(workLog.getTask()).execute();
                     if (files != null && !files.isEmpty()) {
-                        if(files.size() == 1){
+                        if (files.size() == 1) {
                             groupChatFactory.workTargetMessage(targetDescription, files.get(0)).execute();
-                        }else{
+                        } else {
                             groupChatFactory.workTargetGroupMessage(targetDescription, files).execute();
                         }
-                    }else if (targetDescription != null && !targetDescription.isBlank()){
+                    } else if (targetDescription != null && !targetDescription.isBlank()) {
                         groupChatFactory.workTargetMessage(targetDescription, null).execute();
                     }
-                    if(!comments.isEmpty()){
+                    if (!comments.isEmpty()) {
                         groupChatFactory.workComments(comments).execute();
                     }
                 }
             }
             if (files != null && !files.isEmpty()) {
-                if(files.size() == 1){
+                if (files.size() == 1) {
                     messageFactory.workTargetMessage(targetDescription, files.get(0)).execute();
-                }else{
+                } else {
                     messageFactory.workTargetGroupMessage(targetDescription, files).execute();
                 }
-            }else if (targetDescription != null && !targetDescription.isBlank()){
+            } else if (targetDescription != null && !targetDescription.isBlank()) {
                 messageFactory.workTargetMessage(targetDescription, null).execute();
             }
-            if(!comments.isEmpty()){
+            if (!comments.isEmpty()) {
                 messageFactory.workComments(comments).execute();
             }
             return true;
@@ -396,7 +478,7 @@ public class TelegramController {
         mainBot.subscribe(new TelegramCallbackReactor("send_report", (update, data) -> {
             Long chatId = update.getCallbackQuery().getMessage().getChatId();
             String callbackId = update.getCallbackQuery().getId();
-            try{
+            try {
                 Employee employee = getEmployeeByChat(chatId);
 
                 TelegramMessageFactory factory = TelegramMessageFactory.create(chatId, mainBot);
@@ -413,11 +495,11 @@ public class TelegramController {
                 try {
                     List<Message> messageList = reportMessages.get(employee);
                     WorkLog workLog = workLogDispatcher.createReport(employee, messageList);
-                    if(employee.isHasGroup()){
-                        String title = Decorator.underline(Decorator.bold("Отчет "+employee.getFullName()+" по задаче #"+workLog.getTask().getTaskId()));
+                    if (employee.isHasGroup()) {
+                        String title = Decorator.underline(Decorator.bold("Отчет " + employee.getFullName() + " по задаче #" + workLog.getTask().getTaskId()));
                         String reportText = messageList.stream().map(Message::getText).collect(Collectors.joining("\n"));
                         TelegramMessageFactory.create(employee.getTelegramGroupChatId(), mainBot)
-                                .simpleMessage(title+"\n"+reportText)
+                                .simpleMessage(title + "\n" + reportText)
                                 .execute();
                     }
                     reportMessages.remove(employee);
@@ -431,7 +513,7 @@ public class TelegramController {
                     factory.simpleMessage(e.getMessage()).execute();
                     return false;
                 }
-            }catch (Exception e){
+            } catch (Exception e) {
                 TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage() == null ? e.getMessage() : "Неизвестная ошибка").execute();
                 return false;
             }
@@ -444,35 +526,35 @@ public class TelegramController {
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
             try {
                 Employee employee = getEmployeeByChat(chatId);
-                if(data == null){
+                if (data == null) {
                     messageFactory.answerCallback(callbackId, "Пустое сообщение о выходе из режима").execute();
                     return false;
                 }
-                switch (data.getString()){
-                    case "check_alive"-> {
+                switch (data.getString()) {
+                    case "check_alive" -> {
                         operatingModes.remove(employee);
                         messageFactory.answerCallback(callbackId, "Выход из режима проверки живых абонентов").execute();
                         return true;
                     }
-                    case "house_sessions" ->{
+                    case "house_sessions" -> {
                         operatingModes.remove(employee);
-                        messageFactory.answerCallback(callbackId,"Выход из режима сессий в доме").execute();
+                        messageFactory.answerCallback(callbackId, "Выход из режима сессий в доме").execute();
                         return true;
                     }
-                    case "commutator_sessions" ->{
+                    case "commutator_sessions" -> {
                         operatingModes.remove(employee);
-                        messageFactory.answerCallback(callbackId,"Выход из режима сессий в коммутаторе").execute();
+                        messageFactory.answerCallback(callbackId, "Выход из режима сессий в коммутаторе").execute();
                         return true;
                     }
                     case "search_schemes" -> {
                         operatingModes.remove(employee);
-                        messageFactory.answerCallback(callbackId,"Выход из режима поиска схем").execute();
+                        messageFactory.answerCallback(callbackId, "Выход из режима поиска схем").execute();
                         return true;
                     }
-                    default -> messageFactory.answerCallback(callbackId,"Неизвестный режим").execute();
+                    default -> messageFactory.answerCallback(callbackId, "Неизвестный режим").execute();
                 }
                 return false;
-            }catch (Exception e){
+            } catch (Exception e) {
                 messageFactory.simpleMessage(e.getMessage()).execute();
                 return false;
             }
@@ -493,9 +575,9 @@ public class TelegramController {
                     TelegramMessageFactory.create(chatId, mainBot).answerCallback(callbackId, "Вы отменили завершение задачи, она вновь активна. Вы находитесь в режиме чата задачи.").execute();
                     return true;
                 }
-                TelegramMessageFactory.create(chatId, mainBot).answerCallback(callbackId,"Вы не можете отменить завершение задачи так как не находитесь в режиме закрытия задачи.").execute();
+                TelegramMessageFactory.create(chatId, mainBot).answerCallback(callbackId, "Вы не можете отменить завершение задачи так как не находитесь в режиме закрытия задачи.").execute();
                 return false;
-            }catch (Exception e){
+            } catch (Exception e) {
                 TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
                 return false;
             }
@@ -506,8 +588,8 @@ public class TelegramController {
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
             String callbackId = update.getCallbackQuery().getId();
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
-            if(data == null) {
-                messageFactory.answerCallback(callbackId,"Неверные данные callback").execute();
+            if (data == null) {
+                messageFactory.answerCallback(callbackId, "Неверные данные callback").execute();
                 return false;
             }
             try {
@@ -518,13 +600,13 @@ public class TelegramController {
                     messageFactory.answerCallback(callbackId, null).execute();
                     messageFactory.simpleMessage(calculateCountingLives).execute();
                     operatingModes.remove(employee);
-                }catch (Exception e){
+                } catch (Exception e) {
                     messageFactory.answerCallback(callbackId, null).execute();
-                    messageFactory.simpleMessage("Ошибка: "+e.getMessage()).execute();
+                    messageFactory.simpleMessage("Ошибка: " + e.getMessage()).execute();
                     return false;
                 }
                 return true;
-            }catch (Exception e){
+            } catch (Exception e) {
                 messageFactory.simpleMessage(e.getMessage()).execute();
                 return false;
             }
@@ -535,36 +617,36 @@ public class TelegramController {
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
             String callbackId = update.getCallbackQuery().getId();
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
-            if(data == null) {
-                messageFactory.answerCallback(callbackId,"Неверные данные callback").execute();
+            if (data == null) {
+                messageFactory.answerCallback(callbackId, "Неверные данные callback").execute();
                 return false;
             }
             try {
                 Employee employee = getEmployeeByChat(chatId);
                 try {
                     House house = houseDispatcher.get(data.getLong());
-                    if(house.getAcpHouseBind() == null){
+                    if (house.getAcpHouseBind() == null) {
                         messageFactory.answerCallback(callbackId, "Адрес не связан с ACP").execute();
                         return false;
                     }
                     Integer buildingId = house.getAcpHouseBind().getBuildingId();
                     RestPage<DhcpBinding> lastBindings = acpClient.getLastBindings(0, (short) 1, null, null, null, null, buildingId, null);
-                    lastBindings.forEach(lb->{
+                    lastBindings.forEach(lb -> {
                         ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(lb.getAuthName());
-                        if(userInfo != null){
+                        if (userInfo != null) {
                             lb.setBillingAddress(userInfo.getIbase().getAddr());
                         }
                     });
                     messageFactory.answerCallback(callbackId, null).execute();
                     messageFactory.sessionPage(lastBindings, buildingId).execute();
                     operatingModes.remove(employee);
-                }catch (Exception e){
+                } catch (Exception e) {
                     messageFactory.answerCallback(callbackId, null).execute();
-                    messageFactory.simpleMessage("Ошибка: "+e.getMessage()).execute();
+                    messageFactory.simpleMessage("Ошибка: " + e.getMessage()).execute();
                     return false;
                 }
                 return true;
-            }catch (Exception e){
+            } catch (Exception e) {
                 messageFactory.simpleMessage(e.getMessage()).execute();
                 return false;
             }
@@ -575,30 +657,30 @@ public class TelegramController {
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
             String callbackId = update.getCallbackQuery().getId();
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
-            if(data == null) {
-                messageFactory.answerCallback(callbackId,"Неверные данные callback").execute();
+            if (data == null) {
+                messageFactory.answerCallback(callbackId, "Неверные данные callback").execute();
                 return false;
             }
             try {
                 Employee employee = getEmployeeByChat(chatId);
                 try {
                     RestPage<DhcpBinding> lastBindings = acpClient.getLastBindings(0, (short) 1, null, null, null, null, null, data.getInt(), null);
-                    lastBindings.forEach(lb->{
+                    lastBindings.forEach(lb -> {
                         ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(lb.getAuthName());
-                        if(userInfo != null){
+                        if (userInfo != null) {
                             lb.setBillingAddress(userInfo.getIbase().getAddr());
                         }
                     });
                     messageFactory.answerCallback(callbackId, null).execute();
                     messageFactory.sessionCommutatorPage(lastBindings, data.getInt()).execute();
                     operatingModes.remove(employee);
-                }catch (Exception e){
+                } catch (Exception e) {
                     messageFactory.answerCallback(callbackId, null).execute();
-                    messageFactory.simpleMessage("Ошибка: "+e.getMessage()).execute();
+                    messageFactory.simpleMessage("Ошибка: " + e.getMessage()).execute();
                     return false;
                 }
                 return true;
-            }catch (Exception e){
+            } catch (Exception e) {
                 messageFactory.simpleMessage(e.getMessage()).execute();
                 return false;
             }
@@ -609,15 +691,15 @@ public class TelegramController {
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
             String callbackId = update.getCallbackQuery().getId();
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
-            if(data == null) {
-                messageFactory.answerCallback(callbackId,"Неверные данные callback").execute();
+            if (data == null) {
+                messageFactory.answerCallback(callbackId, "Неверные данные callback").execute();
                 return false;
             }
             try {
                 Employee employee = getEmployeeByChat(chatId);
                 try {
                     House house = houseDispatcher.get(data.getLong());
-                    if(house.getAcpHouseBind() == null){
+                    if (house.getAcpHouseBind() == null) {
                         messageFactory.answerCallback(callbackId, "Адрес не связан с ACP").execute();
                         return false;
                     }
@@ -626,13 +708,13 @@ public class TelegramController {
                     messageFactory.answerCallback(callbackId, null).execute();
                     messageFactory.commutatorSessions(commutators).execute();
                     operatingModes.remove(employee);
-                }catch (Exception e){
+                } catch (Exception e) {
                     messageFactory.answerCallback(callbackId, null).execute();
-                    messageFactory.simpleMessage("Ошибка: "+e.getMessage()).execute();
+                    messageFactory.simpleMessage("Ошибка: " + e.getMessage()).execute();
                     return false;
                 }
                 return true;
-            }catch (Exception e){
+            } catch (Exception e) {
                 messageFactory.simpleMessage(e.getMessage()).execute();
                 return false;
             }
@@ -643,17 +725,17 @@ public class TelegramController {
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
             String callbackId = update.getCallbackQuery().getId();
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
-            if(data != null){
+            if (data != null) {
                 String[] split = data.getString().split(":");
-                if(split.length>=2){
-                    switch (split[0]){
-                        case "sessionHouse"-> {
+                if (split.length >= 2) {
+                    switch (split[0]) {
+                        case "sessionHouse" -> {
                             Integer pageHouse = Integer.parseInt(split[2]);
                             Integer buildingId = Integer.parseInt(split[1]);
                             RestPage<DhcpBinding> lastBindings = acpClient.getLastBindings(pageHouse, (short) 1, null, null, null, null, buildingId, null);
-                            lastBindings.forEach(lb->{
+                            lastBindings.forEach(lb -> {
                                 ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(lb.getAuthName());
-                                if(userInfo != null){
+                                if (userInfo != null) {
                                     lb.setBillingAddress(userInfo.getIbase().getAddr());
                                 }
                             });
@@ -661,13 +743,13 @@ public class TelegramController {
                             messageFactory.sessionPage(lastBindings, buildingId).execute();
                             return true;
                         }
-                        case "sessionHouseCommutator"->{
+                        case "sessionHouseCommutator" -> {
                             Integer pageCommutator = Integer.parseInt(split[2]);
                             Integer commutatorId = Integer.parseInt(split[1]);
                             RestPage<DhcpBinding> lastBindingsCommutator = acpClient.getLastBindings(pageCommutator, null, null, null, null, null, null, commutatorId, null);
-                            lastBindingsCommutator.forEach(lb->{
+                            lastBindingsCommutator.forEach(lb -> {
                                 ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(lb.getAuthName());
-                                if(userInfo != null){
+                                if (userInfo != null) {
                                     lb.setBillingAddress(userInfo.getIbase().getAddr());
                                 }
                             });
@@ -676,8 +758,8 @@ public class TelegramController {
                             return true;
                         }
                     }
-                }else{
-                    messageFactory.answerCallback(callbackId,"Не верный формат callback");
+                } else {
+                    messageFactory.answerCallback(callbackId, "Не верный формат callback");
                 }
             }
             return false;
@@ -688,7 +770,7 @@ public class TelegramController {
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
             String callbackId = update.getCallbackQuery().getId();
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
-            if(data != null){
+            if (data != null) {
                 try {
                     Employee employee = getEmployeeByChat(chatId);
                     try {
@@ -696,10 +778,10 @@ public class TelegramController {
                         messageFactory.answerCallback(callbackId, null).execute();
                         messageFactory.billingInfo(userInfo).execute();
                         return true;
-                    }catch (EmptyResponse e){
+                    } catch (EmptyResponse e) {
                         messageFactory.answerCallback(callbackId, "Не удалось найти информацию о пользователе").execute();
                     }
-                }catch (Exception e){
+                } catch (Exception e) {
                     messageFactory.answerCallback(callbackId, e.getMessage()).execute();
                 }
             }
@@ -711,14 +793,14 @@ public class TelegramController {
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
             String callbackId = update.getCallbackQuery().getId();
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
-            if(data != null){
+            if (data != null) {
                 try {
                     Employee employee = getEmployeeByChat(chatId);
                     List<DhcpBinding> bindingsByLogin = acpClient.getBindingsByLogin(data.getString());
                     messageFactory.answerCallback(callbackId, null).execute();
                     messageFactory.sessionPage(bindingsByLogin).execute();
                     return true;
-                }catch (Exception e){
+                } catch (Exception e) {
                     messageFactory.answerCallback(callbackId, e.getMessage()).execute();
                 }
             }
@@ -730,11 +812,11 @@ public class TelegramController {
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
             String callbackId = update.getCallbackQuery().getId();
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
-            if(data != null){
+            if (data != null) {
                 try {
                     Employee employee = getEmployeeByChat(chatId);
                     TFile file = filesWatchService.getFileById(data.getLong()).orElse(null);
-                    if(file == null){
+                    if (file == null) {
                         messageFactory.answerCallback(callbackId, "Файл не найден").execute();
                         return false;
                     }
@@ -742,7 +824,7 @@ public class TelegramController {
                     messageFactory.file(file).execute();
                     operatingModes.remove(employee);
                     return true;
-                }catch (Exception e){
+                } catch (Exception e) {
                     messageFactory.answerCallback(callbackId, e.getMessage()).execute();
                 }
             }
@@ -848,7 +930,7 @@ public class TelegramController {
                 List<ModelItem> fields = workLogDispatcher.getTaskFieldsAcceptedWorkLog(employee);
                 factory.loginInfoMenu(fields).execute();
                 return true;
-            }catch (Exception e){
+            } catch (Exception e) {
                 factory.simpleMessage(e.getMessage()).execute();
                 return false;
             }
@@ -863,10 +945,10 @@ public class TelegramController {
                 try {
                     WorkLog workLog = workLogDispatcher.getAcceptedWorkLogByEmployee(employee);
 
-                    if(workLog.getDeferredReport() != null && workLog.getDeferredReport()){
+                    if (workLog.getDeferredReport() != null && workLog.getDeferredReport()) {
                         workLogDispatcher.createReport(employee);
-                        if(employee.isHasGroup()){
-                            String title = Decorator.underline(Decorator.bold("Задача завершена #"+workLog.getTask().getTaskId()));
+                        if (employee.isHasGroup()) {
+                            String title = Decorator.underline(Decorator.bold("Задача завершена #" + workLog.getTask().getTaskId()));
                             TelegramMessageFactory.create(employee.getTelegramGroupChatId(), mainBot)
                                     .simpleMessage(title)
                                     .execute();
@@ -886,7 +968,7 @@ public class TelegramController {
                     factory.clearKeyboardMenu().execute();
                 }
                 return false;
-            }catch (Exception e){
+            } catch (Exception e) {
                 factory.simpleMessage(e.getMessage()).execute();
                 return false;
             }
@@ -899,20 +981,20 @@ public class TelegramController {
             try {
                 Employee employee = getEmployeeByChat(chatId);
                 OperatingMode operatingMode = operatingModes.get(employee);
-                if(operatingMode == null) {
+                if (operatingMode == null) {
                     boolean processed = false;
                     String messageText = update.getMessage().getText().trim().toLowerCase();
-                    if(messageText.equals("зарплата")){
+                    if (messageText.equals("зарплата")) {
                         Integer salarySumByDateRange = workingDayDispatcher.getSalarySumByDateRange(employee, DateRange.thisMonth());
-                        messageFactory.simpleMessage("Зарплата за текущий месяц: "+Decorator.bold(salarySumByDateRange+" руб.")).execute();
+                        messageFactory.simpleMessage("Зарплата за текущий месяц: " + Decorator.bold(salarySumByDateRange + " руб.")).execute();
                         processed = true;
                     }
 
                     return processed;
                 }
-                switch (operatingMode){
+                switch (operatingMode) {
                     case REPORT_SENDING -> {
-                        reportMessages.compute(employee, (key, value)->{
+                        reportMessages.compute(employee, (key, value) -> {
                             if (value == null) value = new ArrayList<>();
                             value.add(update.getMessage());
                             return value;
@@ -921,7 +1003,7 @@ public class TelegramController {
                     }
                     case CHECK_ALIVE -> {
                         List<House> suggestions = addressDispatcher.getSuggestionsHouse(update.getMessage().getText(), true).stream().limit(5).toList();
-                        if(suggestions.isEmpty()){
+                        if (suggestions.isEmpty()) {
                             messageFactory.simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
                             return true;
                         }
@@ -930,7 +1012,7 @@ public class TelegramController {
                     }
                     case HOUSE_SESSIONS -> {
                         List<House> suggestions = addressDispatcher.getSuggestionsHouse(update.getMessage().getText(), true).stream().limit(5).toList();
-                        if(suggestions.isEmpty()){
+                        if (suggestions.isEmpty()) {
                             messageFactory.simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
                             return true;
                         }
@@ -939,7 +1021,7 @@ public class TelegramController {
                     }
                     case COMMUTATOR_SESSIONS -> {
                         List<House> suggestions = addressDispatcher.getSuggestionsHouse(update.getMessage().getText(), true).stream().limit(5).toList();
-                        if(suggestions.isEmpty()){
+                        if (suggestions.isEmpty()) {
                             messageFactory.simpleMessage("Адресов по запросу не найдено. Попробуйте еще раз.").execute();
                             return true;
                         }
@@ -949,7 +1031,7 @@ public class TelegramController {
                     case SEARCH_FILES -> {
                         List<TFile.FileSuggestion> foundFiles = filesWatchService.getFileSuggestions(update.getMessage().getText())
                                 .stream().toList();
-                        if(foundFiles.isEmpty()){
+                        if (foundFiles.isEmpty()) {
                             messageFactory.simpleMessage("Схем по запросу не найдено. Попробуйте еще раз.").execute();
                             return true;
                         }
@@ -957,7 +1039,7 @@ public class TelegramController {
                     }
                 }
                 return false;
-            }catch (Exception e){
+            } catch (Exception e) {
                 messageFactory.simpleMessage(e.getMessage()).execute();
                 return false;
             }
@@ -968,7 +1050,7 @@ public class TelegramController {
             try {
                 Employee employee = getEmployeeByChat(chatId);
                 OperatingMode operatingMode = operatingModes.get(employee);
-                if(operatingMode == null) {
+                if (operatingMode == null) {
 //                    try {
 //                        sendMessageFromTlgChat(update.getMessage());
 //                        return true;
@@ -977,11 +1059,11 @@ public class TelegramController {
 //                    }
                     return false;
                 }
-                switch (operatingMode){
+                switch (operatingMode) {
                     case REPORT_SENDING -> {
                         Message updateMessage = update.getEditedMessage();
-                        reportMessages.computeIfPresent(employee, (key, value)->{
-                            value.stream().filter(msg->msg.getMessageId().equals(updateMessage.getMessageId())).findFirst().ifPresent(msg->{
+                        reportMessages.computeIfPresent(employee, (key, value) -> {
+                            value.stream().filter(msg -> msg.getMessageId().equals(updateMessage.getMessageId())).findFirst().ifPresent(msg -> {
                                 msg.setText(updateMessage.getText());
                             });
                             return value;
@@ -993,7 +1075,7 @@ public class TelegramController {
                     }
                 }
                 return false;
-            }catch (Exception e){
+            } catch (Exception e) {
                 TelegramMessageFactory.create(chatId, mainBot).simpleMessage(e.getMessage()).execute();
                 return false;
             }
@@ -1008,7 +1090,7 @@ public class TelegramController {
                 Employee employee = getEmployeeByChat(userId);
                 String messageText = update.getMessage().getText().trim().toLowerCase();
 
-                if(messageText.contains("схему") && employee.getOffsite()){
+                if (messageText.contains("схему") && employee.getOffsite()) {
                     try {
                         WorkLog workLog = workLogDispatcher.getAcceptedWorkLogByEmployee(employee);
                         List<ModelItem> addressFields = modelItemRepository.findAll((root, query, cb) -> {
@@ -1019,37 +1101,71 @@ public class TelegramController {
                             );
                         });
                         Set<TFile> files = new HashSet<>();
-                        for(ModelItem addressField : addressFields) {
+                        for (ModelItem addressField : addressFields) {
                             Address address = addressField.getAddressData();
-                            if(address == null) continue;
+                            if (address == null) continue;
 
                             List<String> streetNames = new ArrayList<>();
+                            List<String> houseNames = new ArrayList<>();
+                            List<String> suffixes = List.of(".png", ".drawio.png");
 
-                            if(address.getStreet().getName() != null && !address.getStreet().getName().isBlank())
+                            if (address.getStreet().getName() != null && !address.getStreet().getName().isBlank())
                                 streetNames.add(address.getStreet().getName());
-                            if(address.getStreet().getBillingAlias() != null && !address.getStreet().getBillingAlias().isBlank())
+                            if (address.getStreet().getBillingAlias() != null && !address.getStreet().getBillingAlias().isBlank())
                                 streetNames.add(address.getStreet().getBillingAlias());
-                            if(address.getStreet().getAltNames() != null && !address.getStreet().getAltNames().isBlank())
+                            if (address.getStreet().getAltNames() != null && !address.getStreet().getAltNames().isBlank())
                                 streetNames.addAll(List.of(address.getStreet().getAltNames().split(",")));
 
-                            for(String streetName : streetNames){
-                                List<TFile> fileSuggestions = filesWatchService.searchFiles(streetName + " " + address.getHouseNamePart() + ".png", null);
-                                if(!fileSuggestions.isEmpty()) {
-                                    files.addAll(fileSuggestions);
-                                    break;
-                                }
-                            }
-                        }
+                            houseNames.add(address.getHouseNamePart());
 
-                        if(!files.isEmpty()){
-                            for (TFile file : files) {
-                                messageFactory.file(file).execute();
+                            Short hn = address.getHouseNum();
+                            Short fr = address.getFraction();
+                            Character lt = address.getLetter();
+                            Short bd = address.getBuild();
+
+                            if (fr != null && lt != null && bd != null) {
+                                houseNames.add(hn + "/" + fr + "" + lt);
+                                houseNames.add(hn + "" + lt + "_" + bd);
+                                houseNames.add(hn + "/" + fr + "_" + bd);
                             }
+                            if (fr != null) {
+                                houseNames.add(hn + "/" + fr);
+                            }
+                            if (lt != null) {
+                                houseNames.add(hn + "" + lt);
+                            }
+                            if (bd != null) {
+                                houseNames.add(hn + "_" + bd);
+                            }
+                            houseNames.add(String.valueOf(hn));
+
+                            for (String streetName : streetNames) {
+                                for (String houseName : houseNames) {
+                                    for (String suffix : suffixes) {
+                                        String query = streetName + " " + houseName + suffix;
+                                        List<TFile> fileSuggestions = filesWatchService.searchFiles(query, null);
+                                        if (!fileSuggestions.isEmpty()) {
+                                            files.addAll(fileSuggestions);
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!files.isEmpty()) break;
+                            }
+
+                            if (!files.isEmpty()) {
+                                for (TFile file : files) {
+                                    messageFactory.file(file).execute();
+                                }
+                                return true;
+                            }
+
                         }
-                    }catch (Exception ignored){}
+                    } catch (Exception ignored) {
+                    }
                 }
 
-                if(messageText.contains("живых") && employee.getOffsite()){
+                if (messageText.contains("живых") && employee.getOffsite()) {
                     WorkLog workLog = workLogDispatcher.getAcceptedWorkLogByEmployee(employee);
                     List<ModelItem> addressFields = modelItemRepository.findAll((root, query, cb) -> {
                         Join<ModelItem, Task> taskJoin = root.join("task", JoinType.LEFT);
@@ -1058,7 +1174,7 @@ public class TelegramController {
                                 cb.equal(root.get("wireframeFieldType"), WireframeFieldType.ADDRESS)
                         );
                     });
-                    for(ModelItem addressField : addressFields) {
+                    for (ModelItem addressField : addressFields) {
                         Address address = addressField.getAddressData();
                         if (address == null) continue;
                         String calculateCountingLives = apiBillingController.getCalculateCountingLives(ApiBillingController.CountingLivesForm.of(address, 1, 500));
@@ -1070,7 +1186,7 @@ public class TelegramController {
                 }
 
                 return true;
-            }catch (Exception e){
+            } catch (Exception e) {
                 return false;
             }
         }));
@@ -1079,7 +1195,7 @@ public class TelegramController {
             try {
                 sendMessageFromTlgGroupChat(update.getMessage());
                 return true;
-            }catch (Exception e){
+            } catch (Exception e) {
                 return false;
             }
         }));
@@ -1225,7 +1341,8 @@ public class TelegramController {
             log.warn("Попытка отправить уведомление при не инициализированном TelegramApi");
             return;
         }
-        if (employee.getTelegramUserId() == null || employee.getTelegramUserId().isBlank() || notification.getMessage() == null) return;
+        if (employee.getTelegramUserId() == null || employee.getTelegramUserId().isBlank() || notification.getMessage() == null)
+            return;
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(employee.getTelegramUserId())
                 .parseMode("HTML")
@@ -1240,8 +1357,52 @@ public class TelegramController {
 
 //    private void broadcastEditChatMessage(ChatDto chat, ChatMessageDto chatMessage) {
 //
-//    }
 
+    public void sendOntEvents(List<OntStatusChangeEvent> events) {
+        List<TelegramOptions> options = telegramOptionsRepository.findAll((root, query, cb) -> cb.and(
+                cb.isNotNull(root.get("trackTerminal"))
+        )).stream().filter(telegramOptions -> {
+            return telegramOptions.getEmployee().getTelegramUserId() != null
+                    && telegramOptions.getEmployee().getTelegramUserId().isBlank()
+                    && telegramOptions.getTrackTerminal() != null;
+        }).toList();
+
+        List<List<OntStatusChangeEvent>> groupedEvents = events.stream()
+                .collect(Collectors.groupingBy(OntStatusChangeEvent::getGroupId,
+                        Collectors.collectingAndThen(
+                                Collectors.toList(),
+                                list -> {
+                                    list.sort(new OntStatusChangeEvent.TerminalPosComparator());
+                                    return list;
+                                }
+                        )
+                )).values().stream().toList();
+
+        for (TelegramOptions option : options) {
+            String trackTerminal = option.getTrackTerminal();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(option.getEmployee().getTelegramUserId(), mainBot);
+            if (Objects.equals(trackTerminal, "all")) {
+                for (List<OntStatusChangeEvent> ontEvents : groupedEvents) {
+                    try {
+                        messageFactory.sendOntEvents(ontEvents).execute();
+                    } catch (TelegramApiException ignored) {
+                    }
+                }
+            } else {
+                List<List<OntStatusChangeEvent>> oltEvent = groupedEvents.stream().filter(ontEvents ->
+                        Objects.equals(ontEvents.get(0).getTerminal().getOlt().getIp(), trackTerminal)
+                ).toList();
+                for (List<OntStatusChangeEvent> ontEvents : oltEvent) {
+                    try {
+                        messageFactory.sendOntEvents(ontEvents).execute();
+                    } catch (TelegramApiException ignored) {
+                    }
+                }
+            }
+        }
+    }
+
+//    }
 //    public void refreshChatUnreadCount(Chat chat, SuperMessage superMessage) {
 //        chat.getMembers()
 //                .stream()
@@ -1252,8 +1413,8 @@ public class TelegramController {
 //                    Long countUnreadMessages = chatDispatcher.getUnreadMessagesCount(chatId, e);
 //                    stompController.updateCountUnreadMessage(login, chatId, countUnreadMessages);
 //                });
-//    }
 
+//    }
 //    /**
 //     * Обрабатывает сообщения полученные из web версии crm, и отправляет их всем пользователям чата
 //     *
@@ -1371,8 +1532,8 @@ public class TelegramController {
 //            // Обновляем web
 //            broadcastUpdatesToWeb(textMessage);
 //        }
-//    }
 
+//    }
 //    /**
 //     * Удаляет сообщение из базы данных и из telegram api при запросе от web crm
 //     *
@@ -1393,8 +1554,8 @@ public class TelegramController {
 //        SuperMessage superMessage = listOfDeletedMessages.getSuperMessage();
 //        stompController.deleteMessage(superMessage);
 //        return superMessage;
-//    }
 
+//    }
 
 //    /**
 //     * Редактирует сообщение из базы данных и из telegram api при запросе от web crm
@@ -1409,6 +1570,7 @@ public class TelegramController {
 //     */
 //    public void updateMessageFromWeb(Long editMessageId, String text, Employee author) throws TelegramApiException, EntryNotFound, NotOwner, IllegalFields {
 //        stompController.updateMessage(chatMessageDispatcher.updateMessageFromWeb(editMessageId, text, author, this));
+
 //    }
 
     private void deleteMessageFromTelegram(ChatMessage chatMessage) throws TelegramApiException {
@@ -1416,7 +1578,6 @@ public class TelegramController {
             new TelegramMessageFactory(telegramMessageBind.getTelegramChatId().toString(), mainBot).deleteMessage(telegramMessageBind.getTelegramMessageId()).execute();
         }
     }
-
 //    public void sendMessageFromTlgChat(Message receivedMessage) throws EntryNotFound, TelegramApiException, IllegalFields, SaveEntryFailed, IllegalMediaType, ExceptionInsideThread {
 //        // Получаем автора сообщения
 //        Employee author = employeeDispatcher.getByTelegramId(receivedMessage.getChatId()).orElseThrow(() -> new EntryNotFound("Идентификатор телеграм не привязан ни к одному аккаунту"));
@@ -1463,6 +1624,7 @@ public class TelegramController {
 //                }
 //            }
 //        }
+
 //    }
 
     public void sendMessageFromTlgGroupChat(Message receivedMessage) throws EntryNotFound, TelegramApiException, IllegalFields, SaveEntryFailed, IllegalMediaType, ExceptionInsideThread {
@@ -1490,7 +1652,7 @@ public class TelegramController {
 
         switch (Utils.getTlgMsgType(receivedMessage)) {
             case TEXT, MEDIA -> {
-                for (Chat chat : chats){
+                for (Chat chat : chats) {
                     // Создает сообщение в базе данных
                     SuperMessage textMessage = chatDispatcher.createMessage(chat.getChatId(), receivedMessage, author, this);
                     broadcastUpdatesToWeb(textMessage);
@@ -1550,7 +1712,6 @@ public class TelegramController {
     public void updateMessageFromTlgChat(Message receivedMessage) throws EntryNotFound, TelegramApiException, IllegalFields {
         stompController.updateMessage(chatMessageDispatcher.updateMessageFromTlg(receivedMessage, this));
     }
-
 //    /**
 //     * Отправляет сообщения броадкастом во все телеграм чаты
 //     *
@@ -1588,6 +1749,7 @@ public class TelegramController {
 //        }
 //
 //        return responses;
+
 //    }
 
     public void sendMessageToTlgId(String chatId, String message) throws TelegramApiException {
@@ -1608,7 +1770,7 @@ public class TelegramController {
         // Список ответов от telegram об отправленных сообщениях
         List<Message> responses = new ArrayList<>();
 
-        Set<String> memberGroups = chat.getMembers().stream().map(Employee::getTelegramGroupChatId).filter(Objects::nonNull).filter(s->!s.isBlank()).collect(Collectors.toSet());
+        Set<String> memberGroups = chat.getMembers().stream().map(Employee::getTelegramGroupChatId).filter(Objects::nonNull).filter(s -> !s.isBlank()).collect(Collectors.toSet());
 
         Set<Employee> membersWithoutGroup = chat.getMembers().stream().filter(Employee::isHasNotGroup).collect(Collectors.toSet());
 
@@ -1644,7 +1806,7 @@ public class TelegramController {
 
         List<List<Message>> responses = Stream.generate(ArrayList<Message>::new).limit(messages.size()).collect(Collectors.toList());
 
-        Set<String> memberGroups = chat.getMembers().stream().map(Employee::getTelegramGroupChatId).filter(Objects::nonNull).filter(s->!s.isBlank()).collect(Collectors.toSet());
+        Set<String> memberGroups = chat.getMembers().stream().map(Employee::getTelegramGroupChatId).filter(Objects::nonNull).filter(s -> !s.isBlank()).collect(Collectors.toSet());
 
         Set<Employee> membersWithoutGroup = chat.getMembers().stream().filter(Employee::isHasNotGroup).collect(Collectors.toSet());
 
@@ -1686,95 +1848,95 @@ public class TelegramController {
     }
 
     public void assignInstallers(WorkLog workLog, Employee employee, List<Employee> acceptedEmployees) throws TelegramApiException {
-        if(workLog.getGangLeader() != null){
+        if (workLog.getGangLeader() != null) {
             Employee gangLeader = workLog.getEmployees().stream().filter(emp -> Objects.equals(emp.getLogin(), workLog.getGangLeader())).findFirst().orElseThrow(() -> {
                 workLogDispatcher.remove(workLog);
                 return new ResponseException("Бригадира нет в списке монтажников");
             });
             boolean hasNotTelegram = workLog.getEmployees().stream().anyMatch(ins -> ins.getTelegramUserId() == null || ins.getTelegramUserId().isBlank());
-            if(hasNotTelegram){
+            if (hasNotTelegram) {
                 workLogDispatcher.remove(workLog);
                 throw new ResponseException("У бригадира не назначен telegram id");
             }
             try {
                 TelegramMessageFactory messageFactory = TelegramMessageFactory.create(gangLeader.getTelegramUserId(), mainBot);
-                if(acceptedEmployees.contains(gangLeader)){
+                if (acceptedEmployees.contains(gangLeader)) {
                     Task task = workLog.getTask();
-                    messageFactory.simpleMessage("Вам назначена еще одна задача:\n"+ task.getClassName() + " - " + task.getTypeName()).execute();
-                }else{
+                    messageFactory.simpleMessage("Вам назначена еще одна задача:\n" + task.getClassName() + " - " + task.getTypeName()).execute();
+                } else {
                     messageFactory.acceptWorkLog(workLog, employee).execute();
                 }
-            }catch (Throwable e){
+            } catch (Throwable e) {
                 workLogDispatcher.remove(workLog);
                 throw new ResponseException("Бригадир имеет не верный telegram id");
             }
             return;
         }
         boolean hasNotTelegram = workLog.getEmployees().stream().anyMatch(ins -> ins.getTelegramUserId() == null || ins.getTelegramUserId().isBlank());
-        if (hasNotTelegram){
+        if (hasNotTelegram) {
             workLogDispatcher.remove(workLog);
             throw new ResponseException("У сотрудников не назначен telegram id");
         }
         try {
             for (Employee installer : workLog.getEmployees()) {
                 TelegramMessageFactory messageFactory = TelegramMessageFactory.create(installer.getTelegramUserId(), mainBot);
-                if(acceptedEmployees.contains(installer)){
+                if (acceptedEmployees.contains(installer)) {
                     Task task = workLog.getTask();
-                    messageFactory.simpleMessage("Вам назначена еще одна задача:\n"+ task.getClassName() + " - " + task.getTypeName()).execute();
-                }else{
+                    messageFactory.simpleMessage("Вам назначена еще одна задача:\n" + task.getClassName() + " - " + task.getTypeName()).execute();
+                } else {
                     messageFactory.acceptWorkLog(workLog, employee).execute();
                 }
             }
-        }catch (Throwable e){
+        } catch (Throwable e) {
             workLogDispatcher.remove(workLog);
             throw new ResponseException("Один или несколько сотрудников имеют не верный telegram id");
         }
     }
 
     public void sendDhcpIpRequestNotification(DhcpIpRequestNotificationBody body) throws TelegramApiException {
-        if(telegramConf == null || !telegramConf.isFilled()) {
+        if (telegramConf == null || !telegramConf.isFilled()) {
             log.warn("Отсутствует конфигурация телеграмма");
             return;
         }
         String chatId = telegramConf.getDhcpNotificationChatId();
-        if(chatId == null || chatId.isBlank()) {
+        if (chatId == null || chatId.isBlank()) {
             log.warn("Чат для отправки DhcpIpRequestNotification отсутствует");
             return;
         }
         TelegramMessageFactory.create(chatId, mainBot).dhcpIpRequestNotification(body).execute();
     }
-    
+
     public Employee getEmployeeByChat(Long chatId) throws Exception {
-        return employeeDispatcher.getByTelegramId(chatId).orElseThrow(()->new Exception("Пользователь не найден"));
+        return employeeDispatcher.getByTelegramId(chatId).orElseThrow(() -> new Exception("Пользователь не найден"));
     }
 
     public TelegramConf getConfiguration() {
-        if(telegramConf == null){
+        if (telegramConf == null) {
             return new TelegramConf();
         }
         return telegramConf;
     }
 
     public TelegramMessageFactory getMessageFactory(Employee employee) {
-        if(employee.getTelegramUserId() == null || employee.getTelegramUserId().isBlank())
-            throw new ResponseException("Не установлен telegram id для пользователя "+employee.getFullName());
+        if (employee.getTelegramUserId() == null || employee.getTelegramUserId().isBlank())
+            throw new ResponseException("Не установлен telegram id для пользователя " + employee.getFullName());
         return TelegramMessageFactory.create(employee.getTelegramUserId(), mainBot);
     }
 
-    public enum OperatingMode{
+    public enum OperatingMode {
         REPORT_SENDING("REPORT_SENDING"),
         CHECK_ALIVE("CHECK_ALIVE"),
         HOUSE_SESSIONS("HOUSE_SESSIONS"),
         SEARCH_FILES("SEARCH_FILES"),
         COMMUTATOR_SESSIONS("COMMUTATOR_SESSIONS");
-        
+
         private final String value;
-        
-        OperatingMode(String value){
+
+        OperatingMode(String value) {
             this.value = value;
         }
-        
-        public String getValue(){
+
+        public String getValue() {
             return value;
         }
     }

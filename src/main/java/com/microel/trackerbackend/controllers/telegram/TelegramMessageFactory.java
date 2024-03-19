@@ -1,5 +1,7 @@
 package com.microel.trackerbackend.controllers.telegram;
 
+import com.microel.tdo.pon.OpticalLineTerminal;
+import com.microel.tdo.pon.events.OntStatusChangeEvent;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.services.api.ResponseException;
@@ -20,6 +22,7 @@ import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.WorkLogTargetFile;
 import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.team.util.TelegramOptions;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
@@ -95,7 +98,7 @@ public class TelegramMessageFactory {
         Task task = workLog.getTask();
         String messageBuilder = "\uD83D\uDC77\u200D♂️ " +
                 Decorator.bold("Задача #" + task.getTaskId()) + "\n" +
-                Decorator.bold(task.getModelWireframe().getName()) +" - "+ Decorator.bold(task.getCurrentStage().getLabel()) + "\n" +
+                Decorator.bold(task.getModelWireframe().getName()) + " - " + Decorator.bold(task.getCurrentStage().getLabel()) + "\n" +
                 Decorator.mention(employeeName, employee.getTelegramUserId()) +
                 " назначил: " +
                 workLog.getEmployees().stream().map(e -> Decorator.mention(e.getFullName(), e.getTelegramUserId())).collect(Collectors.joining(", ")) +
@@ -138,7 +141,7 @@ public class TelegramMessageFactory {
         ReplyKeyboardMarkup keyboardMarkup = ReplyKeyboardMarkup.builder().keyboard(List.of(keyboardRowMenu, keyboardRowClose)).resizeKeyboard(true).build();
         StringBuilder messageBuilder = new StringBuilder();
         messageBuilder.append(Decorator.bold(task.getClassName()));
-        if (!task.getTypeName().equals("Неизвестно")){
+        if (!task.getTypeName().equals("Неизвестно")) {
             messageBuilder.append(" - ").append(Decorator.bold(task.getTypeName()));
         }
         messageBuilder.append(" #").append(task.getTaskId()).append("\n");
@@ -188,7 +191,7 @@ public class TelegramMessageFactory {
 
         StringBuilder messageBuilder = new StringBuilder();
         messageBuilder.append(Decorator.bold(task.getClassName()));
-        if (!task.getTypeName().equals("Неизвестно")){
+        if (!task.getTypeName().equals("Неизвестно")) {
             messageBuilder.append(" - ").append(Decorator.bold(task.getTypeName()));
         }
         messageBuilder.append(" #").append(task.getTaskId()).append("\n");
@@ -293,7 +296,7 @@ public class TelegramMessageFactory {
         }
 
         messageBuilder.append(Decorator.bold(task.getClassName()));
-        if (!task.getTypeName().equals("Неизвестно")){
+        if (!task.getTypeName().equals("Неизвестно")) {
             messageBuilder.append(" - ").append(Decorator.bold(task.getTypeName()));
         }
         messageBuilder.append(" #").append(task.getTaskId()).append("\n");
@@ -812,12 +815,12 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> workTargetMessage(@Nullable String message, @Nullable WorkLogTargetFile file) {
-        if(message == null || message.isBlank()){
+        if (message == null || message.isBlank()) {
             message = "Текущая цель";
-        }else{
+        } else {
             message = "Текущая цель:\n" + message;
         }
-        if(file != null){
+        if (file != null) {
             switch (file.getType()) {
                 case PHOTO -> {
                     return new PhotoMessageExecutor(SendPhoto.builder()
@@ -853,7 +856,7 @@ public class TelegramMessageFactory {
                 }
                 default -> throw new IllegalMediaType("Не известный тип медиа вложения");
             }
-        }else{
+        } else {
             SendMessage sendMessage = SendMessage.builder()
                     .chatId(chatId)
                     .text(message)
@@ -864,11 +867,11 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<List<Message>> workTargetGroupMessage(@Nullable String message, @Nullable List<WorkLogTargetFile> files) {
-        if(files == null || files.isEmpty())
+        if (files == null || files.isEmpty())
             throw new ResponseException("Нет файлов для отправки");
-        if(message == null || message.isBlank()){
+        if (message == null || message.isBlank()) {
             message = "Текущая цель";
-        }else{
+        } else {
             message = "Текущая цель:\n" + message;
         }
         List<InputMedia> mediaList = files.stream().map(WorkLogTargetFile::toInputMedia).filter(Objects::nonNull).collect(Collectors.toList());
@@ -880,7 +883,7 @@ public class TelegramMessageFactory {
     public AbstractExecutor<Message> workComments(List<Comment> comments) {
         StringBuilder sb = new StringBuilder();
         sb.append("Комментарии:\n");
-        for(Comment comment : comments){
+        for (Comment comment : comments) {
             sb.append(comment.getCreator().getFullName()).append(": ").append(Decorator.bold(comment.getSimpleText())).append("\n");
         }
         SendMessage sendMessage = SendMessage.builder()
@@ -888,6 +891,128 @@ public class TelegramMessageFactory {
                 .text(sb.toString())
                 .parseMode("HTML")
                 .build();
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> optionsMenu(@Nullable TelegramOptions telegramOptions) {
+        InlineKeyboardButton oltTrackingButton = InlineKeyboardButton.builder()
+                .text("Изменить отслеживание ОНУ")
+                .callbackData(CallbackData.create("t_opt", "ch_track_olt"))
+                .build();
+        List<List<InlineKeyboardButton>> keyboard = List.of(
+                List.of(oltTrackingButton)
+        );
+
+        StringBuilder sb = new StringBuilder(Decorator.bold("Настройки:\n"));
+        if (telegramOptions == null) {
+            sb.append(Decorator.underline("Статусы ОНУ:")).append(" ").append(Decorator.bold("Не отслеживаются"));
+            sb.append("\n");
+        } else {
+            sb.append(Decorator.underline("Статусы ОНУ:")).append(" ");
+            if (telegramOptions.getTrackTerminal() == null) {
+                sb.append(Decorator.bold("Не отслеживаются"));
+            } else {
+                if (telegramOptions.getTrackTerminal().equals("all")) {
+                    sb.append(Decorator.bold("Все головы"));
+                } else {
+                    sb.append(Decorator.bold(telegramOptions.getTrackTerminal()));
+                }
+            }
+            sb.append("\n");
+        }
+
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(sb.toString())
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(
+                        InlineKeyboardMarkup
+                                .builder()
+                                .keyboard(keyboard)
+                                .build()
+                ).build();
+
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> trackOltSettings(Employee employee, List<OpticalLineTerminal> oltList) {
+        TelegramOptions telegramOptions = employee.getTelegramOptions();
+        List<InlineKeyboardButton> keyboardButtons = new ArrayList<>();
+        if (telegramOptions == null) {
+            keyboardButtons.add(InlineKeyboardButton.builder()
+                    .text("Все головы")
+                    .callbackData(CallbackData.create("set_track_olt", "all"))
+                    .build());
+            keyboardButtons.addAll(oltList.stream()
+                    .map(olt-> InlineKeyboardButton.builder()
+                            .text(olt.getName() != null ? olt.getName() : olt.getIp())
+                            .callbackData(CallbackData.create("set_track_olt", olt.getIp()))
+                            .build()).toList());
+        } else {
+            if(telegramOptions.getTrackTerminal() != null)
+                keyboardButtons.add(InlineKeyboardButton.builder()
+                        .text("Откл. отслеживание")
+                        .callbackData(CallbackData.create("set_track_olt", "null"))
+                        .build());
+            if(!Objects.equals(telegramOptions.getTrackTerminal(), "all"))
+                keyboardButtons.add(InlineKeyboardButton.builder()
+                        .text("Все головы")
+                        .callbackData(CallbackData.create("set_track_olt", "all"))
+                        .build());
+            keyboardButtons.addAll(oltList.stream()
+                    .filter(olt->!Objects.equals(olt.getIp(), telegramOptions.getTrackTerminal()))
+                    .map(olt-> InlineKeyboardButton.builder()
+                            .text(olt.getName() != null ? olt.getName() : olt.getIp())
+                            .callbackData(CallbackData.create("set_track_olt", olt.getIp()))
+                            .build()).toList());
+        }
+
+        List<List<InlineKeyboardButton>> keyboard = keyboardButtons.stream().map(List::of).toList();
+
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(Decorator.bold("Какие головы отслеживать:\n"))
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(
+                        InlineKeyboardMarkup
+                                .builder()
+                                .keyboard(keyboard)
+                                .build()
+                ).build();
+
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> sendOntEvents(List<OntStatusChangeEvent> events) {
+
+        StringBuilder sb = new StringBuilder();
+
+        OntStatusChangeEvent ontStatusChangeEvent = events.get(0);
+
+        OpticalLineTerminal olt = ontStatusChangeEvent.getTerminal().getOlt();
+
+        String oltName = olt.getName() != null ? olt.getName() : olt.getIp();
+
+        Boolean isOnline = ontStatusChangeEvent.getIsOnline();
+        String status = isOnline ? "Поднялись" : "Упали";
+        int terminalCount = events.size();
+
+        sb.append(Decorator.bold(oltName + " Порт: " + ontStatusChangeEvent.getTerminal().getPort())).append("\n");
+        sb.append(Decorator.bold(status + " " + terminalCount + " онушек")).append("\n");;
+        sb.append("\n\n");
+
+        for (OntStatusChangeEvent event : events) {
+            String ontName = (event.getTerminal().getDescription() != null  && !event.getTerminal().getDescription().isBlank())
+                    ? event.getTerminal().getDescription() : event.getTerminal().getMac();
+            sb.append(event.getTerminal().getPosition()).append(": ").append(ontName).append("\n");
+        }
+
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(sb.toString())
+                .parseMode(ParseMode.HTML)
+                .build();
+
         return new MessageExecutor<>(sendMessage, context);
     }
 

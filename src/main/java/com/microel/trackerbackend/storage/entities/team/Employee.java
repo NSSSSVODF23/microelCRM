@@ -76,6 +76,16 @@ public class Employee implements Observer{
     @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH}, orphanRemoval = true)
     @JoinColumn(name = "f_base_1783_credentials_id")
     private Base1783Credentials base1783Credentials;
+    @Nullable
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH}, orphanRemoval = true)
+    @JoinColumn(name = "telegram_options_id")
+    private TelegramOptions telegramOptions;
+
+
+    public void setTelegramOptions(TelegramOptions telegramOptions){
+        telegramOptions.setEmployee(this);
+        this.telegramOptions = telegramOptions;
+    }
 
     @JsonIgnore
     public boolean isHasOldTrackerCredentials(){
