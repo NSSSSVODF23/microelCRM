@@ -371,7 +371,7 @@ public class TelegramController {
                         switch (data.getString()) {
                             case "null" -> employeeDispatcher.editTrackOlt(employee, null);
                             case "all" -> employeeDispatcher.editTrackOlt(employee, "all");
-                            default -> employeeDispatcher.editTrackOlt(employee, data.toString());
+                            default -> employeeDispatcher.editTrackOlt(employee, data.getString());
                         }
                         messageFactory.answerCallback(callbackId, "Настройка сохранена").execute();
                         return true;
@@ -1363,7 +1363,7 @@ public class TelegramController {
                 cb.isNotNull(root.get("trackTerminal"))
         )).stream().filter(telegramOptions -> {
             return telegramOptions.getEmployee().getTelegramUserId() != null
-                    && telegramOptions.getEmployee().getTelegramUserId().isBlank()
+                    && !telegramOptions.getEmployee().getTelegramUserId().isBlank()
                     && telegramOptions.getTrackTerminal() != null;
         }).toList();
 

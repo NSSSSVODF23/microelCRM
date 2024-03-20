@@ -903,7 +903,7 @@ public class TelegramMessageFactory {
                 List.of(oltTrackingButton)
         );
 
-        StringBuilder sb = new StringBuilder(Decorator.bold("Настройки:\n"));
+        StringBuilder sb = new StringBuilder(Decorator.bold("Настройки\n\n"));
         if (telegramOptions == null) {
             sb.append(Decorator.underline("Статусы ОНУ:")).append(" ").append(Decorator.bold("Не отслеживаются"));
             sb.append("\n");
@@ -994,17 +994,23 @@ public class TelegramMessageFactory {
         String oltName = olt.getName() != null ? olt.getName() : olt.getIp();
 
         Boolean isOnline = ontStatusChangeEvent.getIsOnline();
-        String status = isOnline ? "Поднялись" : "Упали";
+        String icon = isOnline ? "✅" : "❌";
+        String status = isOnline ? "Up" : "Down";
         int terminalCount = events.size();
 
+        sb.append(icon).append(" ");
         sb.append(Decorator.bold(oltName + " Порт: " + ontStatusChangeEvent.getTerminal().getPort())).append("\n");
-        sb.append(Decorator.bold(status + " " + terminalCount + " онушек")).append("\n");;
-        sb.append("\n\n");
+        sb.append(Decorator.bold(status + " " + terminalCount + " ону")).append("\n");;
+        sb.append("\n");
 
         for (OntStatusChangeEvent event : events) {
+
             String ontName = (event.getTerminal().getDescription() != null  && !event.getTerminal().getDescription().isBlank())
                     ? event.getTerminal().getDescription() : event.getTerminal().getMac();
-            sb.append(event.getTerminal().getPosition()).append(": ").append(ontName).append("\n");
+
+            sb.append(event.getTerminal().getPosition()).append(": ").append(Decorator.bold(ontName));
+            if(event.getIsOnline()) sb.append(" ").append(String.format("%.2f", event.getTerminal().getCurRxSignal())).append(" dBm");
+            sb.append("\n");
         }
 
         SendMessage sendMessage = SendMessage.builder()

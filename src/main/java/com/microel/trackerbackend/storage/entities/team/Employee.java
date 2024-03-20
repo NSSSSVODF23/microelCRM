@@ -79,6 +79,7 @@ public class Employee implements Observer{
     @Nullable
     @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH}, orphanRemoval = true)
     @JoinColumn(name = "telegram_options_id")
+    @JsonIgnore
     private TelegramOptions telegramOptions;
 
 

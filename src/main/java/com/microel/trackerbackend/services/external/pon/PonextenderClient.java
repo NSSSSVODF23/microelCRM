@@ -24,10 +24,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
+import java.util.*;
 
 @Component
 public class PonextenderClient {
@@ -135,6 +132,15 @@ public class PonextenderClient {
             });
         } catch (Exception e) {
             throw new ResponseException("Не удалось перезагрузить терминал");
+        }
+    }
+
+    public UUID updateOnt(Long id) {
+        RequestEntity<Void> request = RequestEntity.post(url(Map.of(), "ont", id.toString(), "update")).build();
+        try {
+            return restTemplate.exchange(request, new ParameterizedTypeReference<UUID>() {}).getBody();
+        } catch (Exception e) {
+            throw new ResponseException("Не удалось запросить новые данные по оптическому терминалу");
         }
     }
 

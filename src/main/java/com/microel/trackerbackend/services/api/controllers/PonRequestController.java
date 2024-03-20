@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.Queue;
+import java.util.UUID;
 
 @Controller
 @Slf4j
@@ -60,6 +61,11 @@ public class PonRequestController {
     public ResponseEntity<Void> rebootOnt(@PathVariable Long id){
         ponClient.rebootOnt(id);
         return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("ont/{id}/update")
+    public ResponseEntity<UUID> updateOnt(@PathVariable Long id){
+        return ResponseEntity.ok(ponClient.updateOnt(id));
     }
 
     @PostMapping("ont/{id}/signal-chart")
