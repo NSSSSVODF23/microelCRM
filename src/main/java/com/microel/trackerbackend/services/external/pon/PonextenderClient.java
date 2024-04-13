@@ -2,9 +2,12 @@ package com.microel.trackerbackend.services.external.pon;
 
 import com.microel.tdo.chart.TimeDataset;
 import com.microel.tdo.dynamictable.TablePaging;
+import com.microel.tdo.pon.MacTableEntry;
 import com.microel.tdo.pon.OpticalLineTerminal;
 import com.microel.tdo.pon.Worker;
 import com.microel.tdo.pon.events.OntStatusChangeEvent;
+import com.microel.tdo.pon.schema.PonScheme;
+import com.microel.tdo.pon.schema.forms.PonSchemeForm;
 import com.microel.tdo.pon.terminal.OpticalNetworkTerminal;
 import com.microel.trackerbackend.controllers.configuration.Configuration;
 import com.microel.trackerbackend.controllers.configuration.entity.PonextenderConf;
@@ -171,6 +174,66 @@ public class PonextenderClient {
         try {
             RequestEntity<Void> request = RequestEntity.get(url(Map.of(), "ont", "login", login)).build();
             return restTemplate.exchange(request, new ParameterizedTypeReference<OpticalNetworkTerminal>() {
+            }).getBody();
+        } catch (RestClientException e) {
+            throw new ResponseException("Не удалось подключиться к модулю PON");
+        }
+    }
+
+    public void signLogins(List<MacTableEntry> macTable) {
+        try {
+            RequestEntity.BodyBuilder request = RequestEntity.post(url(Map.of(), "ont", "sign-logins"));
+            restTemplate.exchange(request.body(macTable), new ParameterizedTypeReference<OpticalNetworkTerminal>() {
+            });
+        } catch (RestClientException e) {
+            throw new ResponseException("Не удалось подключиться к модулю PON");
+        }
+    }
+
+    public PonScheme createScheme(PonSchemeForm form) {
+        try {
+            RequestEntity.BodyBuilder request = RequestEntity.post(url(Map.of(), "scheme", "create"));
+            return restTemplate.exchange(request.body(form), new ParameterizedTypeReference<PonScheme>() {
+            }).getBody();
+        } catch (RestClientException e) {
+            throw new ResponseException("Не удалось подключиться к модулю PON");
+        }
+    }
+
+    public PonScheme updateScheme(Long id, PonSchemeForm form) {
+        try {
+            RequestEntity.BodyBuilder request = RequestEntity.patch(url(Map.of(), "scheme", id.toString(), "update"));
+            return restTemplate.exchange(request.body(form), new ParameterizedTypeReference<PonScheme>() {
+            }).getBody();
+        } catch (RestClientException e) {
+            throw new ResponseException("Не удалось подключиться к модулю PON");
+        }
+    }
+
+    public void deleteScheme(Long id) {
+        try {
+            RequestEntity.HeadersBuilder<?> request = RequestEntity.delete(url(Map.of(), "scheme", id.toString(), "delete"));
+            restTemplate.exchange(request.build(),new ParameterizedTypeReference<Void>() {
+            });
+        } catch (RestClientException e) {
+            throw new ResponseException("Не удалось подключиться к модулю PON");
+        }
+    }
+
+    public List<PonScheme> getSchemes() {
+        try {
+            RequestEntity<Void> request = RequestEntity.get(url(Map.of(), "scheme", "list")).build();
+            return restTemplate.exchange(request, new ParameterizedTypeReference<List<PonScheme>>() {
+            }).getBody();
+        } catch (RestClientException e) {
+            throw new ResponseException("Не удалось подключиться к модулю PON");
+        }
+    }
+
+    public PonScheme getSchemeById(Long id) {
+        try {
+            RequestEntity<Void> request = RequestEntity.get(url(Map.of(), "scheme", id.toString())).build();
+            return restTemplate.exchange(request, new ParameterizedTypeReference<PonScheme>() {
             }).getBody();
         } catch (RestClientException e) {
             throw new ResponseException("Не удалось подключиться к модулю PON");

@@ -2,6 +2,7 @@ package com.microel.trackerbackend.controllers.telegram;
 
 import org.springframework.lang.Nullable;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -18,6 +19,10 @@ public class CallbackData {
 
     public static String create(String prefix, String data){
     	return "#"+prefix + ":" + data;
+    }
+
+    public static String create(String prefix, String... data){
+    	return "#"+prefix + ":" + String.join(",", data);
     }
 
     public static CallbackData parse(String callbackData) throws IllegalArgumentException{

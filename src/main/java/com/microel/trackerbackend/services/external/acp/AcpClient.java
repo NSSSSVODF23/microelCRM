@@ -761,6 +761,14 @@ public class AcpClient {
         return get(Integer.class, Map.of(), "vlan", vlan.toString(), "building-id");
     }
 
+    public Map<String, String> getLoginsByMacs(List<String> macs) {
+        RequestEntity.BodyBuilder request = RequestEntity.post(url(Map.of(), "logins", "by-macs"));
+        Map<String, String> responseBody = restTemplate.exchange(request.body(macs), new ParameterizedTypeReference<Map<String, String>>() {
+        }).getBody();
+        if(responseBody == null) return Map.of();
+        return responseBody;
+    }
+
     @Getter
     @Setter
     @AllArgsConstructor

@@ -10,7 +10,6 @@ import com.microel.trackerbackend.services.external.billing.directaccess.bases.B
 import com.microel.trackerbackend.services.external.billing.directaccess.bases.Base781;
 import com.microel.trackerbackend.storage.dispatchers.EmployeeDispatcher;
 import com.microel.trackerbackend.storage.entities.team.Employee;
-import com.microel.trackerbackend.storage.entities.team.util.Credentials;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
@@ -63,6 +62,11 @@ public class BillingRequestController {
         return ResponseEntity.ok(apiBillingController.getUsersByAddress(address, isActive));
     }
 
+    @GetMapping("users/search")
+    public ResponseEntity<List<ApiBillingController.UserItemData>> searchBillingUsers(@RequestParam String query, @RequestParam Boolean isActive) {
+        return ResponseEntity.ok(apiBillingController.searchUsers(query, isActive));
+    }
+
     @GetMapping("user/{login}")
     public ResponseEntity<ApiBillingController.TotalUserInfo> getBillingUserInfo(@PathVariable String login) {
         if(login.equals("test"))
@@ -80,7 +84,7 @@ public class BillingRequestController {
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
         form.validate();
         if(form.getPayType() == BillingPayType.BANK){
-            Base781 base = createBase781Session(employee);
+            Base781 base = ApiBillingController.createBase781Session(employee);
             base.login();
 
             base.makeBankPayment(login, form.getSum(), form.getComment());
@@ -117,7 +121,7 @@ public class BillingRequestController {
     public ResponseEntity<String> createUser(@RequestBody LoginFieldInfo loginFieldInfo, HttpServletRequest request) {
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1785 base = createBase1785Session(employee);
+        Base1785 base = ApiBillingController.createBase1785Session(employee);
 
         List<ModelItem> modelItems = modelItemRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -193,7 +197,7 @@ public class BillingRequestController {
     public ResponseEntity<List<Base1785.UserTariff>> getUserTariffs(@PathVariable String login, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1785 base = createBase1785Session(employee);
+        Base1785 base = ApiBillingController.createBase1785Session(employee);
         base.login();
         List<Base1785.UserTariff> tariffList = base.getTariffList(login);
         base.logout();
@@ -205,7 +209,7 @@ public class BillingRequestController {
     public ResponseEntity<List<Base1785.UserTariff>> getUserServices(@PathVariable String login, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1785 base = createBase1785Session(employee);
+        Base1785 base = ApiBillingController.createBase1785Session(employee);
         base.login();
         List<Base1785.UserTariff> serviceList = base.getServiceList(login);
         base.logout();
@@ -217,7 +221,7 @@ public class BillingRequestController {
     public ResponseEntity<Void> appendService(@PathVariable String login, @PathVariable Integer id, HttpServletRequest request) {
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1785 base = createBase1785Session(employee);
+        Base1785 base = ApiBillingController.createBase1785Session(employee);
         base.login();
 
         base.appendService(login, id);
@@ -233,7 +237,7 @@ public class BillingRequestController {
     public ResponseEntity<Void> removeService(@PathVariable String login, @PathVariable String name, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1785 base = createBase1785Session(employee);
+        Base1785 base = ApiBillingController.createBase1785Session(employee);
         base.login();
 
         base.removeService(login, name);
@@ -249,7 +253,7 @@ public class BillingRequestController {
     public ResponseEntity<Void> changeTariff(@PathVariable String login, @PathVariable Integer id, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1785 base = createBase1785Session(employee);
+        Base1785 base = ApiBillingController.createBase1785Session(employee);
         base.login();
 
         base.changeTariff(login, id);
@@ -265,7 +269,7 @@ public class BillingRequestController {
     public ResponseEntity<Void> balanceReset(@PathVariable String login, @RequestBody String comment, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1785 base = createBase1785Session(employee);
+        Base1785 base = ApiBillingController.createBase1785Session(employee);
         base.login();
 
         base.balanceReset(login, comment);
@@ -281,7 +285,7 @@ public class BillingRequestController {
     public ResponseEntity<Boolean> isLoginEnable(@PathVariable String login, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1785 base = createBase1785Session(employee);
+        Base1785 base = ApiBillingController.createBase1785Session(employee);
         base.login();
 
         Boolean isEnable = base.isLoginEnable(login);
@@ -295,9 +299,10 @@ public class BillingRequestController {
     public ResponseEntity<Void> enableLogin(@PathVariable String login, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1785 base = createBase1785Session(employee);
+        Base1785 base = ApiBillingController.createBase1785Session(employee);
         base.login();
 
+        base.unfreeze(login);
         base.enableLogin(login);
 
         base.logout();
@@ -311,7 +316,7 @@ public class BillingRequestController {
     public ResponseEntity<Void> changeAddress(@PathVariable String login, @RequestBody String address, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1783 base = createBase1783Session(employee);
+        Base1783 base = ApiBillingController.createBase1783Session(employee);
         base.login();
 
         base.changeAddress(login, address);
@@ -327,7 +332,7 @@ public class BillingRequestController {
     public ResponseEntity<Void> changeFullName(@PathVariable String login, @RequestBody String fullName, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1783 base = createBase1783Session(employee);
+        Base1783 base = ApiBillingController.createBase1783Session(employee);
         base.login();
 
         base.changeFullName(login, fullName);
@@ -343,7 +348,7 @@ public class BillingRequestController {
     public ResponseEntity<Void> changePhone(@PathVariable String login, @RequestBody String phone, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1783 base = createBase1783Session(employee);
+        Base1783 base = ApiBillingController.createBase1783Session(employee);
         base.login();
 
         base.changePhone(login, phone);
@@ -359,7 +364,7 @@ public class BillingRequestController {
     public ResponseEntity<Void> changeComment(@PathVariable String login, @RequestBody String comment, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1783 base = createBase1783Session(employee);
+        Base1783 base = ApiBillingController.createBase1783Session(employee);
         base.login();
 
         base.changeComment(login, comment);
@@ -375,7 +380,7 @@ public class BillingRequestController {
     public ResponseEntity<Void> editUser(@PathVariable String login, @RequestBody EditUserForm form, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base1783 base = createBase1783Session(employee);
+        Base1783 base = ApiBillingController.createBase1783Session(employee);
         base.login();
 
         base.userEdit(login, form);
@@ -391,7 +396,7 @@ public class BillingRequestController {
     public ResponseEntity<Void> makePayment(@PathVariable String login, @RequestBody Base781.PaymentForm form, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base781 base = createBase781Session(employee);
+        Base781 base = ApiBillingController.createBase781Session(employee);
         base.login();
 
         base.makePayment(login, form);
@@ -407,7 +412,7 @@ public class BillingRequestController {
     public ResponseEntity<Void> makeRecalculation(@PathVariable String login, @RequestBody Base781.RecalculationForm form, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
-        Base781 base = createBase781Session(employee);
+        Base781 base = ApiBillingController.createBase781Session(employee);
         base.login();
 
         base.makeRecalculation(login, form);
@@ -442,30 +447,6 @@ public class BillingRequestController {
         } catch (MalformedURLException e) {
             throw new IllegalFields("Не верный Url адрес");
         }
-    }
-
-    private Base1785 createBase1785Session(Employee employee){
-        Credentials credentials = employee.getBase1785Credentials();
-        if (credentials == null || credentials.isNotFull())
-            throw new ResponseException("Не установлены реквизиты");
-
-        return Base1785.create(credentials);
-    }
-
-    private Base781 createBase781Session(Employee employee){
-        Credentials credentials = employee.getBase781Credentials();
-        if (credentials == null || credentials.isNotFull())
-            throw new ResponseException("Не установлены реквизиты");
-
-        return Base781.create(credentials);
-    }
-
-    private Base1783 createBase1783Session(Employee employee){
-        Credentials credentials = employee.getBase1783Credentials();
-        if (credentials == null || credentials.isNotFull())
-            throw new ResponseException("Не установлены реквизиты");
-
-        return Base1783.create(credentials);
     }
 
     @Getter

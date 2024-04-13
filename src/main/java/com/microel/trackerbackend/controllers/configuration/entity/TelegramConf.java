@@ -15,6 +15,7 @@ public class TelegramConf implements AbstractConfiguration {
     private String botToken;
     private String botName;
     private String dhcpNotificationChatId;
+    private String ponAlertChatId;
 
 
     @Override
@@ -28,6 +29,7 @@ public class TelegramConf implements AbstractConfiguration {
         if(botToken == null || botToken.isBlank()) return false;
         if(botName == null || botName.isBlank()) return false;
         if(dhcpNotificationChatId == null || dhcpNotificationChatId.isBlank()) return false;
+        if(ponAlertChatId == null || ponAlertChatId.isBlank()) return false;
         return true;
     }
 

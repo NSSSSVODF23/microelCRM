@@ -112,7 +112,7 @@ public class Address implements Comparable<Address> {
         if(getLetter() != null) billingAddress.append(getLetter());
         if(getBuild() != null) billingAddress.append("_").append(getBuild());
         billingAddress.append("-");
-        if(getApartmentNum() != null) billingAddress.append(getApartmentNum());
+//        if(getApartmentNum() != null) billingAddress.append(getApartmentNum());
         return billingAddress.toString();
     }
 

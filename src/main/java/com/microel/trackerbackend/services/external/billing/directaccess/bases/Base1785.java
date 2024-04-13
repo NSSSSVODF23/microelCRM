@@ -112,6 +112,23 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
+    public void unfreeze(@NotBlank String login) {
+        try {
+            selectTargetUser(login);
+            Connection.Response response = request(
+                    Request.of(
+                            "index.php",
+                            Map.of("act", "auth_control"),
+                            Map.of("DoUnFreeze", "Выполнить"),
+                            Connection.Method.POST
+                    )
+            );
+            authSuccessfulCheck(response);
+        } catch (IOException e) {
+            throw new ResponseException("Не удалось разморозить пользователя");
+        }
+    }
+
     public List<UserTariff> getTariffList(@NotBlank String login) {
         selectTargetUser(login);
         try {
@@ -221,6 +238,23 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
                             "index.php",
                             Map.of("act", "tarif"),
                             Map.of("ChangeAction", "Установить тариф", "t_sel", id.toString()),
+                            Connection.Method.POST
+                    )
+            );
+            authSuccessfulCheck(response);
+        } catch (IOException e) {
+            throw new ResponseException("Не удалось изменить тариф");
+        }
+    }
+
+    public void normalizeTariff(@NotBlank String login) {
+        selectTargetUser(login);
+        try {
+            Connection.Response response = request(
+                    Request.of(
+                            "index.php",
+                            Map.of("act", "tarif"),
+                            Map.of("Set_Norm", "Нормализ."),
                             Connection.Method.POST
                     )
             );

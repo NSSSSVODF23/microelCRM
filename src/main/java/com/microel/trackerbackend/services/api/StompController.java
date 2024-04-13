@@ -2,6 +2,7 @@ package com.microel.trackerbackend.services.api;
 
 import com.microel.tdo.pon.Worker;
 import com.microel.tdo.pon.events.OntStatusChangeEvent;
+import com.microel.tdo.pon.schema.events.PonSchemeChangeEvent;
 import com.microel.tdo.pon.terminal.OpticalNetworkTerminal;
 import com.microel.trackerbackend.misc.*;
 import com.microel.trackerbackend.misc.task.counting.*;
@@ -504,5 +505,13 @@ public class StompController {
 
     public void sendUpdatedOnt(OpticalNetworkTerminal ont) {
         sendAll(ont, "pon", "ont", "update");
+    }
+
+    public void sendUpdateAutoTariff(){
+        sendAll(true, "auto-tariff", "update");
+    }
+
+    public void sendSchemeChange(PonSchemeChangeEvent event) {
+        sendAll(event, "pon", "scheme", "change");
     }
 }

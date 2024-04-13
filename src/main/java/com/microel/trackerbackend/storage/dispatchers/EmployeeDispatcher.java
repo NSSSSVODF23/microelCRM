@@ -1,7 +1,6 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
-import com.microel.trackerbackend.misc.ListItem;
 import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.security.PasswordService;
 import com.microel.trackerbackend.services.api.ResponseException;
@@ -12,6 +11,7 @@ import com.microel.trackerbackend.storage.exceptions.AlreadyExists;
 import com.microel.trackerbackend.storage.exceptions.EditingNotPossible;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.repositories.EmployeeRepository;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Sort;
@@ -19,9 +19,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.persistence.criteria.Join;
-import javax.persistence.criteria.JoinType;
-import javax.persistence.criteria.Predicate;
+import javax.persistence.criteria.*;
 import javax.servlet.http.HttpServletRequest;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -89,17 +87,25 @@ public class EmployeeDispatcher {
         }, Sort.by(Sort.Direction.ASC, "secondName", "firstName", "lastName", "login"));
     }
 
+    public List<Employee> getEmployeesListFiltered(@Nullable FiltrationForm form) {
+        if(form == null) return getEmployeesList();
+        return employeeRepository.findAll(
+                (root, query, cb) -> form.toPredicates(root, cb),
+                Sort.by(Sort.Direction.ASC, "secondName", "firstName", "lastName", "login")
+        );
+    }
+
     @Transactional
     public Employee create(EmployeeForm form) throws AlreadyExists, EntryNotFound {
         boolean exists = employeeRepository.existsById(form.getLogin());
         if (exists) throw new AlreadyExists();
         Employee foundEmployeeTelegramId = null;
-        if(form.getTelegramUserId() != null && !form.getTelegramUserId().isBlank())
+        if (form.getTelegramUserId() != null && !form.getTelegramUserId().isBlank())
             foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(form.getTelegramUserId()).orElse(null);
         if (foundEmployeeTelegramId != null)
             throw new ResponseException("Уже есть сотрудник с данным Telegram ID");
 
-        if(form.getTelegramUserId() != null && !form.getTelegramUserId().isBlank()) {
+        if (form.getTelegramUserId() != null && !form.getTelegramUserId().isBlank()) {
             try {
                 telegramController.sendMessageToTlgId(form.getTelegramUserId(), "Ваш аккаунт в Telegram привязан к учетной записи Microel");
             } catch (Throwable e) {
@@ -118,7 +124,7 @@ public class EmployeeDispatcher {
     public Employee edit(EmployeeForm form) throws EntryNotFound, EditingNotPossible {
         Employee foundEmployee = employeeRepository.findById(form.getLogin()).orElse(null);
         Employee foundEmployeeTelegramId = null;
-        if(form.getTelegramUserId() != null && !form.getTelegramUserId().isBlank())
+        if (form.getTelegramUserId() != null && !form.getTelegramUserId().isBlank())
             foundEmployeeTelegramId = employeeRepository.findTopByTelegramUserId(form.getTelegramUserId()).orElse(null);
         if (foundEmployee == null) throw new EntryNotFound();
         if (foundEmployee.getDeleted()) throw new EditingNotPossible();
@@ -133,7 +139,7 @@ public class EmployeeDispatcher {
             }
         }
 
-        if(form.getTelegramGroupChatId() != null && !form.getTelegramGroupChatId().isBlank() && !Objects.equals(foundEmployee.getTelegramGroupChatId(), form.getTelegramGroupChatId())){
+        if (form.getTelegramGroupChatId() != null && !form.getTelegramGroupChatId().isBlank() && !Objects.equals(foundEmployee.getTelegramGroupChatId(), form.getTelegramGroupChatId())) {
             try {
                 telegramController.sendMessageToTlgId(form.getTelegramGroupChatId(), foundEmployee.getFullName() + " назначена рабочая группа");
             } catch (Throwable e) {
@@ -235,11 +241,12 @@ public class EmployeeDispatcher {
 
     /**
      * Возвращает список сотрудников (монтажников) из группового чата
+     *
      * @param chatId
      * @return
      */
     public List<Employee> getByGroupTelegramId(Long chatId) {
-        return employeeRepository.findAll((root,query,cb)->cb.and(cb.equal(root.get("telegramGroupChatId"), chatId.toString()), cb.isTrue(root.get("offsite"))));
+        return employeeRepository.findAll((root, query, cb) -> cb.and(cb.equal(root.get("telegramGroupChatId"), chatId.toString()), cb.isTrue(root.get("offsite"))));
     }
 
     public List<Employee> getByPosition(Long position) {
@@ -253,7 +260,7 @@ public class EmployeeDispatcher {
 
     @Transactional
     public void createPhyPhoneBind(PhyPhoneInfo.Form form) {
-        Employee employee = employeeRepository.findById(form.getEmployeeLogin()).orElseThrow(()->new ResponseException("Пользователь не найден"));
+        Employee employee = employeeRepository.findById(form.getEmployeeLogin()).orElseThrow(() -> new ResponseException("Пользователь не найден"));
         PhyPhoneInfo phoneInfo = PhyPhoneInfo.from(form);
         phoneInfo.throwIfIncomplete();
         employee.setPhyPhoneInfo(phoneInfo);
@@ -262,7 +269,7 @@ public class EmployeeDispatcher {
 
     @Transactional
     public void removePhyPhoneBind(String employeeLogin) {
-        Employee employee = employeeRepository.findById(employeeLogin).orElseThrow(()->new ResponseException("Пользователь не найден"));
+        Employee employee = employeeRepository.findById(employeeLogin).orElseThrow(() -> new ResponseException("Пользователь не найден"));
         employee.setPhyPhoneInfo(null);
         stompController.updateEmployee(employeeRepository.save(employee));
     }
@@ -285,14 +292,55 @@ public class EmployeeDispatcher {
 
     @Transactional
     public void editTrackOlt(Employee employee, @Nullable String olt) {
-        if(employee.getTelegramOptions() == null) {
+        if (employee.getTelegramOptions() == null) {
             TelegramOptions telegramOptions = TelegramOptions.createDefault();
             telegramOptions.setTrackTerminal(olt);
             employee.setTelegramOptions(telegramOptions);
             employeeRepository.save(employee);
-        }else{
+        } else {
             employee.getTelegramOptions().setTrackTerminal(olt);
             employeeRepository.save(employee);
+        }
+    }
+
+    @Data
+    public static class FiltrationForm {
+        @Nullable
+        private Long positionId;
+        @Nullable
+        private Long departmentId;
+        @Nullable
+        private Set<String> logins;
+        @Nullable
+        private Boolean deleted;
+        @Nullable
+        private Boolean offsite;
+        @Nullable
+        private String stringQuery;
+
+        public Predicate toPredicates(Root<Employee> root, CriteriaBuilder cb) {
+            List<Predicate> globalSearchPredicates = new ArrayList<>();
+            List<Predicate> predicates = new ArrayList<>();
+            if (stringQuery != null && !stringQuery.isBlank()) {
+                globalSearchPredicates.add(cb.like(cb.lower(root.get("secondName")), "%" + stringQuery.toLowerCase() + "%"));
+                globalSearchPredicates.add(cb.like(cb.lower(root.get("firstName")), "%" + stringQuery.toLowerCase() + "%"));
+                globalSearchPredicates.add(cb.like(cb.lower(root.get("lastName")), "%" + stringQuery.toLowerCase() + "%"));
+                globalSearchPredicates.add(cb.like(cb.lower(root.get("login")), "%" + stringQuery.toLowerCase() + "%"));
+                globalSearchPredicates.add(cb.like(cb.lower(root.join("department", JoinType.LEFT).get("name")), "%" + stringQuery.toLowerCase() + "%"));
+                globalSearchPredicates.add(cb.like(cb.lower(root.join("position", JoinType.LEFT).get("name")), "%" + stringQuery.toLowerCase() + "%"));
+            }
+            if (positionId != null)
+                predicates.add(cb.equal(root.join("position", JoinType.LEFT).get("positionId"), positionId));
+            if (departmentId != null)
+                predicates.add(cb.equal(root.join("department", JoinType.LEFT).get("departmentId"), departmentId));
+            if (logins != null && !logins.isEmpty()) predicates.add(cb.in(root.get("login")).value(logins));
+            if (deleted != null) predicates.add(cb.equal(root.get("deleted"), deleted));
+            if (offsite != null) predicates.add(cb.equal(root.get("offsite"), offsite));
+            if (!globalSearchPredicates.isEmpty()) {
+                return cb.and(cb.or(globalSearchPredicates.toArray(Predicate[]::new)), cb.and(predicates.toArray(Predicate[]::new)));
+            } else {
+                return cb.and(predicates.toArray(Predicate[]::new));
+            }
         }
     }
 }

@@ -464,20 +464,6 @@ public class PrivateRequestController {
         return ResponseEntity.ok(commentDispatcher.getComments(taskId, offset, limit, sorting));
     }
 
-    // Получает список сотрудников
-    @GetMapping("employees/list")
-    public ResponseEntity<List<Employee>> getEmployeesList(@RequestParam @Nullable String globalFilter, @RequestParam @Nullable Boolean showDeleted, @RequestParam @Nullable Boolean showOffsite) {
-        if (globalFilter != null && !globalFilter.isBlank() || showDeleted != null || showOffsite != null)
-            return ResponseEntity.ok(employeeDispatcher.getEmployeesList(globalFilter, showDeleted, showOffsite));
-        return ResponseEntity.ok(employeeDispatcher.getEmployeesList());
-    }
-
-    // Получает список монтажников
-    @GetMapping("employees/installers")
-    public ResponseEntity<List<Employee>> getInstallersList() {
-        return ResponseEntity.ok(employeeDispatcher.getInstallersList());
-    }
-
     // Получает файл прикрепленный к задаче
     @GetMapping("attachment/{id}")
     public void getAttachmentFile(@PathVariable String id,
@@ -683,75 +669,6 @@ public class PrivateRequestController {
         }
     }
 
-    // Получает сотрудника по логину
-    @GetMapping("employee/{login}")
-    public ResponseEntity<Employee> getEmployee(@PathVariable String login) {
-        Employee employeeByLogin;
-        try {
-            employeeByLogin = employeeDispatcher.getEmployee(login);
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-        return ResponseEntity.ok(employeeByLogin);
-    }
-
-    // Создает сотрудника
-    @PostMapping("employee")
-    public ResponseEntity<Employee> createEmployee(@RequestBody EmployeeForm body) {
-        if (body == null) throw new ResponseException("В запросе нет данных необходимых для создания сотрудника");
-        if (body.getFirstName() == null || body.getFirstName().isBlank())
-            throw new ResponseException("В запросе нет имени сотрудника");
-        if (body.getLogin() == null || body.getLogin().isBlank()) throw new ResponseException("В запросе нет логина");
-        if (body.getPassword() == null || body.getPassword().isBlank())
-            throw new ResponseException("В запросе нет пароля");
-        if (body.getDepartment() == null) throw new ResponseException("Сотруднику не присвоен отдел");
-        if (body.getPosition() == null) throw new ResponseException("Сотруднику не присвоена должность");
-        try {
-            Employee employee = employeeDispatcher.create(body);
-            stompController.createEmployee(employee);
-            return ResponseEntity.ok(employee);
-        } catch (AlreadyExists e) {
-            throw new ResponseException("Сотрудник с данным логином уже существует");
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Редактирует информацию о сотруднике
-    @PatchMapping("employee/{login}")
-    public ResponseEntity<Employee> editEmployee(@RequestBody EmployeeForm body, @PathVariable String login) {
-        if (body == null) throw new ResponseException("В запросе нет данных необходимых для создания сотрудника");
-        if (body.getFirstName() == null || body.getFirstName().isBlank())
-            throw new ResponseException("В запросе нет имени сотрудника");
-        if (body.getPassword() == null || body.getPassword().isBlank())
-            throw new ResponseException("В запросе нет пароля");
-        if (body.getDepartment() == null) throw new ResponseException("Сотруднику не присвоен отдел");
-        if (body.getPosition() == null) throw new ResponseException("Сотруднику не присвоена должность");
-        try {
-            Employee employee = employeeDispatcher.edit(body);
-            stompController.updateEmployee(employee);
-            return ResponseEntity.ok(employee);
-        } catch (EntryNotFound e) {
-            throw new ResponseException("Сотрудник с логином " + login + " не найден в базе данных для редактирования");
-        } catch (EditingNotPossible e) {
-            throw new ResponseException("Сотрудник удален, не возможно отредактировать");
-        }
-    }
-
-    @PatchMapping("employee/phy-phone/null/bind")
-    public ResponseEntity<Void> setPhyPhoneBind(HttpServletRequest request) {
-        Employee currentUser = getEmployeeFromRequest(request);
-        employeeDispatcher.setPhyPhoneBind(null, currentUser);
-        return ResponseEntity.ok().build();
-    }
-
-    @PatchMapping("employee/phy-phone/{phoneId}/bind")
-    public ResponseEntity<Void> setPhyPhoneBind(@PathVariable Long phoneId, HttpServletRequest request) {
-        Employee currentUser = getEmployeeFromRequest(request);
-        employeeDispatcher.setPhyPhoneBind(phyPhoneService.get(phoneId), currentUser);
-        return ResponseEntity.ok().build();
-    }
-
     @GetMapping("phy-phone-list")
     public ResponseEntity<List<ListItem>> getPhyPhoneBind(HttpServletRequest request) {
         Employee currentUser = getEmployeeFromRequest(request);
@@ -764,31 +681,6 @@ public class PrivateRequestController {
         if (currentUser.getPhyPhoneInfo() == null) throw new ResponseException("К аккаунту не привязан телефон");
         phyPhoneService.callUp(currentUser.getPhyPhoneInfo(), callUpRequest);
         return ResponseEntity.ok().build();
-    }
-
-    // Изменить статус сотрудника
-    @PatchMapping("employee/status")
-    public ResponseEntity<Employee> changeEmployeeStatus(@RequestBody String status, HttpServletRequest request) {
-        Employee currentUser = getEmployeeFromRequest(request);
-        try {
-            Employee employee = employeeDispatcher.changeStatus(currentUser.getLogin(), EmployeeStatus.valueOf(status));
-            stompController.updateEmployee(employee);
-            return ResponseEntity.ok(employee);
-        } catch (EntryNotFound e) {
-            throw new ResponseException(e.getMessage());
-        }
-    }
-
-    // Удаляет сотрудника
-    @DeleteMapping("employee/{login}")
-    public ResponseEntity<Employee> deleteEmployee(@PathVariable String login) {
-        try {
-            Employee employee = employeeDispatcher.delete(login);
-            stompController.deleteEmployee(employee);
-            return ResponseEntity.ok(employee);
-        } catch (EntryNotFound e) {
-            throw new ResponseException("Сотрудник с логином " + login + " не найден в базе данных");
-        }
     }
 
     // Получает информацию о себе

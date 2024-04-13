@@ -17,6 +17,7 @@ import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
+import com.microel.trackerbackend.storage.entities.tariff.AutoTariff;
 import com.microel.trackerbackend.storage.entities.task.Contract;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
@@ -51,10 +52,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import javax.validation.constraints.NotNull;
 import java.io.Serializable;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @AllArgsConstructor
@@ -1016,6 +1014,103 @@ public class TelegramMessageFactory {
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
                 .text(sb.toString())
+                .parseMode(ParseMode.HTML)
+                .build();
+
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> autoTariffs(List<AutoTariff> tariffs, String login, String employeeBillingMgr, Boolean isService) {
+        List<InlineKeyboardButton> keyboardButtons = tariffs
+                .stream()
+                .map(autoTariff -> InlineKeyboardButton.builder()
+                        .text(autoTariff.getName() + " " + autoTariff.getCost() + " р.")
+                        .callbackData(CallbackData.create(isService? "append_service" : "set_auto_tariff", autoTariff.getExternalId().toString(), login, employeeBillingMgr))
+                        .build()).collect(Collectors.toList());
+
+        keyboardButtons.add(InlineKeyboardButton.builder()
+                .text("Отмена")
+                .callbackData(CallbackData.create("cancel", ""))
+                .build());
+
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(Decorator.bold(isService ? "Какой сервис добавить?" : "Какой тариф включить?"))
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(
+                        InlineKeyboardMarkup
+                                .builder()
+                                .keyboard(keyboardButtons.stream().map(List::of).toList())
+                                .build()
+                ).build();
+
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> billingUserSetup(ApiBillingController.TotalUserInfo userInfo, Employee manager, Long taskClassId, String taskTypeId) {
+        StringBuilder stringBuilder = new StringBuilder();
+
+        String address = userInfo.getIbase().getAddr();
+        String fio = userInfo.getIbase().getFio();
+        String phone = userInfo.getIbase().getPhone();
+
+        stringBuilder.append(Decorator.bold(userInfo.getUname())).append("\n");
+        if (!address.isBlank()) stringBuilder.append(userInfo.getIbase().getAddr()).append("\n");
+        if (!fio.isBlank()) stringBuilder.append(userInfo.getIbase().getFio()).append("\n");
+        if (!phone.isBlank()) stringBuilder.append(userInfo.getIbase().getPhone()).append("\n");
+
+        stringBuilder.append("\n").append(userInfo.getNewTarif().getUserStatusName()).append("\n");
+
+        ApiBillingController.OldTarifItem mainTariff = userInfo.getOldTarif().get(0);
+        if (mainTariff != null && !mainTariff.getService().isBlank()) {
+            stringBuilder.append(Decorator.italic(mainTariff.getService())).append(" ").append(mainTariff.getPrice()).append("руб").append("\n");
+        } else {
+            stringBuilder.append(Decorator.italic("Нет тарифа")).append("\n");
+        }
+
+        if (userInfo.getOldTarif().size() > 1) {
+            stringBuilder.append(Decorator.underline("Сервисы:\n"));
+            for (int i = 1; i < userInfo.getOldTarif().size(); i++) {
+                ApiBillingController.OldTarifItem service = userInfo.getOldTarif().get(i);
+                stringBuilder.append(service.getService()).append(" ").append(service.getPrice()).append("руб").append("\n");
+            }
+        }
+
+        stringBuilder.append(Decorator.bold("Баланс: "));
+        Float balance = userInfo.getIbase().getMoney();
+        if (balance != null) {
+            stringBuilder.append(balance).append(" руб");
+        } else {
+            stringBuilder.append(Decorator.italic("0 руб"));
+        }
+
+        List<InlineKeyboardButton> firstRowButtons = new ArrayList<>();
+        firstRowButtons.add(
+                InlineKeyboardButton.builder()
+                .text("Изменить тариф")
+                .callbackData(CallbackData.create("change_tariff_menu", userInfo.getUname(), manager.getLogin())).build()
+        );
+        firstRowButtons.add(
+                InlineKeyboardButton.builder()
+                .text("Добавить сервис")
+                .callbackData(CallbackData.create("append_service_menu", userInfo.getUname(), manager.getLogin())).build()
+        );
+        List<InlineKeyboardButton> secondRowButtons = new ArrayList<>();
+        secondRowButtons.add(
+                InlineKeyboardButton.builder()
+                .text("Отмена")
+                .callbackData(CallbackData.create("cancel", "")).build()
+        );
+
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(stringBuilder.toString())
+                .replyMarkup(
+                        InlineKeyboardMarkup
+                                .builder()
+                                .keyboard(List.of(firstRowButtons, secondRowButtons))
+                                .build()
+                )
                 .parseMode(ParseMode.HTML)
                 .build();
 

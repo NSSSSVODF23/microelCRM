@@ -781,10 +781,11 @@ public class WorkLogDispatcher {
                 Join<WorkLog, Employee> installersJoin = root.join("employees", JoinType.LEFT);
                 if (filters.getSearchQuery() != null && !filters.getSearchQuery().isBlank()) {
                     String searchPattern = "%" + filters.getSearchQuery().toLowerCase() + "%";
-                    List<Address> addressInDBByQuery = addressDispatcher.getAddressInDBByQuery(filters.getSearchQuery());
+                    AddressDispatcher.AddressLookupRequest lookupRequest = AddressDispatcher.parseStringQuery(filters.getSearchQuery());
                     List<Predicate> filterPredicates = new ArrayList<>();
-                    if (!addressInDBByQuery.isEmpty()) {
-                        filterPredicates.add(fieldsJoin.get("addressData").in(addressInDBByQuery));
+                    if (lookupRequest != null) {
+                        Join<ModelItem, Address> addressJoin = fieldsJoin.join("addressData");
+                        filterPredicates.add(lookupRequest.toPredicate(addressJoin, cb));
                     }
                     filterPredicates.add(cb.like(cb.lower(fieldsJoin.get("stringData")), searchPattern));
                     filterPredicates.add(

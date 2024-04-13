@@ -10,7 +10,12 @@ import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigu
 import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
+import com.microel.trackerbackend.services.external.billing.directaccess.bases.Base1783;
+import com.microel.trackerbackend.services.external.billing.directaccess.bases.Base1785;
+import com.microel.trackerbackend.services.external.billing.directaccess.bases.Base781;
 import com.microel.trackerbackend.storage.entities.address.Address;
+import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.team.util.Credentials;
 import com.microel.trackerbackend.storage.exceptions.EmptyResponse;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
@@ -54,6 +59,43 @@ public class ApiBillingController {
         authenticate();
     }
 
+    public static UserStatus getUserStatus(Integer state, @Nullable Integer tstate) {
+        if (state == null || state == 0) return UserStatus.NO_STATUS;
+        if (tstate == null) tstate = 0;
+        switch (state) {
+            case 1 -> {
+                switch (tstate) {
+                    case 1 -> {
+                        return UserStatus.ACTIVE;
+                    }
+                    case 3 -> {
+                        return UserStatus.DEFERRED_PAYMENT;
+                    }
+                }
+                return UserStatus.ACTIVE;
+            }
+            case 5 -> {
+                return UserStatus.SUSPENDED;
+            }
+            case 7 -> {
+                switch (tstate) {
+                    case 8 -> {
+                        return UserStatus.NO_MONEY;
+                    }
+                    case 9 -> {
+                        return UserStatus.DEFERRED_PAYMENT_IS_OVERDUE;
+                    }
+                }
+                return UserStatus.NO_MONEY;
+            }
+            case 11 -> {
+                return UserStatus.DISABLED;
+            }
+            default -> {
+                return UserStatus.UNKNOWN;
+            }
+        }
+    }
     public static String getUserStatusName(Integer state, @Nullable Integer tstate) {
         if (state == null) return "Нет статуса";
         if (tstate == null) tstate = 0;
@@ -195,48 +237,133 @@ public class ApiBillingController {
         }
     }
 
+    public List<ApiBillingController.UserItemData> searchUsers(String stringQuery, Boolean isActive) {
+
+        stringQuery = stringQuery.trim();
+
+        Pattern loginPattern = Pattern.compile("^(BIZ)?(\\d{8}|[A-z.\\d-@]+)");
+        Pattern addressPattern = Pattern.compile("^((?<st>[А-я.\\d-]+) )?(?<ha>\\d{1,3}(/\\d{1,3})?[А-я]*(_\\d{1,3})?-?(\\d{1,3})?)[А-я]?");
+        Matcher loginMatcher = loginPattern.matcher(stringQuery);
+        Matcher addressMatcher = addressPattern.matcher(stringQuery);
+
+        if (loginMatcher.find()) {
+            List<UserItemData> usersByLogin = getUsersByLogin(stringQuery, isActive)
+                    .stream()
+                    .sorted(Comparator.comparing(UserItemData::getAddr))
+                    .toList();
+            if (!usersByLogin.isEmpty())
+                return usersByLogin;
+        }
+
+        if (addressMatcher.find()) {
+            String street = null;
+            String house = null;
+
+            try {
+                street = addressMatcher.group("st");
+            } catch (Exception ignored) {
+            }
+
+            try {
+                house = addressMatcher.group("ha");
+            } catch (Exception ignored) {
+            }
+
+            if (street != null && house != null) {
+                String finalHouse = house;
+                List<UserItemData> usersByAddress = getUsersByAddress(street, isActive)
+                        .stream()
+                        .filter(f -> f.addr.contains(finalHouse))
+                        .sorted(Comparator.comparing(UserItemData::getAddr))
+                        .toList();
+                if (!usersByAddress.isEmpty())
+                    return usersByAddress;
+            }
+
+            if (street != null) {
+                List<UserItemData> usersByAddress = getUsersByAddress(street, false)
+                        .stream()
+                        .sorted(Comparator.comparing(UserItemData::getAddr))
+                        .toList();
+                if (!usersByAddress.isEmpty())
+                    return usersByAddress;
+            }
+
+            if (house != null) {
+                List<UserItemData> usersByAddress = getUsersByAddress(house, false)
+                        .stream()
+                        .sorted(Comparator.comparing(UserItemData::getAddr))
+                        .toList();
+                if (!usersByAddress.isEmpty())
+                    return usersByAddress;
+            }
+        }
+
+        List<UserItemData> usersByFio = getUsersByFio(stringQuery, isActive).stream()
+                .sorted(Comparator.comparing(UserItemData::getAddr))
+                .toList();
+        if (!usersByFio.isEmpty())
+            return usersByFio;
+
+        if(stringQuery.contains(" ")){
+            List<String> subquery = Stream.of(stringQuery.split(" ")).toList();
+            List<UserItemData> allSubqueryResults = new ArrayList<>();
+            for (String q : subquery) {
+                List<UserItemData> subqueryResults = getUsersByFio(q, isActive);
+                allSubqueryResults.addAll(subqueryResults);
+            }
+            return allSubqueryResults.stream()
+                    .sorted(Comparator.comparing(UserItemData::getAddr))
+                    .toList();
+        }
+
+        return new ArrayList<>();
+    }
+
     public List<UserItemData> getUserSuggestions(String stringQuery) {
         Pattern loginPattern = Pattern.compile("^(BIZ)?(\\d{8}|[A-z.\\d-@]+)");
         Pattern addressPattern = Pattern.compile("^((?<st>[А-я.\\d-]+) )?(?<ha>\\d{1,3}(/\\d{1,3})?[А-я]*(_\\d{1,3})?(-\\d{1,3})?)");
         Matcher loginMatcher = loginPattern.matcher(stringQuery);
         Matcher addressMatcher = addressPattern.matcher(stringQuery);
-        if(addressMatcher.find()){
+        if (addressMatcher.find()) {
             String street = null;
             String house = null;
             try {
                 street = addressMatcher.group("st");
-            }catch (Exception ignored){}
+            } catch (Exception ignored) {
+            }
             try {
                 house = addressMatcher.group("ha");
-            }catch (Exception ignored){}
-            if(street != null && house != null){
+            } catch (Exception ignored) {
+            }
+            if (street != null && house != null) {
                 String finalHouse = house;
                 List<UserItemData> usersByAddress = getUsersByAddress(street, false)
                         .stream()
                         .filter(f -> f.addr.contains(finalHouse))
                         .sorted(Comparator.comparing(UserItemData::getAddr))
                         .toList();
-                if(!usersByAddress.isEmpty())
+                if (!usersByAddress.isEmpty())
                     return usersByAddress;
             }
-            if(street != null){
+            if (street != null) {
                 List<UserItemData> usersByAddress = getUsersByAddress(street, false)
                         .stream()
                         .sorted(Comparator.comparing(UserItemData::getAddr))
                         .toList();
-                if(!usersByAddress.isEmpty())
+                if (!usersByAddress.isEmpty())
                     return usersByAddress;
             }
-            if(house != null){
+            if (house != null) {
                 List<UserItemData> usersByAddress = getUsersByAddress(house, false)
                         .stream()
                         .sorted(Comparator.comparing(UserItemData::getAddr))
                         .toList();
-                if(!usersByAddress.isEmpty())
+                if (!usersByAddress.isEmpty())
                     return usersByAddress;
             }
         }
-        if(loginMatcher.find()) {
+        if (loginMatcher.find()) {
             return getUsersByLogin(stringQuery, false);
         }
         return List.of();
@@ -432,6 +559,30 @@ public class ApiBillingController {
         } catch (JsonProcessingException e) {
             return null;
         }
+    }
+
+    public static Base1785 createBase1785Session(Employee employee){
+        Credentials credentials = employee.getBase1785Credentials();
+        if (credentials == null || credentials.isNotFull())
+            throw new ResponseException("Не установлены реквизиты");
+
+        return Base1785.create(credentials);
+    }
+
+    public static Base781 createBase781Session(Employee employee){
+        Credentials credentials = employee.getBase781Credentials();
+        if (credentials == null || credentials.isNotFull())
+            throw new ResponseException("Не установлены реквизиты");
+
+        return Base781.create(credentials);
+    }
+
+    public static Base1783 createBase1783Session(Employee employee){
+        Credentials credentials = employee.getBase1783Credentials();
+        if (credentials == null || credentials.isNotFull())
+            throw new ResponseException("Не установлены реквизиты");
+
+        return Base1783.create(credentials);
     }
 
     @Getter
@@ -708,6 +859,10 @@ public class ApiBillingController {
 
         public String getUserStatusName() {
             return ApiBillingController.getUserStatusName(state, tstate);
+        }
+
+        public UserStatus getUserStatus() {
+            return ApiBillingController.getUserStatus(state, tstate);
         }
 
         public String getUserStatusColor() {
@@ -1161,6 +1316,27 @@ public class ApiBillingController {
             if (comment == null || comment.isBlank()) {
                 throw new ResponseException("Комментарий к платежу не указан");
             }
+        }
+    }
+
+    public enum UserStatus {
+        ACTIVE("ACTIVE"),
+        NO_STATUS("NO_STATUS"),
+        DEFERRED_PAYMENT("DEFERRED_PAYMENT"),
+        SUSPENDED("SUSPENDED"),
+        NO_MONEY("NO_MONEY"),
+        DEFERRED_PAYMENT_IS_OVERDUE("DEFERRED_PAYMENT_IS_OVERDUE"),
+        DISABLED("DISABLED"),
+        UNKNOWN("UNKNOWN");
+
+        private final String name;
+
+        UserStatus(String name) {
+            this.name = name;
+        }
+
+        public String getName() {
+            return name;
         }
     }
 }

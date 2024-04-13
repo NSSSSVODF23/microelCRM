@@ -1,7 +1,10 @@
 package com.microel.trackerbackend.services.api.controllers;
 
 import com.microel.tdo.pon.Worker;
+import com.microel.tdo.pon.alert.RootTapAlert;
 import com.microel.tdo.pon.events.OntStatusChangeEvent;
+import com.microel.tdo.pon.schema.PonScheme;
+import com.microel.tdo.pon.schema.events.PonSchemeChangeEvent;
 import com.microel.tdo.pon.terminal.OpticalNetworkTerminal;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.services.api.StompController;
@@ -11,6 +14,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.util.List;
 
@@ -49,6 +53,30 @@ public class InternalRequestController {
     @PostMapping("pon/ont/update")
     public ResponseEntity<Void> receiveSpentWorker(@RequestBody OpticalNetworkTerminal ont) {
         stompController.sendUpdatedOnt(ont);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("pon/alert/root-tap/down")
+    public ResponseEntity<Void> receiveRootTapDown(@RequestBody RootTapAlert alert) {
+        try {
+            telegramController.sendRootTapAlert(alert);
+        } catch (TelegramApiException ignored) {
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("pon/alert/root-tap/up")
+    public ResponseEntity<Void> receiveRootTapUp(@RequestBody RootTapAlert alert) {
+        try {
+            telegramController.sendRootTapAlert(alert);
+        } catch (TelegramApiException ignored) {
+        }
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("pon/scheme/change")
+    public ResponseEntity<Void> receiveSchemeChange(@RequestBody PonSchemeChangeEvent event) {
+        stompController.sendSchemeChange(event);
         return ResponseEntity.ok().build();
     }
 }

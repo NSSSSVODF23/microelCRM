@@ -1,6 +1,7 @@
 package com.microel.trackerbackend.controllers.telegram;
 
 import com.microel.tdo.pon.OpticalLineTerminal;
+import com.microel.tdo.pon.alert.RootTapAlert;
 import com.microel.tdo.pon.events.OntStatusChangeEvent;
 import com.microel.trackerbackend.CustomException;
 import com.microel.trackerbackend.controllers.configuration.Configuration;
@@ -19,6 +20,7 @@ import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
 import com.microel.trackerbackend.services.external.billing.ApiBillingController;
+import com.microel.trackerbackend.services.external.billing.directaccess.bases.Base1785;
 import com.microel.trackerbackend.services.external.pon.PonextenderClient;
 import com.microel.trackerbackend.services.filemanager.FileData;
 import com.microel.trackerbackend.services.filemanager.exceptions.EmptyFile;
@@ -36,6 +38,7 @@ import com.microel.trackerbackend.storage.entities.chat.TelegramMessageBind;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
+import com.microel.trackerbackend.storage.entities.tariff.AutoTariff;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.WorkLogTargetFile;
@@ -43,9 +46,12 @@ import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.notification.Notification;
 import com.microel.trackerbackend.storage.entities.team.util.TelegramOptions;
+import com.microel.trackerbackend.storage.entities.templating.TaskStage;
+import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.*;
+import com.microel.trackerbackend.storage.repositories.AutoTariffRepository;
 import com.microel.trackerbackend.storage.repositories.CommentRepository;
 import com.microel.trackerbackend.storage.repositories.ModelItemRepository;
 import com.microel.trackerbackend.storage.repositories.TelegramOptionsRepository;
@@ -90,6 +96,7 @@ import static java.util.Comparator.comparingInt;
 @Component
 @Transactional
 public class TelegramController {
+    private final AutoTariffRepository autoTariffRepository;
     private final TelegramOptionsRepository telegramOptionsRepository;
     private final ModelItemRepository modelItemRepository;
     private final CommentRepository commentRepository;
@@ -125,7 +132,8 @@ public class TelegramController {
                               AddressDispatcher addressDispatcher, HouseDispatcher houseDispatcher, WorkingDayDispatcher workingDayDispatcher, AcpClient acpClient, FilesWatchService filesWatchService,
                               CommentRepository commentRepository,
                               ModelItemRepository modelItemRepository, PonextenderClient ponextenderClient,
-                              TelegramOptionsRepository telegramOptionsRepository) {
+                              TelegramOptionsRepository telegramOptionsRepository,
+                              AutoTariffRepository autoTariffRepository) {
         this.configuration = configuration;
         this.taskDispatcher = taskDispatcher;
         this.workLogDispatcher = workLogDispatcher;
@@ -154,6 +162,7 @@ public class TelegramController {
         this.commentRepository = commentRepository;
         this.modelItemRepository = modelItemRepository;
         this.telegramOptionsRepository = telegramOptionsRepository;
+        this.autoTariffRepository = autoTariffRepository;
     }
 
     private void initializeApi() throws TelegramApiException {
@@ -374,6 +383,221 @@ public class TelegramController {
                             default -> employeeDispatcher.editTrackOlt(employee, data.getString());
                         }
                         messageFactory.answerCallback(callbackId, "Настройка сохранена").execute();
+                        return true;
+                    } catch (EmptyResponse e) {
+                        messageFactory.answerCallback(callbackId, "Не удалось найти информацию о пользователе").execute();
+                    }
+                } catch (Exception e) {
+                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+                }
+            }
+            return false;
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("change_tariff_menu", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Long userId = update.getCallbackQuery().getFrom().getId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if (data != null) {
+                try {
+                    List<String> dataSet = data.getList();
+                    if (dataSet == null || dataSet.size() < 2) {
+                        messageFactory.answerCallback(callbackId, "Не верные данные").execute();
+                        return false;
+                    }
+                    Employee employee = getEmployeeByChat(userId);
+                    if (employee == null || !employee.getOffsite()) {
+                        messageFactory.answerCallback(callbackId, "").execute();
+                        return false;
+                    }
+                    WorkLog workLog = workLogDispatcher.getAcceptedWorkLogByEmployee(employee);
+                    Wireframe taskClass = workLog.getTask().getModelWireframe();
+                    TaskStage taskType = workLog.getTask().getCurrentStage();
+                    String login = dataSet.get(0);
+                    String billingDispatcher = dataSet.get(1);
+
+                    List<AutoTariff> tariffs = autoTariffRepository.findAll((root, query, cb) -> cb.and(
+                            cb.isFalse(root.get("isDeleted")),
+                            cb.isFalse(root.get("isService")),
+                            cb.equal(root.join("targetClass", JoinType.LEFT), taskClass),
+                            cb.equal(root.join("targetType", JoinType.LEFT), taskType)
+                    ), Sort.by("name"));
+
+                    messageFactory.autoTariffs(tariffs, login, billingDispatcher, false).execute();
+                    messageFactory.answerCallback(callbackId, "").execute();
+                } catch (Exception e) {
+                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+                }
+            }
+            return false;
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("append_service_menu", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Long userId = update.getCallbackQuery().getFrom().getId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if (data != null) {
+                try {
+                    List<String> dataSet = data.getList();
+                    if (dataSet == null || dataSet.size() < 2) {
+                        messageFactory.answerCallback(callbackId, "Не верные данные").execute();
+                        return false;
+                    }
+                    Employee employee = getEmployeeByChat(userId);
+                    if (employee == null || !employee.getOffsite()) {
+                        messageFactory.answerCallback(callbackId, "").execute();
+                        return false;
+                    }
+                    WorkLog workLog = workLogDispatcher.getAcceptedWorkLogByEmployee(employee);
+                    Wireframe taskClass = workLog.getTask().getModelWireframe();
+                    TaskStage taskType = workLog.getTask().getCurrentStage();
+                    String login = dataSet.get(0);
+                    String billingDispatcher = dataSet.get(1);
+
+                    List<AutoTariff> tariffs = autoTariffRepository.findAll((root, query, cb) -> cb.and(
+                            cb.isFalse(root.get("isDeleted")),
+                            cb.isTrue(root.get("isService")),
+                            cb.equal(root.join("targetClass", JoinType.LEFT), taskClass),
+                            cb.equal(root.join("targetType", JoinType.LEFT), taskType)
+                    ), Sort.by("name"));
+
+                    messageFactory.autoTariffs(tariffs, login, billingDispatcher, true).execute();
+                    messageFactory.answerCallback(callbackId, "").execute();
+                } catch (Exception e) {
+                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+                }
+            }
+            return false;
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("set_auto_tariff", (update, data) -> {
+            Long userId = update.getCallbackQuery().getFrom().getId();
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if (data != null) {
+                try {
+                    Employee employee = getEmployeeByChat(userId);
+                    if (!employee.getOffsite()) {
+                        messageFactory.answerCallback(callbackId, "Вы не являетесь монтажником").execute();
+                        return false;
+                    }
+                    try {
+                        List<String> dataSet = data.getList();
+                        if (dataSet == null || dataSet.size() < 3) {
+                            messageFactory.answerCallback(callbackId, "Не верные данные").execute();
+                            return false;
+                        }
+                        Integer tariffId = Integer.parseInt(dataSet.get(0));
+                        String login = dataSet.get(1);
+                        String billingDispatcher = dataSet.get(2);
+
+                        ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(login);
+                        if (userInfo == null) {
+                            messageFactory.answerCallback(callbackId, "Не удалось найти абонента").execute();
+                            return false;
+                        }
+                        if (userInfo.getNewTarif().getUserStatus() == ApiBillingController.UserStatus.ACTIVE) {
+                            messageFactory.answerCallback(callbackId, "Абонент не должен быть активным").execute();
+                            return false;
+                        }
+                        if (billingDispatcher.isBlank()) {
+                            messageFactory.answerCallback(callbackId, "Не указан диспетчер биллинга").execute();
+                            return false;
+                        }
+
+                        Employee manager = employeeDispatcher.getEmployee(billingDispatcher);
+                        Base1785 base = ApiBillingController.createBase1785Session(manager);
+                        base.login();
+
+                        base.changeTariff(login, tariffId);
+                        base.enableLogin(login);
+
+                        base.logout();
+
+                        userInfo = apiBillingController.getUserInfo(login);
+                        Float money = userInfo.getIbase().getMoney();
+
+                        if (money != null && money < 0f) {
+                            apiBillingController.deferredPayment(login);
+                        }
+
+                        apiBillingController.getUpdatedUserAndPushUpdate(login);
+                        messageFactory.deleteMessage(messageId).execute();
+                        messageFactory.simpleMessage("Тариф установлен").execute();
+                        return true;
+                    } catch (EmptyResponse e) {
+                        messageFactory.answerCallback(callbackId, "Не удалось найти информацию о пользователе").execute();
+                    }
+                } catch (Exception e) {
+                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+                }
+            }
+            return false;
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("append_service", (update, data) -> {
+            Long userId = update.getCallbackQuery().getFrom().getId();
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            String callbackId = update.getCallbackQuery().getId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            if (data != null) {
+                try {
+                    Employee employee = getEmployeeByChat(userId);
+                    if (!employee.getOffsite()) {
+                        messageFactory.answerCallback(callbackId, "Вы не являетесь монтажником").execute();
+                        return false;
+                    }
+                    try {
+                        List<String> dataSet = data.getList();
+                        if (dataSet == null || dataSet.size() < 3) {
+                            messageFactory.answerCallback(callbackId, "Не верные данные").execute();
+                            return false;
+                        }
+                        Integer tariffId = Integer.parseInt(dataSet.get(0));
+                        String login = dataSet.get(1);
+                        String billingDispatcher = dataSet.get(2);
+
+                        ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(login);
+                        if (userInfo == null) {
+                            messageFactory.answerCallback(callbackId, "Не удалось найти абонента").execute();
+                            return false;
+                        }
+                        if (userInfo.getNewTarif().getUserStatus() == ApiBillingController.UserStatus.ACTIVE) {
+                            messageFactory.answerCallback(callbackId, "Абонент не должен быть активным").execute();
+                            return false;
+                        }
+                        if (billingDispatcher.isBlank()) {
+                            messageFactory.answerCallback(callbackId, "Не указан диспетчер биллинга").execute();
+                            return false;
+                        }
+
+                        Employee manager = employeeDispatcher.getEmployee(billingDispatcher);
+                        Base1785 base = ApiBillingController.createBase1785Session(manager);
+                        base.login();
+
+                        base.appendService(login, tariffId);
+//                        base.enableLogin(login);
+
+                        base.logout();
+
+                        userInfo = apiBillingController.getUserInfo(login);
+                        Float money = userInfo.getIbase().getMoney();
+
+                        if (money != null && money < 0f
+                                && !Objects.equals(userInfo.getNewTarif().getUserStatus(), ApiBillingController.UserStatus.DEFERRED_PAYMENT)) {
+                            apiBillingController.deferredPayment(login);
+                        }
+
+                        apiBillingController.getUpdatedUserAndPushUpdate(login);
+                        messageFactory.deleteMessage(messageId).execute();
+                        messageFactory.simpleMessage("Сервис добавлен").execute();
                         return true;
                     } catch (EmptyResponse e) {
                         messageFactory.answerCallback(callbackId, "Не удалось найти информацию о пользователе").execute();
@@ -831,6 +1055,14 @@ public class TelegramController {
             return false;
         }));
 
+        mainBot.subscribe(new TelegramCallbackReactor("cancel", (update, data) -> {
+            Long chatId = update.getCallbackQuery().getMessage().getChatId();
+            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
+            messageFactory.deleteMessage(messageId).execute();
+            return true;
+        }));
+
 //        mainBot.subscribe(new TelegramCallbackReactor("get_auth_variants", (update, data) -> {
 //            Long chatId = update.getCallbackQuery().getMessage().getChatId();
 //            Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
@@ -1090,6 +1322,46 @@ public class TelegramController {
                 Employee employee = getEmployeeByChat(userId);
                 String messageText = update.getMessage().getText().trim().toLowerCase();
 
+                if (messageText.contains("тариф") && employee.getOffsite()) {
+                    try {
+                        WorkLog workLog = workLogDispatcher.getAcceptedWorkLogByEmployee(employee);
+                        Wireframe taskClass = workLog.getTask().getModelWireframe();
+                        TaskStage taskType = workLog.getTask().getCurrentStage();
+
+                        boolean isEmptyTariffs = autoTariffRepository.findAll((root, query, cb) -> cb.and(
+                                cb.isFalse(root.get("isDeleted")),
+                                cb.equal(root.join("targetClass", JoinType.LEFT), taskClass),
+                                cb.equal(root.join("targetType", JoinType.LEFT), taskType)
+                        ), Sort.by("name")).isEmpty();
+                        if (isEmptyTariffs) return true;
+                        ModelItem loginField = modelItemRepository.findAll((root, query, cb) -> {
+                            Join<ModelItem, Task> taskJoin = root.join("task", JoinType.LEFT);
+                            return cb.and(
+                                    cb.equal(taskJoin, workLog.getTask()),
+                                    cb.equal(root.get("wireframeFieldType"), WireframeFieldType.LOGIN)
+                            );
+                        }).stream().findFirst().orElse(null);
+                        if (loginField == null || loginField.getStringData() == null || loginField.getStringData().isBlank())
+                            return true;
+                        ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(loginField.getStringData());
+                        if (userInfo == null) {
+                            messageFactory.simpleMessage("Абонент не найден").execute();
+                            return false;
+                        }
+//                        if (
+//                                Objects.equals(userInfo.getNewTarif().getUserStatus(), ApiBillingController.UserStatus.ACTIVE)
+//                                        || Objects.equals(userInfo.getNewTarif().getUserStatus(), ApiBillingController.UserStatus.DEFERRED_PAYMENT)
+//                        ) {
+//                            messageFactory.simpleMessage("Тариф уже установлен").execute();
+//                            return false;
+//                        }
+                        messageFactory.billingUserSetup(userInfo, workLog.getCreator(), taskClass.getWireframeId(), taskType.getStageId()).execute();
+                    } catch (Exception e) {
+                        messageFactory.simpleMessage(e.getMessage()).execute();
+                    }
+                    return true;
+                }
+
                 if (messageText.contains("схему") && employee.getOffsite()) {
                     try {
                         WorkLog workLog = workLogDispatcher.getAcceptedWorkLogByEmployee(employee);
@@ -1157,7 +1429,6 @@ public class TelegramController {
                                 for (TFile file : files) {
                                     messageFactory.file(file).execute();
                                 }
-                                return true;
                             }
 
                         }
@@ -1904,6 +2175,28 @@ public class TelegramController {
             return;
         }
         TelegramMessageFactory.create(chatId, mainBot).dhcpIpRequestNotification(body).execute();
+    }
+
+    public void sendRootTapAlert(RootTapAlert alert) throws TelegramApiException {
+        if (telegramConf == null || !telegramConf.isFilled()) {
+            log.warn("Отсутствует конфигурация телеграмма");
+            return;
+        }
+        String chatId = telegramConf.getPonAlertChatId();
+        if (chatId == null || chatId.isBlank()) {
+            log.warn("Чат для отправки DhcpIpRequestNotification отсутствует");
+            return;
+        }
+
+        TelegramMessageFactory.create(chatId, mainBot).simpleMessage(
+                (alert.getOnline() ? "Поднялся корень на голове " : "Упал корень на голове ") +
+                        alert.getOltName() +
+                        " (" + Decorator.code(alert.getIp()) + ")" +
+                        " Порт: " +
+                        alert.getPort() +
+                        " Кол-во onu: " +
+                        alert.getOnuCount()
+        ).execute();
     }
 
     public Employee getEmployeeByChat(Long chatId) throws Exception {

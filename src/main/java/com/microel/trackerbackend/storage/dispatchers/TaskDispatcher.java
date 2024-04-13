@@ -1743,10 +1743,10 @@ public class TaskDispatcher {
                                 orders.add(new OrderImpl(cb.selectCase().when(idExpr, cityJoin.get("name")), sortMeta.getOrder() > 0));
                                 orders.add(new OrderImpl(cb.selectCase().when(idExpr, streetJoin.get("name")), sortMeta.getOrder() > 0));
                                 orders.add(new OrderImpl(cb.selectCase().when(idExpr, addressJoin.get("houseNum")), sortMeta.getOrder() > 0));
-                                orders.add(new OrderImpl(cb.selectCase().when(idExpr, addressJoin.get("fraction")), sortMeta.getOrder() > 0));
-                                orders.add(new OrderImpl(cb.selectCase().when(idExpr, addressJoin.get("letter")), sortMeta.getOrder() > 0));
-                                orders.add(new OrderImpl(cb.selectCase().when(idExpr, addressJoin.get("build")), sortMeta.getOrder() > 0));
-                                orders.add(new OrderImpl(cb.selectCase().when(idExpr, addressJoin.get("apartmentNum")), sortMeta.getOrder() > 0));
+                                orders.add(new OrderImpl(cb.selectCase().when(idExpr, addressJoin.get("fraction")), sortMeta.getOrder() > 0, true));
+                                orders.add(new OrderImpl(cb.selectCase().when(idExpr, addressJoin.get("letter")), sortMeta.getOrder() > 0, true));
+                                orders.add(new OrderImpl(cb.selectCase().when(idExpr, addressJoin.get("build")), sortMeta.getOrder() > 0, true));
+                                orders.add(new OrderImpl(cb.selectCase().when(idExpr, addressJoin.get("apartmentNum")), sortMeta.getOrder() > 0, true));
                             }
                             case BOOLEAN -> {
                                 orders.add(new OrderImpl(cb.selectCase().when(idExpr, root.get("booleanData")), sortMeta.getOrder() > 0));

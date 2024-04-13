@@ -115,7 +115,7 @@ public class MainBot extends TelegramLongPollingBot {
                     }
                     case EDIT_MESSAGE -> {
                         TelegramEditMessageReactor editMessageReactor = (TelegramEditMessageReactor) reactor;
-                        if (update.hasEditedMessage() && update.getMessage().getChat().isUserChat()) {
+                        if (update.hasEditedMessage() && update.getEditedMessage().getChat().isUserChat()) {
                             if ((isHandled = editMessageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
@@ -129,7 +129,7 @@ public class MainBot extends TelegramLongPollingBot {
                     }
                     case GROUP_EDIT_MESSAGE -> {
                         TelegramGroupEditMessageReactor editMessageReactor = (TelegramGroupEditMessageReactor) reactor;
-                        if (update.hasEditedMessage() && !update.getMessage().isCommand() && (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat())) {
+                        if (update.hasEditedMessage() && !update.getEditedMessage().isCommand() && (update.getEditedMessage().getChat().isGroupChat() || update.getEditedMessage().getChat().isSuperGroupChat())) {
                             if ((isHandled = editMessageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }

@@ -30,12 +30,13 @@ public class WorkingDay {
 
     public SalaryTable.SalaryTableCell toPoint(){
         Float sum = calculations.stream().map(WorkCalculation::getSum).reduce(0f,Float::sum);
-        Float sumWithoutNDFL = calculations.stream().map(WorkCalculation::getSumWithoutNDFL).reduce(0f, Float::sum);
+//        Float sumWithoutNDFL = calculations.stream().map(WorkCalculation::getSumWithoutNDFL).reduce(0f, Float::sum);
         return SalaryTable.SalaryTableCell.builder()
                 .date(date)
                 .employee(employee)
                 .sumWithNDFL(sum)
-                .sumWithoutNDFL(sumWithoutNDFL)
+//                .sumWithoutNDFL(sumWithoutNDFL)
+                .sumWithoutNDFL(sum * 0.87f)
                 .build();
     }
 }

@@ -265,7 +265,8 @@ public class WorkLog {
         if (!getCalculated() || getWorkCalculations() == null || getWorkCalculations().isEmpty()) return null;
         WorkCalculation employeeCalculation = getWorkCalculations().stream().filter(workCalculation -> workCalculation.getEmployee().equals(employee)).findFirst().orElse(null);
         if (employeeCalculation == null) throw new ResponseException("Отсутствует привязка расчета сотрудника "+employee.getFullName()+" к работе #"+getWorkLogId());
-        return employeeCalculation.getSumWithoutNDFL();
+        if(employeeCalculation.getIsPaidWork()) return employeeCalculation.getAmountOfMoneyTaken();
+        return employeeCalculation.getSum();
     }
 
     @Override
