@@ -42,11 +42,11 @@ public class StatisticsDispatcher {
         List<WorkLog> closedWorkLogs = workLogRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(root.join("employees", JoinType.LEFT).get("login").in(form.getEmployees()));
-            predicates.add(cb.between(root.get("closed"), form.getPeriod().start(), form.getPeriod().end()));
-            predicates.add(cb.isFalse(root.get("isForceClosed")));
+            predicates.add(cb.between(root.get("created"), form.getPeriod().start(), form.getPeriod().end()));
+            predicates.add(cb.isNotNull(root.get("closed")));
             predicates.add(cb.isTrue(root.get("calculated")));
             return cb.and(predicates.toArray(Predicate[]::new));
-        });
+        }).stream().distinct().toList();
 
         Map<Employee, List<WorkLog>> employeeWorkLogs = closedWorkLogs
                 .stream()
@@ -421,6 +421,7 @@ public class StatisticsDispatcher {
 
 
                             timings.delayBetween = Math.round(closedAndGivenPairs.stream()
+                                    .filter(pair -> pair.getValue0()!= null && pair.getValue1()!= null)
                                     .mapToLong(pair -> Duration.between(pair.getValue0().toInstant(), pair.getValue1().toInstant()).toMillis())
                                     .average()
                                     .orElse(0d));
