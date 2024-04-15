@@ -707,8 +707,10 @@ public class TaskRequestController {
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
         try {
             WorkLog workLog = taskDispatcher.assignInstallers(taskId, body, employee);
-            List<Employee> acceptedEmployees = workLogDispatcher.getAcceptedEmployees(workLog.getEmployees());
-            telegramController.assignInstallers(workLog, employee, acceptedEmployees);
+            if(workLog.getScheduled() == null) {
+                List<Employee> acceptedEmployees = workLogDispatcher.getAcceptedEmployees(workLog.getEmployees());
+                telegramController.assignInstallers(workLog, employee, acceptedEmployees);
+            }
             stompController.createWorkLog(workLog);
             stompController.createChat(Objects.requireNonNull(ChatMapper.toDto(workLog.getChat())));
             Set<Employee> observers = workLog.getTask().getAllEmployeesObservers(employee);

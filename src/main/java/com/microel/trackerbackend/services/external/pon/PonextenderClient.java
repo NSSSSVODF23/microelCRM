@@ -6,6 +6,7 @@ import com.microel.tdo.pon.MacTableEntry;
 import com.microel.tdo.pon.OpticalLineTerminal;
 import com.microel.tdo.pon.Worker;
 import com.microel.tdo.pon.events.OntStatusChangeEvent;
+import com.microel.tdo.pon.schema.PonNode;
 import com.microel.tdo.pon.schema.PonScheme;
 import com.microel.tdo.pon.schema.forms.PonSchemeForm;
 import com.microel.tdo.pon.terminal.OpticalNetworkTerminal;
@@ -262,5 +263,25 @@ public class PonextenderClient {
         ponextenderConf = conf;
         configurationService.save(ponextenderConf);
 //        stompController.changeAcpConfig(ponextenderConf);
+    }
+
+    public void editScheme(Long id, List<? extends PonNode> data, String login) {
+        try {
+            RequestEntity.BodyBuilder request = RequestEntity.patch(url(Map.of("login", login), "scheme", id.toString(), "edit"));
+            restTemplate.exchange(request.body(data), new ParameterizedTypeReference<PonScheme>() {
+            });
+        } catch (RestClientException e) {
+            throw new ResponseException("Не удалось подключиться к модулю PON");
+        }
+    }
+
+    public List<? extends PonNode> getSchemeElements(Long id) {
+        try {
+            RequestEntity<Void> request = RequestEntity.get(url(Map.of(), "scheme", id.toString(), "elements")).build();
+            return restTemplate.exchange(request, new ParameterizedTypeReference<List<? extends PonNode>>() {
+            }).getBody();
+        } catch (RestClientException e) {
+            throw new ResponseException("Не удалось подключиться к модулю PON");
+        }
     }
 }

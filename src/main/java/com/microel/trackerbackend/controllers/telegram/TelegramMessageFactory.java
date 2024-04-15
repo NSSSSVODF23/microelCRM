@@ -16,6 +16,7 @@ import com.microel.trackerbackend.storage.entities.address.House;
 import com.microel.trackerbackend.storage.entities.chat.ChatMessage;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
+import com.microel.trackerbackend.storage.entities.comments.FileType;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
 import com.microel.trackerbackend.storage.entities.tariff.AutoTariff;
 import com.microel.trackerbackend.storage.entities.task.Contract;
@@ -34,6 +35,7 @@ import org.springframework.lang.Nullable;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
+import org.telegram.telegrambots.meta.api.methods.PartialBotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.send.*;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageCaption;
@@ -53,6 +55,7 @@ import javax.validation.constraints.NotNull;
 import java.io.Serializable;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 @AllArgsConstructor
@@ -371,7 +374,7 @@ public class TelegramMessageFactory {
         return new EditMediaMessageExecutor(editMessageMedia, context);
     }
 
-    public AbstractExecutor<List<Message>> broadcastMediaGroupMessage(List<ChatMessageDto> chatMessages) {
+    public AbstractExecutor<Message> broadcastMediaGroupMessage(List<ChatMessageDto> chatMessages) {
         List<InputMedia> mediaList = chatMessages.stream().map(m -> Attachment.getInputMedia(m.getAttachment())).filter(Objects::nonNull).collect(Collectors.toList());
         SendMediaGroup sendMediaGroup = new SendMediaGroup(chatId, mediaList);
         if (chatMessages.get(0).getReplyTo() != null && chatMessages.get(0).getReplyTo().getTelegramBinds() != null) {
@@ -864,7 +867,7 @@ public class TelegramMessageFactory {
         }
     }
 
-    public AbstractExecutor<List<Message>> workTargetGroupMessage(@Nullable String message, @Nullable List<WorkLogTargetFile> files) {
+    public AbstractExecutor<Message> workTargetGroupMessage(@Nullable String message, @Nullable List<WorkLogTargetFile> files) {
         if (files == null || files.isEmpty())
             throw new ResponseException("Нет файлов для отправки");
         if (message == null || message.isBlank()) {
@@ -878,18 +881,132 @@ public class TelegramMessageFactory {
         return new GroupMessageExecutor(sendMediaGroup, context);
     }
 
-    public AbstractExecutor<Message> workComments(List<Comment> comments) {
+    public AbstractExecutor<Message> workComments(List<Comment> comments, List<Attachment> attachments) {
         StringBuilder sb = new StringBuilder();
         sb.append("Комментарии:\n");
         for (Comment comment : comments) {
             sb.append(comment.getCreator().getFullName()).append(": ").append(Decorator.bold(comment.getSimpleText())).append("\n");
         }
-        SendMessage sendMessage = SendMessage.builder()
-                .chatId(chatId)
-                .text(sb.toString())
-                .parseMode("HTML")
-                .build();
-        return new MessageExecutor<>(sendMessage, context);
+        if (attachments.isEmpty()) {
+            SendMessage sendMessage = SendMessage.builder()
+                    .chatId(chatId)
+                    .text(sb.toString())
+                    .parseMode("HTML")
+                    .build();
+            return new MessageExecutor<>(sendMessage, context);
+        } else {
+            if (attachments.size() > 1) {
+                try {
+                    Map<String, List<Attachment>> atcByTypes = attachments.stream().collect(Collectors.groupingBy(attachment -> {
+                        FileType type = attachment.getType();
+                        if(type == FileType.PHOTO || type == FileType.VIDEO) return "visual";
+                        if(type == FileType.AUDIO) return "audio";
+                        if(type == FileType.FILE || type == FileType.DOCUMENT) return "files";
+                        return "other";
+                    }));
+                    List<PartialBotApiMethod<?>> messages = new ArrayList<>();
+                    AtomicBoolean isMessageAdded = new AtomicBoolean(false);
+                    atcByTypes.forEach((k, v) -> {
+                        if (v.size() > 1 && v.size() <= 10) {
+                            List<InputMedia> inputMedia = v.stream().map(Attachment::getInputMedia).filter(Objects::nonNull).toList();
+                            if(!isMessageAdded.get()) {
+                                isMessageAdded.set(true);
+                                inputMedia.get(0).setCaption(sb.toString());
+                            }
+                            messages.add(new SendMediaGroup(chatId, inputMedia));
+                        } else if (v.size() == 1) {
+                            SendMediaBotMethod<Message> mediaMessage = null;
+                            switch (v.get(0).getType()) {
+                                case PHOTO:
+                                    mediaMessage = SendPhoto.builder()
+                                            .chatId(chatId)
+                                            .caption(!isMessageAdded.get() ? sb.toString() : null)
+                                            .photo(v.get(0).getInputFile())
+                                            .parseMode("HTML")
+                                            .build();
+
+                                case VIDEO:
+                                    mediaMessage = SendVideo.builder()
+                                            .chatId(chatId)
+                                            .caption(!isMessageAdded.get() ? sb.toString() : null)
+                                            .video(v.get(0).getInputFile())
+                                            .parseMode("HTML")
+                                            .build();
+                                case AUDIO:
+                                    mediaMessage = SendAudio.builder()
+                                            .chatId(chatId)
+                                            .caption(!isMessageAdded.get() ? sb.toString() : null)
+                                            .audio(v.get(0).getInputFile())
+                                            .parseMode("HTML")
+                                            .build();
+                                case DOCUMENT:
+                                case FILE:
+                                    mediaMessage = SendDocument.builder()
+                                            .chatId(chatId)
+                                            .caption(!isMessageAdded.get() ? sb.toString() : null)
+                                            .document(v.get(0).getInputFile())
+                                            .parseMode("HTML")
+                                            .build();
+                            }
+                            if(mediaMessage!= null) {
+                                if(!isMessageAdded.get()) {
+                                    isMessageAdded.set(true);
+                                }
+                                messages.add(mediaMessage);
+                            }
+                        }
+                    });
+                    return new MultiMessageExecutor(messages, context);
+                } catch (Exception e) {
+                    SendMessage sendMessage = SendMessage.builder()
+                            .chatId(chatId)
+                            .text(sb.toString())
+                            .parseMode("HTML")
+                            .build();
+                    return new MessageExecutor<>(sendMessage, context);
+                }
+            } else {
+                Attachment attachment = attachments.get(0);
+                switch (attachment.getType()) {
+                    case PHOTO:
+                        return new PhotoMessageExecutor(SendPhoto.builder()
+                                .chatId(chatId)
+                                .caption(sb.toString())
+                                .photo(attachment.getInputFile())
+                                .parseMode("HTML")
+                                .build(), context);
+                    case VIDEO:
+                        return new VideoMessageExecutor(SendVideo.builder()
+                                .chatId(chatId)
+                                .caption(sb.toString())
+                                .video(attachment.getInputFile())
+                                .parseMode("HTML")
+                                .build(), context);
+                    case AUDIO:
+                        return new AudioMessageExecutor(SendAudio.builder()
+                                .chatId(chatId)
+                                .caption(sb.toString())
+                                .audio(attachment.getInputFile())
+                                .parseMode("HTML")
+                                .build(), context);
+                    case DOCUMENT:
+                    case FILE:
+                        return new DocumentMessageExecutor(SendDocument.builder()
+                                .chatId(chatId)
+                                .caption(sb.toString())
+                                .document(attachment.getInputFile())
+                                .parseMode("HTML")
+                                .build(), context);
+                    default:
+                        SendMessage sendMessage = SendMessage.builder()
+                                .chatId(chatId)
+                                .text(sb.toString())
+                                .parseMode("HTML")
+                                .build();
+                        return new MessageExecutor<>(sendMessage, context);
+                }
+            }
+        }
     }
 
     public AbstractExecutor<Message> optionsMenu(@Nullable TelegramOptions telegramOptions) {
@@ -942,24 +1059,24 @@ public class TelegramMessageFactory {
                     .callbackData(CallbackData.create("set_track_olt", "all"))
                     .build());
             keyboardButtons.addAll(oltList.stream()
-                    .map(olt-> InlineKeyboardButton.builder()
+                    .map(olt -> InlineKeyboardButton.builder()
                             .text(olt.getName() != null ? olt.getName() : olt.getIp())
                             .callbackData(CallbackData.create("set_track_olt", olt.getIp()))
                             .build()).toList());
         } else {
-            if(telegramOptions.getTrackTerminal() != null)
+            if (telegramOptions.getTrackTerminal() != null)
                 keyboardButtons.add(InlineKeyboardButton.builder()
                         .text("Откл. отслеживание")
                         .callbackData(CallbackData.create("set_track_olt", "null"))
                         .build());
-            if(!Objects.equals(telegramOptions.getTrackTerminal(), "all"))
+            if (!Objects.equals(telegramOptions.getTrackTerminal(), "all"))
                 keyboardButtons.add(InlineKeyboardButton.builder()
                         .text("Все головы")
                         .callbackData(CallbackData.create("set_track_olt", "all"))
                         .build());
             keyboardButtons.addAll(oltList.stream()
-                    .filter(olt->!Objects.equals(olt.getIp(), telegramOptions.getTrackTerminal()))
-                    .map(olt-> InlineKeyboardButton.builder()
+                    .filter(olt -> !Objects.equals(olt.getIp(), telegramOptions.getTrackTerminal()))
+                    .map(olt -> InlineKeyboardButton.builder()
                             .text(olt.getName() != null ? olt.getName() : olt.getIp())
                             .callbackData(CallbackData.create("set_track_olt", olt.getIp()))
                             .build()).toList());
@@ -998,16 +1115,17 @@ public class TelegramMessageFactory {
 
         sb.append(icon).append(" ");
         sb.append(Decorator.bold(oltName + " Порт: " + ontStatusChangeEvent.getTerminal().getPort())).append("\n");
-        sb.append(Decorator.bold(status + " " + terminalCount + " ону")).append("\n");;
+        sb.append(Decorator.bold(status + " " + terminalCount + " ону")).append("\n");
         sb.append("\n");
 
         for (OntStatusChangeEvent event : events) {
 
-            String ontName = (event.getTerminal().getDescription() != null  && !event.getTerminal().getDescription().isBlank())
+            String ontName = (event.getTerminal().getDescription() != null && !event.getTerminal().getDescription().isBlank())
                     ? event.getTerminal().getDescription() : event.getTerminal().getMac();
 
             sb.append(event.getTerminal().getPosition()).append(": ").append(Decorator.bold(ontName));
-            if(event.getIsOnline()) sb.append(" ").append(String.format("%.2f", event.getTerminal().getCurRxSignal())).append(" dBm");
+            if (event.getIsOnline())
+                sb.append(" ").append(String.format("%.2f", event.getTerminal().getCurRxSignal())).append(" dBm");
             sb.append("\n");
         }
 
@@ -1025,7 +1143,7 @@ public class TelegramMessageFactory {
                 .stream()
                 .map(autoTariff -> InlineKeyboardButton.builder()
                         .text(autoTariff.getName() + " " + autoTariff.getCost() + " р.")
-                        .callbackData(CallbackData.create(isService? "append_service" : "set_auto_tariff", autoTariff.getExternalId().toString(), login, employeeBillingMgr))
+                        .callbackData(CallbackData.create(isService ? "append_service" : "set_auto_tariff", autoTariff.getExternalId().toString(), login, employeeBillingMgr))
                         .build()).collect(Collectors.toList());
 
         keyboardButtons.add(InlineKeyboardButton.builder()
@@ -1087,19 +1205,19 @@ public class TelegramMessageFactory {
         List<InlineKeyboardButton> firstRowButtons = new ArrayList<>();
         firstRowButtons.add(
                 InlineKeyboardButton.builder()
-                .text("Изменить тариф")
-                .callbackData(CallbackData.create("change_tariff_menu", userInfo.getUname(), manager.getLogin())).build()
+                        .text("Изменить тариф")
+                        .callbackData(CallbackData.create("change_tariff_menu", userInfo.getUname(), manager.getLogin())).build()
         );
         firstRowButtons.add(
                 InlineKeyboardButton.builder()
-                .text("Добавить сервис")
-                .callbackData(CallbackData.create("append_service_menu", userInfo.getUname(), manager.getLogin())).build()
+                        .text("Добавить сервис")
+                        .callbackData(CallbackData.create("append_service_menu", userInfo.getUname(), manager.getLogin())).build()
         );
         List<InlineKeyboardButton> secondRowButtons = new ArrayList<>();
         secondRowButtons.add(
                 InlineKeyboardButton.builder()
-                .text("Отмена")
-                .callbackData(CallbackData.create("cancel", "")).build()
+                        .text("Отмена")
+                        .callbackData(CallbackData.create("cancel", "")).build()
         );
 
         SendMessage sendMessage = SendMessage.builder()
@@ -1224,7 +1342,7 @@ public class TelegramMessageFactory {
         }
     }
 
-    public static class GroupMessageExecutor implements AbstractExecutor<List<Message>> {
+    public static class GroupMessageExecutor implements AbstractExecutor<Message> {
         private final SendMediaGroup message;
         private final MainBot context;
 
@@ -1233,8 +1351,66 @@ public class TelegramMessageFactory {
             this.context = context;
         }
 
-        public List<Message> execute() throws TelegramApiException {
-            return context.execute(message);
+        public Message execute() throws TelegramApiException {
+            return context.execute(message).get(0);
+        }
+    }
+
+    public static class MultiGroupMessageExecutor implements AbstractExecutor<Message> {
+        private final SendMediaGroup visualGroup;
+        private final SendMediaGroup audioGroup;
+        private final SendMediaGroup filesGroup;
+        private final MainBot context;
+
+        public MultiGroupMessageExecutor(SendMediaGroup visualGroup, SendMediaGroup audioGroup, SendMediaGroup filesGroup, MainBot context) {
+            this.visualGroup = visualGroup;
+            this.audioGroup = audioGroup;
+            this.filesGroup = filesGroup;
+
+            this.context = context;
+        }
+
+        public Message execute() throws TelegramApiException {
+            Message message = null;
+            if(visualGroup != null) message = context.execute(visualGroup).get(0);
+            if(audioGroup != null) message = context.execute(audioGroup).get(0);
+            if(filesGroup != null) message = context.execute(filesGroup).get(0);
+            return message;
+        }
+    }
+
+    public static class MultiMessageExecutor implements AbstractExecutor<Message> {
+        private final List<PartialBotApiMethod<?>> messages;
+        private final MainBot context;
+
+        public MultiMessageExecutor(List<PartialBotApiMethod<?>> messages, MainBot context) {
+            this.messages = messages;
+            this.context = context;
+        }
+
+        public Message execute() throws TelegramApiException {
+            Message sentMsg = null;
+            for(PartialBotApiMethod<?> message : messages){
+                if (message instanceof SendMessage) {
+                    sentMsg = context.execute((SendMessage) message);
+                }
+                if (message instanceof SendPhoto) {
+                    sentMsg = context.execute((SendPhoto) message);
+                }
+                if (message instanceof SendVideo) {
+                    sentMsg = context.execute((SendVideo) message);
+                }
+                if (message instanceof SendAudio) {
+                    sentMsg = context.execute((SendAudio) message);
+                }
+                if (message instanceof SendDocument) {
+                    sentMsg = context.execute((SendDocument) message);
+                }
+                if (message instanceof SendMediaGroup) {
+                    sentMsg = context.execute((SendMediaGroup) message).get(0);
+                }
+            }
+            return sentMsg;
         }
     }
 

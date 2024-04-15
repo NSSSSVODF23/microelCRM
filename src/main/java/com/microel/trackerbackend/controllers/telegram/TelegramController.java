@@ -51,11 +51,9 @@ import com.microel.trackerbackend.storage.entities.templating.Wireframe;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.*;
-import com.microel.trackerbackend.storage.repositories.AutoTariffRepository;
-import com.microel.trackerbackend.storage.repositories.CommentRepository;
-import com.microel.trackerbackend.storage.repositories.ModelItemRepository;
-import com.microel.trackerbackend.storage.repositories.TelegramOptionsRepository;
+import com.microel.trackerbackend.storage.repositories.*;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.Hibernate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
@@ -96,6 +94,7 @@ import static java.util.Comparator.comparingInt;
 @Component
 @Transactional
 public class TelegramController {
+    private final AttachmentRepository attachmentRepository;
     private final AutoTariffRepository autoTariffRepository;
     private final TelegramOptionsRepository telegramOptionsRepository;
     private final ModelItemRepository modelItemRepository;
@@ -133,7 +132,8 @@ public class TelegramController {
                               CommentRepository commentRepository,
                               ModelItemRepository modelItemRepository, PonextenderClient ponextenderClient,
                               TelegramOptionsRepository telegramOptionsRepository,
-                              AutoTariffRepository autoTariffRepository) {
+                              AutoTariffRepository autoTariffRepository,
+                              AttachmentRepository attachmentRepository) {
         this.configuration = configuration;
         this.taskDispatcher = taskDispatcher;
         this.workLogDispatcher = workLogDispatcher;
@@ -163,6 +163,7 @@ public class TelegramController {
         this.modelItemRepository = modelItemRepository;
         this.telegramOptionsRepository = telegramOptionsRepository;
         this.autoTariffRepository = autoTariffRepository;
+        this.attachmentRepository = attachmentRepository;
     }
 
     private void initializeApi() throws TelegramApiException {
@@ -653,6 +654,7 @@ public class TelegramController {
                 Join<Comment, WorkLog> workLogJoin = root.join("workLogs", JoinType.LEFT);
                 return cb.and(workLogJoin.get("workLogId").in(finalWorkLog.getWorkLogId()));
             }, Sort.by("created"));
+            List<Attachment> attachments = attachmentRepository.findAll((root, query, cb) -> root.join("comments").in(comments)).stream().distinct().toList();
             // Отправляем обновления в интерфейс пользователя
             broadcastUpdatesToWeb(systemMessage);
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
@@ -680,7 +682,7 @@ public class TelegramController {
                         groupChatFactory.workTargetMessage(targetDescription, null).execute();
                     }
                     if (!comments.isEmpty()) {
-                        groupChatFactory.workComments(comments).execute();
+                        groupChatFactory.workComments(comments, attachments).execute();
                     }
                 }
             }
@@ -694,7 +696,7 @@ public class TelegramController {
                 messageFactory.workTargetMessage(targetDescription, null).execute();
             }
             if (!comments.isEmpty()) {
-                messageFactory.workComments(comments).execute();
+                messageFactory.workComments(comments, attachments).execute();
             }
             return true;
         }));
@@ -2063,39 +2065,39 @@ public class TelegramController {
         return responses;
     }
 
-    /**
-     * Отправляет медиа группу броадкастом во все телеграм чаты
-     *
-     * @param chat     Chat из базы данных
-     * @param messages Группа отправляемых сообщений, требуется чтобы вложения в сообщениях были либо только визуальные
-     *                 (фото, видео), либо аудио, либо документы и файлы. Главное не смешивать
-     * @return Список ответов итерированный по списку телеграм чатов
-     * @throws TelegramApiException Если возникла ошибка при отправке сообщения
-     */
-    public List<List<Message>> sendMediaGroupBroadcastMessage(Chat chat, List<ChatMessageDto> messages) throws TelegramApiException {
-        if (messages.isEmpty()) return new ArrayList<>();
-
-        List<List<Message>> responses = Stream.generate(ArrayList<Message>::new).limit(messages.size()).collect(Collectors.toList());
-
-        Set<String> memberGroups = chat.getMembers().stream().map(Employee::getTelegramGroupChatId).filter(Objects::nonNull).filter(s -> !s.isBlank()).collect(Collectors.toSet());
-
-        Set<Employee> membersWithoutGroup = chat.getMembers().stream().filter(Employee::isHasNotGroup).collect(Collectors.toSet());
-
-        for (String group : memberGroups) {
-            responses.add(TelegramMessageFactory.create(group, mainBot).broadcastMediaGroupMessage(messages).execute());
-        }
-
-        for (Employee employee : membersWithoutGroup) {
-            String targetChatId = employee.getTelegramUserId();
-            if (targetChatId == null || targetChatId.isBlank() || employee.getLogin().equals(messages.get(0).getAuthor().getLogin()))
-                continue;
-            List<Message> messageList = TelegramMessageFactory.create(targetChatId, mainBot).broadcastMediaGroupMessage(messages).execute();
-            for (int i = 0; i < messageList.size(); i++) {
-                responses.get(i).add(messageList.get(i));
-            }
-        }
-        return responses;
-    }
+//    /**
+//     * Отправляет медиа группу броадкастом во все телеграм чаты
+//     *
+//     * @param chat     Chat из базы данных
+//     * @param messages Группа отправляемых сообщений, требуется чтобы вложения в сообщениях были либо только визуальные
+//     *                 (фото, видео), либо аудио, либо документы и файлы. Главное не смешивать
+//     * @return Список ответов итерированный по списку телеграм чатов
+//     * @throws TelegramApiException Если возникла ошибка при отправке сообщения
+//     */
+//    public List<List<Message>> sendMediaGroupBroadcastMessage(Chat chat, List<ChatMessageDto> messages) throws TelegramApiException {
+//        if (messages.isEmpty()) return new ArrayList<>();
+//
+//        List<List<Message>> responses = Stream.generate(ArrayList<Message>::new).limit(messages.size()).collect(Collectors.toList());
+//
+//        Set<String> memberGroups = chat.getMembers().stream().map(Employee::getTelegramGroupChatId).filter(Objects::nonNull).filter(s -> !s.isBlank()).collect(Collectors.toSet());
+//
+//        Set<Employee> membersWithoutGroup = chat.getMembers().stream().filter(Employee::isHasNotGroup).collect(Collectors.toSet());
+//
+//        for (String group : memberGroups) {
+//            responses.add(TelegramMessageFactory.create(group, mainBot).broadcastMediaGroupMessage(messages).execute());
+//        }
+//
+//        for (Employee employee : membersWithoutGroup) {
+//            String targetChatId = employee.getTelegramUserId();
+//            if (targetChatId == null || targetChatId.isBlank() || employee.getLogin().equals(messages.get(0).getAuthor().getLogin()))
+//                continue;
+//            List<Message> messageList = TelegramMessageFactory.create(targetChatId, mainBot).broadcastMediaGroupMessage(messages).execute();
+//            for (int i = 0; i < messageList.size(); i++) {
+//                responses.get(i).add(messageList.get(i));
+//            }
+//        }
+//        return responses;
+//    }
 
     public void editTextBroadcastMessage(ChatMessage message, Long sourceChatId) throws TelegramApiException {
         for (TelegramMessageBind bind : message.getTelegramBinds()) {

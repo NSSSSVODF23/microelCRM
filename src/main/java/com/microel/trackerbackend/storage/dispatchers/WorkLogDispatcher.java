@@ -92,6 +92,38 @@ public class WorkLogDispatcher {
         this.commentRepository = commentRepository;
     }
 
+    @Async
+    @Transactional
+    @Scheduled(cron = "0 * * ? * *")
+    public void sendScheduledWorkLogs() {
+        long currentMillis = Instant.now().toEpochMilli();
+        long extraSeconds = currentMillis % 60000;
+        long delta = currentMillis - extraSeconds;
+        Timestamp endOfMinute = Timestamp.from(Instant.ofEpochMilli(delta + 60000L));
+
+        List<WorkLog> scheduledWorkLogs = workLogRepository.findAll((root, query, cb)->cb.and(
+                cb.lessThan(root.get("scheduled"), endOfMinute)
+        ), Sort.by(Sort.Direction.ASC, "workLogId"));
+
+        List<WorkLog> alreadyClosed = scheduledWorkLogs.stream()
+                .filter(wl -> wl.getClosed() != null).peek(wl->wl.setScheduled(null)).toList();
+        workLogRepository.saveAll(alreadyClosed);
+
+        List<WorkLog> actualWorkLogs = scheduledWorkLogs.stream()
+                .filter(wl -> wl.getClosed() == null).peek(wl->wl.setScheduled(null)).toList();
+
+        for (WorkLog wl : actualWorkLogs) {
+            List<Employee> acceptedEmployees = getAcceptedEmployees(wl.getEmployees());
+            try {
+                telegramController.assignInstallers(wl, wl.getCreator(), acceptedEmployees);
+            } catch (TelegramApiException e) {
+                System.out.println("Не удалось отправить назначенную задачу");
+            }
+        }
+
+        workLogRepository.saveAll(actualWorkLogs);
+    }
+
     @Scheduled(cron = "0 0 12 * * *")
     @Async
     public void notificationOfUnrecievedContracts() {
@@ -152,23 +184,25 @@ public class WorkLogDispatcher {
                 throw new IllegalFields("Сотрудник с логином " + installer.getLogin() + " не монтажник");
         }
 
+        Timestamp now = Timestamp.from(Instant.now());
+
 //        HashSet<Employee> chatMembers = new HashSet<>(employees);
 //        chatMembers.add(creator);
         Chat chat = Chat.builder()
                 .creator(creator)
                 .title("Чат из задачи #" + task.getTaskId())
-                .created(Timestamp.from(Instant.now()))
+                .created(now)
                 .members(
                         Stream.of(creator)
                                 .collect(Collectors.toSet())
                 )
                 .deleted(false)
-                .updated(Timestamp.from(Instant.now()))
+                .updated(now)
                 .build();
 
         WorkLog workLog = WorkLog.builder()
                 .chat(chat)
-                .created(Timestamp.from(Instant.now()))
+                .created(assignBody.getScheduled() == null? now : assignBody.getScheduled())
                 .task(task)
                 .isForceClosed(false)
                 .targetDescription(assignBody.getDescription())
@@ -180,6 +214,7 @@ public class WorkLogDispatcher {
                 .acceptedEmployees(new HashSet<>())
                 .calculated(false)
                 .comments(new ArrayList<>())
+                .scheduled(assignBody.getScheduled())
                 .build();
 
 

@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.services.api.controllers;
 
+import com.microel.tdo.pon.schema.PonNode;
 import com.microel.tdo.pon.schema.PonScheme;
 import com.microel.tdo.pon.schema.forms.PonSchemeForm;
 import com.microel.trackerbackend.services.external.pon.PonextenderClient;
@@ -56,4 +57,16 @@ public class PonSchemesController {
         return ResponseEntity.ok(ponClient.getSchemes());
     }
 
+    @PatchMapping("{id}/edit")
+    public ResponseEntity<Void> editPonScheme(@PathVariable Long id, @RequestBody List<? extends PonNode> data, HttpServletRequest request) {
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+        ponClient.editScheme(id, data, employee.getLogin());
+
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("{id}/elements")
+    public ResponseEntity<List<? extends PonNode>> getSchemeElements(@PathVariable Long id) {
+        return ResponseEntity.ok(ponClient.getSchemeElements(id));
+    }
 }

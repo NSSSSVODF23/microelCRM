@@ -6,12 +6,14 @@ import lombok.*;
 import org.hibernate.annotations.BatchSize;
 import org.springframework.lang.Nullable;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
+import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.media.*;
 
 import javax.persistence.*;
 import java.io.File;
 import java.sql.Timestamp;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Сущность базы данных представляющая собой вложение, хранит в себе метаданные файла сохраненного на диске.
@@ -45,6 +47,11 @@ public class Attachment {
     @JsonIgnore
     @BatchSize(size = 25)
     private List<Comment> comments;
+
+    @JsonIgnore
+    public InputFile getInputFile() {
+        return new InputFile(new File(path));
+    }
 
     @JsonIgnore
     @Nullable
@@ -126,5 +133,17 @@ public class Attachment {
                     .build();
             default -> null;
         };
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Attachment that)) return false;
+        return Objects.equals(getName(), that.getName());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getName());
     }
 }

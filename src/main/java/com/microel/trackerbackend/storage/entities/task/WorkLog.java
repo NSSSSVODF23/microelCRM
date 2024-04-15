@@ -85,11 +85,12 @@ public class WorkLog {
     @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @BatchSize(size = 25)
     private List<Contract> concludedContracts;
-
     @ManyToMany(mappedBy = "workLogs")
     @Fetch(FetchMode.SUBSELECT)
     @JsonIgnore
     private List<Comment> comments;
+    @Nullable
+    private Timestamp scheduled;
 
     public void appendAllComments(List<Comment> comments) {
         if (this.getComments() == null) this.setComments(new ArrayList<>());
@@ -298,6 +299,8 @@ public class WorkLog {
         private List<TFile.FileSuggestion> serverFiles;
         @Nullable
         private List<Long> comments;
+        @Nullable
+        private Timestamp scheduled;
     }
 
     @Getter
