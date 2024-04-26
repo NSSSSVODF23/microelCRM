@@ -24,6 +24,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -45,6 +46,17 @@ public class TemperatureSensorsDispatcher {
         this.temperatureSnapshotRepository = temperatureSnapshotRepository;
         this.stompController = stompController;
         this.telegramController = telegramController;
+    }
+
+    @Scheduled(cron = "0 0 3 1 * *")
+    @Async
+    @Transactional
+    public void clearOldSnapshots() {
+        Timestamp interval = Timestamp.from(Instant.now().minus(30, ChronoUnit.DAYS));
+        List<TemperatureSnapshot> snapshots = temperatureSnapshotRepository.findAll((root, query, cb) -> cb.and(
+                cb.lessThan(root.get("timestamp"), interval)
+        ));
+        temperatureSnapshotRepository.deleteAll(snapshots);
     }
 
     @Scheduled(fixedDelay = 10L, timeUnit = TimeUnit.MINUTES)
