@@ -8,6 +8,7 @@ import org.springframework.lang.Nullable;
 import javax.persistence.*;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -40,6 +41,7 @@ public class TemperatureSensor {
         sensor.setValue(event.getValue());
         sensor.setCreated(now);
         sensor.setUpdated(now);
+        sensor.setRanges(new ArrayList<>());
         return sensor;
     }
 
