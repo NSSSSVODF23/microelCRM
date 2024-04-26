@@ -68,7 +68,8 @@ public class Cdata1104Telnet extends CommutatorCredentials implements OltTelnetC
         for (String line : lines) {
             java.util.regex.Matcher matcher = pattern.matcher(line);
             if(matcher.find()){
-                macTable.add(MacTableEntry.of(getIp(), matcher.group("mac"), matcher.group("vlan"), port.toString(), matcher.group("pos")));
+                MacTableEntry macTableEntry = MacTableEntry.of(getIp(), matcher.group("mac"), matcher.group("vlan"), port.toString(), matcher.group("pos"));
+                macTable.add(macTableEntry);
             }
         }
         return macTable;

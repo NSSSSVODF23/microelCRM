@@ -38,6 +38,7 @@ import com.microel.trackerbackend.storage.entities.chat.TelegramMessageBind;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
+import com.microel.trackerbackend.storage.entities.sensors.temperature.TemperatureSensor;
 import com.microel.trackerbackend.storage.entities.tariff.AutoTariff;
 import com.microel.trackerbackend.storage.entities.task.Task;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
@@ -2186,7 +2187,7 @@ public class TelegramController {
         }
         String chatId = telegramConf.getPonAlertChatId();
         if (chatId == null || chatId.isBlank()) {
-            log.warn("Чат для отправки DhcpIpRequestNotification отсутствует");
+            log.warn("Чат для отправки RootTapAlert отсутствует");
             return;
         }
 
@@ -2199,6 +2200,58 @@ public class TelegramController {
                         " Кол-во onu: " +
                         alert.getOnuCount()
         ).execute();
+    }
+
+    public void sendSensorAlert(TemperatureSensorsDispatcher.SensorAlertEvent event) throws TelegramApiException{
+        if (telegramConf == null || !telegramConf.isFilled()) {
+            log.warn("Отсутствует конфигурация телеграмма");
+            return;
+        }
+        String chatId = telegramConf.getSensorsAlertChatId();
+        if (chatId == null || chatId.isBlank()) {
+            log.warn("Чат для отправки SensorsAlert отсутствует");
+            return;
+        }
+
+        StringBuilder sb = new StringBuilder();
+
+        switch (event.getType()) {
+            case UP -> {
+                sb.append("\uD83D\uDFE2 ").append(Decorator.bold("Поднялся датчик "));
+            }
+            case DOWN -> {
+                sb.append("\uD83D\uDD34 ").append(Decorator.bold("Упал датчик "));
+            }
+        }
+
+        switch (event.getSensorType()) {
+            case TEMPERATURE -> {
+                sb.append(Decorator.bold("температуры")).append("\n");
+            }
+        }
+
+        sb.append(Decorator.italic(event.getSensorName()));
+
+        TelegramMessageFactory.create(chatId, mainBot).simpleMessage(sb.toString()).execute();
+    }
+
+    public void sendTempSensorRange(TemperatureSensor sensor) throws TelegramApiException{
+        if (telegramConf == null || !telegramConf.isFilled()) {
+            log.warn("Отсутствует конфигурация телеграмма");
+            return;
+        }
+        String chatId = telegramConf.getSensorsAlertChatId();
+        if (chatId == null || chatId.isBlank()) {
+            log.warn("Чат для отправки SensorsAlert отсутствует");
+            return;
+        }
+
+        String text = "🌡 Изменилась температура:\n" +
+                "Датчик: " + Decorator.bold(sensor.getName()) + "\n" +
+                "Температура: " + Decorator.bold(sensor.getValue().toString() + " °C") + "\n" +
+                "Диапазон: " + Decorator.bold(sensor.getCurrentRange() == null ? "Вне диапазона" : sensor.getCurrentRange().getName());
+
+        TelegramMessageFactory.create(chatId, mainBot).simpleMessage(text).execute();
     }
 
     public Employee getEmployeeByChat(Long chatId) throws Exception {

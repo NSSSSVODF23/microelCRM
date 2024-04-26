@@ -16,6 +16,7 @@ public class TelegramConf implements AbstractConfiguration {
     private String botName;
     private String dhcpNotificationChatId;
     private String ponAlertChatId;
+    private String sensorsAlertChatId;
 
 
     @Override

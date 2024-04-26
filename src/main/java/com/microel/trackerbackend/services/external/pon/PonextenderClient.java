@@ -265,7 +265,7 @@ public class PonextenderClient {
 //        stompController.changeAcpConfig(ponextenderConf);
     }
 
-    public void editScheme(Long id, List<? extends PonNode> data, String login) {
+    public void editScheme(Long id, List<PonNode> data, String login) {
         try {
             RequestEntity.BodyBuilder request = RequestEntity.patch(url(Map.of("login", login), "scheme", id.toString(), "edit"));
             restTemplate.exchange(request.body(data), new ParameterizedTypeReference<PonScheme>() {
@@ -275,10 +275,10 @@ public class PonextenderClient {
         }
     }
 
-    public List<? extends PonNode> getSchemeElements(Long id) {
+    public List<PonNode> getSchemeElements(Long id) {
         try {
             RequestEntity<Void> request = RequestEntity.get(url(Map.of(), "scheme", id.toString(), "elements")).build();
-            return restTemplate.exchange(request, new ParameterizedTypeReference<List<? extends PonNode>>() {
+            return restTemplate.exchange(request, new ParameterizedTypeReference<List<PonNode>>() {
             }).getBody();
         } catch (RestClientException e) {
             throw new ResponseException("Не удалось подключиться к модулю PON");

@@ -58,7 +58,7 @@ public class PonSchemesController {
     }
 
     @PatchMapping("{id}/edit")
-    public ResponseEntity<Void> editPonScheme(@PathVariable Long id, @RequestBody List<? extends PonNode> data, HttpServletRequest request) {
+    public ResponseEntity<Void> editPonScheme(@PathVariable Long id, @RequestBody List<PonNode> data, HttpServletRequest request) {
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
         ponClient.editScheme(id, data, employee.getLogin());
 
@@ -66,7 +66,7 @@ public class PonSchemesController {
     }
 
     @GetMapping("{id}/elements")
-    public ResponseEntity<List<? extends PonNode>> getSchemeElements(@PathVariable Long id) {
+    public ResponseEntity<List<PonNode>> getSchemeElements(@PathVariable Long id) {
         return ResponseEntity.ok(ponClient.getSchemeElements(id));
     }
 }

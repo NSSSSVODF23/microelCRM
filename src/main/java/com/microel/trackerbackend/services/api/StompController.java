@@ -19,6 +19,7 @@ import com.microel.trackerbackend.services.MonitoringService;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.Switch;
 import com.microel.trackerbackend.services.external.billing.ApiBillingController;
+import com.microel.trackerbackend.storage.dispatchers.TemperatureSensorsDispatcher;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
 import com.microel.trackerbackend.storage.dto.team.EmployeeDto;
@@ -513,5 +514,9 @@ public class StompController {
 
     public void sendSchemeChange(PonSchemeChangeEvent event) {
         sendAll(event, "pon", "scheme", "change");
+    }
+
+    public void updateSensor(TemperatureSensorsDispatcher.SensorUpdateEvent event) {
+        sendAll(event, "sensor", "event");
     }
 }
