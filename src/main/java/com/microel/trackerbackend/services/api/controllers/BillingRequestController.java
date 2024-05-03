@@ -26,7 +26,9 @@ import org.springframework.web.bind.annotation.*;
 import javax.persistence.criteria.Predicate;
 import javax.servlet.http.HttpServletRequest;
 import java.net.MalformedURLException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -118,9 +120,25 @@ public class BillingRequestController {
 
     @PostMapping("user/create")
     @Transactional
-    public ResponseEntity<String> createUser(@RequestBody LoginFieldInfo loginFieldInfo, HttpServletRequest request) {
+    public ResponseEntity<Void> createUser(@RequestBody LoginFieldInfo loginFieldInfo, HttpServletRequest request) {
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
+        String desiredLogin = null;
+        if(loginFieldInfo.isOrg){
+            Date date = new Date(); // получаем текущую дату
+            SimpleDateFormat formatter = new SimpleDateFormat("yyMMdd"); // устанавливаем формат даты
+            String currentDate = formatter.format(date); // форматируем дату в строку
+
+            List<String> logins = apiBillingController.getUsersByLogin("BIZ" + currentDate, false)
+                    .stream().map(ApiBillingController.UserItemData::getUname).toList();
+
+            Integer maxLogin = logins.stream()
+                    .map(login -> login.substring(3))
+                    .map(Integer::valueOf)
+                    .max(Integer::compareTo).orElseThrow(()->new ResponseException("Не удалось определить максимальный логин"));
+
+            desiredLogin = "BIZ" + (maxLogin + 1);
+        }
         Base1785 base = ApiBillingController.createBase1785Session(employee);
 
         List<ModelItem> modelItems = modelItemRepository.findAll((root, query, cb) -> {
@@ -176,7 +194,7 @@ public class BillingRequestController {
 
         base.login();
 
-        String createdUserLogin = base.createLogin(createUserForm);
+        String createdUserLogin = base.createLogin(createUserForm, desiredLogin);
 
         base.logout();
 
@@ -190,7 +208,7 @@ public class BillingRequestController {
 
         stompController.updateTask(loginField.getTask());
 
-        return ResponseEntity.ok(createdUserLogin);
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("user/{login}/tariffs")

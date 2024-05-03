@@ -331,6 +331,7 @@ public class WorkLogDispatcher {
             predicates.add(cb.or(workReportsJoin.isNull(), cb.in(workReportsJoin).value(subquery).not()));
 
             predicates.add(cb.isNull(root.get("closed")));
+            predicates.add(cb.isNull(root.get("scheduled")));
             query.distinct(true);
             return cb.and(predicates.toArray(Predicate[]::new));
         });

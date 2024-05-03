@@ -1,12 +1,12 @@
 package com.microel.trackerbackend.services.external.pon;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.microel.tdo.chart.TimeDataset;
 import com.microel.tdo.dynamictable.TablePaging;
 import com.microel.tdo.pon.MacTableEntry;
 import com.microel.tdo.pon.OpticalLineTerminal;
 import com.microel.tdo.pon.Worker;
 import com.microel.tdo.pon.events.OntStatusChangeEvent;
-import com.microel.tdo.pon.schema.PonNode;
 import com.microel.tdo.pon.schema.PonScheme;
 import com.microel.tdo.pon.schema.forms.PonSchemeForm;
 import com.microel.tdo.pon.terminal.OpticalNetworkTerminal;
@@ -265,7 +265,7 @@ public class PonextenderClient {
 //        stompController.changeAcpConfig(ponextenderConf);
     }
 
-    public void editScheme(Long id, List<PonNode> data, String login) {
+    public void editScheme(Long id, List<JsonNode> data, String login) {
         try {
             RequestEntity.BodyBuilder request = RequestEntity.patch(url(Map.of("login", login), "scheme", id.toString(), "edit"));
             restTemplate.exchange(request.body(data), new ParameterizedTypeReference<PonScheme>() {
@@ -275,11 +275,10 @@ public class PonextenderClient {
         }
     }
 
-    public List<PonNode> getSchemeElements(Long id) {
+    public JsonNode getSchemeElements(Long id) {
         try {
             RequestEntity<Void> request = RequestEntity.get(url(Map.of(), "scheme", id.toString(), "elements")).build();
-            return restTemplate.exchange(request, new ParameterizedTypeReference<List<PonNode>>() {
-            }).getBody();
+            return restTemplate.exchange(request, JsonNode.class).getBody();
         } catch (RestClientException e) {
             throw new ResponseException("Не удалось подключиться к модулю PON");
         }

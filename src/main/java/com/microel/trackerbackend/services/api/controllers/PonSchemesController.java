@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.services.api.controllers;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.microel.tdo.pon.schema.PonNode;
 import com.microel.tdo.pon.schema.PonScheme;
 import com.microel.tdo.pon.schema.forms.PonSchemeForm;
@@ -58,7 +59,7 @@ public class PonSchemesController {
     }
 
     @PatchMapping("{id}/edit")
-    public ResponseEntity<Void> editPonScheme(@PathVariable Long id, @RequestBody List<PonNode> data, HttpServletRequest request) {
+    public ResponseEntity<Void> editPonScheme(@PathVariable Long id, @RequestBody List<JsonNode> data, HttpServletRequest request) {
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
         ponClient.editScheme(id, data, employee.getLogin());
 
@@ -66,7 +67,7 @@ public class PonSchemesController {
     }
 
     @GetMapping("{id}/elements")
-    public ResponseEntity<List<PonNode>> getSchemeElements(@PathVariable Long id) {
+    public ResponseEntity<JsonNode> getSchemeElements(@PathVariable Long id) {
         return ResponseEntity.ok(ponClient.getSchemeElements(id));
     }
 }

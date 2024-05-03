@@ -1,6 +1,5 @@
 package com.microel.trackerbackend.services.external.billing.directaccess.bases;
 
-import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.external.billing.directaccess.DirectBaseAccess;
 import com.microel.trackerbackend.services.external.billing.directaccess.DirectBaseSession;
@@ -15,6 +14,7 @@ import org.jsoup.HttpStatusException;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import org.springframework.lang.Nullable;
 
 import javax.validation.constraints.NotBlank;
 import java.io.IOException;
@@ -76,8 +76,8 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
-    public String createLogin(CreateUserForm form) {
-        String freeUserLogin = getFreeUserLogin();
+    public String createLogin(CreateUserForm form, @Nullable String desiredLogin) {
+        String freeUserLogin = desiredLogin == null? getFreeUserLogin() : desiredLogin;
         try {
             Connection.Response response = request(
                     Request.of(
@@ -88,8 +88,6 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
                     )
             );
             authSuccessfulCheck(response);
-            if (form.getUserType() == UserType.ORG)
-                return "BIZ" + freeUserLogin;
             return freeUserLogin;
         } catch (IOException e) {
             throw new ResponseException("Ошибка при создании пользователя в " + getHost() + " " + getCredentials());
@@ -279,9 +277,9 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
                             "index.php",
                             Map.of("act", "pay_action"),
                             Map.of(
-                                    "rmoney","0",
+                                    "rmoney", "0",
                                     "ptype", "10",
-                                    "smoney",  "0",
+                                    "smoney", "0",
                                     "straf", "0",
                                     "stime", "0",
                                     "subm_pay", "Оплата",
@@ -377,11 +375,14 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
         public Map<String, String> toRequestBody(String login) {
             Map<String, String> body = new HashMap<>();
 
-            if (userType == UserType.ORG) {
-                body.put("login", "BIZ" + login);
-            } else {
-                body.put("login", login);
-            }
+            body.put("login", login);
+
+
+//            if (userType == UserType.ORG) {
+//                body.put("login", "BIZ" + login);
+//            } else {
+//                body.put("login", login);
+//            }
 
             if (address.getStreet() == null)
                 throw new ResponseException("Не указана улица для создания абонента");
