@@ -1621,6 +1621,7 @@ public class TelegramController {
                 .chatId(employee.getTelegramUserId())
                 .parseMode("HTML")
                 .text(Decorator.convert(notification))
+                .disableNotification(!notification.getUnread())
                 .build();
         try {
             mainBot.execute(sendMessage);

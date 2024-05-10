@@ -1,7 +1,6 @@
 package com.microel.trackerbackend.misc.accounting;
 
 import com.lowagie.text.pdf.BaseFont;
-import com.microel.trackerbackend.BackendApplication;
 import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.misc.FactorAction;
 import com.microel.trackerbackend.services.api.ResponseException;
@@ -10,28 +9,27 @@ import com.microel.trackerbackend.storage.entities.salary.ActionTaken;
 import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.salary.WorkingDay;
 import com.microel.trackerbackend.storage.entities.templating.PassportDetails;
-import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.lang.Nullable;
 import org.xhtmlrenderer.layout.SharedContext;
 import org.xhtmlrenderer.pdf.ITextRenderer;
 
-import java.io.*;
-import java.net.URISyntaxException;
-import java.net.URL;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Path;
-import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.Year;
-import java.util.*;
+import java.util.Date;
+import java.util.GregorianCalendar;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 public class TDocumentFactory {
@@ -74,14 +72,14 @@ public class TDocumentFactory {
         // Установка заголовка таблицы
         Row header = sheet.createRow(0);
         header.setHeight((short) 500);
-        List<String> headers = List.of("Дата", "ФИО", "ID Задачи", "Действие", "Кол-во", "Коэф.", "Цена", "Доля", "Сумма");
-        for(int i = 0; i < headers.size(); i++){
+        List<String> headers = List.of("Дата", "ФИО", "ID Задачи", "Действие", "Комментарий", "Юр. лицо?", "Кол-во", "Коэф.", "Цена", "Доля", "Сумма");
+        for (int i = 0; i < headers.size(); i++) {
             Cell headerCell = header.createCell(i);
             headerCell.setCellValue(headers.get(i));
             headerCell.setCellStyle(headerStyle);
         }
 
-        long daysCount = Duration.between(startDate.toInstant(), endDate.toInstant()).toDays()+1;
+        long daysCount = Duration.between(startDate.toInstant(), endDate.toInstant()).toDays() + 1;
 
         SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy");
 
@@ -95,12 +93,12 @@ public class TDocumentFactory {
 
             List<WorkingDay> workingDays = workingDaysByOffsiteEmployees.get(calendar.getTime());
             Row contentRow = sheet.getRow(globalRowIndex);
-            if(contentRow == null) contentRow = sheet.createRow(globalRowIndex);
+            if (contentRow == null) contentRow = sheet.createRow(globalRowIndex);
 
             Cell dateCell = contentRow.createCell(0);
             dateCell.setCellValue(sdf.format(calendar.getTime()));
 
-            if(workingDays != null) {
+            if (workingDays != null) {
                 for (WorkingDay workingDay : workingDays) {
 
                     contentRow = sheet.getRow(globalRowIndex);
@@ -120,6 +118,21 @@ public class TDocumentFactory {
                         taskIdCell.setCellValue(taskId);
 
                         List<ActionTaken> actions = calculation.getActions();
+
+                        CellRangeAddress commentRegion = new CellRangeAddress(globalRowIndex, globalRowIndex + actions.size() - 1, 4, 4);
+                        CellRangeAddress isLegalEntityRegion = new CellRangeAddress(globalRowIndex, globalRowIndex + actions.size() - 1, 5, 5);
+                        sheet.addMergedRegion(commentRegion);
+                        sheet.addMergedRegion(isLegalEntityRegion);
+                        Cell commentCell = contentRow.createCell(4);
+                        Cell isLegalEntityCell = contentRow.createCell(5);
+
+                        if (calculation.getComment() != null)
+                            commentCell.setCellValue(calculation.getComment());
+
+                        if (calculation.getIsLegalEntity() != null)
+                            isLegalEntityCell.setCellValue(calculation.getIsLegalEntity() ? "Да" : "Нет");
+                        else isLegalEntityCell.setCellValue("Нет");
+
                         for (int j = 0; j < actions.size(); j++) {
                             contentRow = sheet.getRow(globalRowIndex + j);
                             if (contentRow == null) contentRow = sheet.createRow(globalRowIndex + j);
@@ -127,13 +140,13 @@ public class TDocumentFactory {
                             ActionTaken actionTaken = actions.get(j);
 
                             Cell actionCell = contentRow.createCell(3);
-                            Cell countCell = contentRow.createCell(4);
-                            Cell factorCell = contentRow.createCell(5);
-                            Cell priceCell = contentRow.createCell(6);
+                            Cell countCell = contentRow.createCell(6);
+                            Cell factorCell = contentRow.createCell(7);
+                            Cell priceCell = contentRow.createCell(8);
 
                             actionCell.setCellValue(actionTaken.getPaidAction().getName());
                             float factor = 1.0f;
-                            if(calculation.getFactorsActions() != null){
+                            if (calculation.getFactorsActions() != null) {
                                 factor = calculation.getFactorsActions().stream().filter(fa -> fa.getActionUuids().contains(actionTaken.getUuid())).map(FactorAction::getFactor).findFirst().orElse(1.0f);
                             }
                             factorCell.setCellValue(factor);
@@ -144,21 +157,21 @@ public class TDocumentFactory {
 
                         globalRowIndex += actions.size();
 
-                        Cell shareCell = contentRow.createCell(7);
+                        Cell shareCell = contentRow.createCell(9);
                         shareCell.setCellValue(calculation.getRatio());
                         shareCell.setCellStyle(percentStyle);
-                        Cell sumCell = contentRow.createCell(8);
+                        Cell sumCell = contentRow.createCell(10);
                         sumCell.setCellValue(calculation.getSum());
                     }
                     Float allSum = workingDay.getCalculations().stream().map(WorkCalculation::getSum).reduce(Float::sum).orElse(null);
                     if (allSum != null && allSum > 0) {
-                        CellRangeAddress region = new CellRangeAddress(globalRowIndex, globalRowIndex, 1, 8);
+                        CellRangeAddress region = new CellRangeAddress(globalRowIndex, globalRowIndex, 1, 10);
                         sheet.addMergedRegion(region);
                         contentRow = sheet.getRow(globalRowIndex);
                         if (contentRow == null) contentRow = sheet.createRow(globalRowIndex);
                         Cell allSumCell = contentRow.getCell(1);
-                        if(allSumCell == null) allSumCell = contentRow.createCell(1);
-                        allSumCell.setCellValue("Итог за день: "+String.format("%.2f", allSum));
+                        if (allSumCell == null) allSumCell = contentRow.createCell(1);
+                        allSumCell.setCellValue("Итог за день: " + String.format("%.2f", allSum));
                         allSumCell.setCellStyle(allSumStyle);
                         globalRowIndex++;
                     }
@@ -180,11 +193,11 @@ public class TDocumentFactory {
         } catch (Exception e) {
             throw new ResponseException("Не удалось преобразовать тело документа");
         }
-        byte b[] = ms.toByteArray();
+        byte[] b = ms.toByteArray();
 
         SimpleDateFormat fileNameFormatter = new SimpleDateFormat("dd MM yyyy");
 
-        return new MonthlySalaryReportTable("Otchet po montajnikam "+fileNameFormatter.format(startDate)+" - "+fileNameFormatter.format(endDate)+".xlsx", DocumentMimeType.XLSX.value, b);
+        return new MonthlySalaryReportTable("Otchet po montajnikam " + fileNameFormatter.format(startDate) + " - " + fileNameFormatter.format(endDate) + ".xlsx", DocumentMimeType.XLSX.value, b);
     }
 
     public static ConnectionAgreement createConnectionAgreement(@Nullable String login, @Nullable String fullName, @Nullable String dateOfBirth,
@@ -193,20 +206,20 @@ public class TDocumentFactory {
                                                                 @Nullable String phone, @Nullable String password, @Nullable String tariff) {
         try {
             InputStream streamTemplate = TDocumentFactory.class.getResourceAsStream("/ConnectionAgreementTemplate.html");
-            if(streamTemplate == null) throw new ResponseException("Ресурс шаблона документа не найден");
+            if (streamTemplate == null) throw new ResponseException("Ресурс шаблона документа не найден");
             Path font = Path.of("./Arial.ttf");
-            if(!font.toFile().exists()) throw new ResponseException("Ресурс шрифта документа не найден");
+            if (!font.toFile().exists()) throw new ResponseException("Ресурс шрифта документа не найден");
             Document document = Jsoup.parse(streamTemplate, "UTF-8", "");
             document.outputSettings().syntax(Document.OutputSettings.Syntax.xml);
 
             String lastName = "";
             String firstName = "";
             String patronymic = "";
-            if(fullName != null) {
+            if (fullName != null) {
                 List<String> names = Stream.of(fullName.split(" ")).toList();
-                if(names.size() > 0) lastName = names.get(0);
-                if(names.size() > 1) firstName = names.get(1);
-                if(names.size() > 2) patronymic = names.get(2);
+                if (names.size() > 0) lastName = names.get(0);
+                if (names.size() > 1) firstName = names.get(1);
+                if (names.size() > 2) patronymic = names.get(2);
             }
 
             String passportSeriesStr = "";
@@ -215,7 +228,7 @@ public class TDocumentFactory {
             String passportIssuedDateStr = "";
             String departmentCodeStr = "";
             String registrationAddressStr = "";
-            if(passportDetails != null){
+            if (passportDetails != null) {
                 passportSeriesStr = Utils.stringConvertor(passportDetails.getPassportSeries()).orElse("");
                 passportNumberStr = Utils.stringConvertor(passportDetails.getPassportNumber()).orElse("");
                 passportIssuedByStr = Utils.stringConvertor(passportDetails.getPassportIssuedBy()).orElse("");
@@ -231,8 +244,9 @@ public class TDocumentFactory {
             String entranceStr = "";
             String floorStr = "";
 
-            if(address != null){
-                if(address.getStreet() != null) streetStr = Utils.stringConvertor(address.getStreet().getName()).orElse("");
+            if (address != null) {
+                if (address.getStreet() != null)
+                    streetStr = Utils.stringConvertor(address.getStreet().getName()).orElse("");
                 houseStr = Utils.stringConvertor(address.getHouseNamePart()).orElse("");
                 apartmentStr = Utils.stringConvertor(address.getApartmentNum()).orElse("");
                 entranceStr = Utils.stringConvertor(address.getEntrance()).orElse("");
@@ -274,18 +288,18 @@ public class TDocumentFactory {
 
             renderer.layout();
             renderer.createPDF(ms);
-            byte b[] = ms.toByteArray();
+            byte[] b = ms.toByteArray();
             return new ConnectionAgreement("Dogovor na podkluchenie.pdf", DocumentMimeType.PDF.value, b);
         } catch (IOException e) {
             throw new ResponseException("Не удалось прочитать шаблон документа");
         }
     }
 
-    public enum DocumentMimeType{
+    public enum DocumentMimeType {
         XLSX("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
         PDF("application/pdf");
 
-        private String value;
+        private final String value;
 
         DocumentMimeType(String value) {
             this.value = value;

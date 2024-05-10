@@ -59,6 +59,15 @@ public class WorkCalculation {
     private Boolean isPaidWork;
     @Nullable
     private Float amountOfMoneyTaken;
+    @Nullable
+    @Column(columnDefinition = "text default ''")
+    private String comment;
+    @Column(columnDefinition = "boolean default false")
+    private Boolean isLegalEntity;
+
+    public Double getAverageFactor() {
+        return factorsActions == null? 1d : factorsActions.stream().mapToDouble(FactorAction::getFactor).average().orElse(1d);
+    }
 
     public void addEditedBy(Employee employee, String description) {
         this.editedBy.add(EmployeeIntervention.builder()

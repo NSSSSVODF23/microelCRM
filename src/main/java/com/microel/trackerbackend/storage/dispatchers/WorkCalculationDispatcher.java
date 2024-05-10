@@ -72,12 +72,15 @@ public class WorkCalculationDispatcher {
         }
         WorkLog workLog = workLogDispatcher.get(form.getWorkLogId());
 
-        calculating(workLog, form.getActions(), form.getSpreading(), form.getEmptyDescription(), creator, form.getEditingDescription(), form.getIsPaidWork(), form.getAmountOfMoneyTaken());
+        calculating(workLog, form.getActions(), form.getSpreading(), form.getEmptyDescription(),
+                creator, form.getEditingDescription(), form.getIsPaidWork(), form.getAmountOfMoneyTaken(),
+                form.getComment(), form.getIsLegalEntity());
     }
 
     private void calculating(WorkLog workLog, List<WorkCalculationForm.ActionCalculationItem> formActions,
                              List<WorkCalculationForm.SpreadingItem> formSpreading, String emptyCalcDescription,
-                             Employee creator, @Nullable String editingDescription, Boolean isPaidWork, @Nullable Float amountOfMoneyTaken) {
+                             Employee creator, @Nullable String editingDescription, Boolean isPaidWork,
+                             @Nullable Float amountOfMoneyTaken, @Nullable String comment, Boolean isLegalEntity) {
         List<WorkCalculation> workCalculationList = null;
         if (workLog.getCalculated()) {
             workCalculationList = workCalculationRepository.findAll((root, query, cb) -> {
@@ -147,6 +150,8 @@ public class WorkCalculationDispatcher {
                         workCalculation.addEditedBy(creator, editingDescription);
                         workCalculation.setIsPaidWork(isPaidWork != null && isPaidWork);
                         workCalculation.setAmountOfMoneyTaken(amountOfMoneyTaken);
+                        workCalculation.setComment(comment);
+                        workCalculation.setIsLegalEntity(isLegalEntity);
                         workCalculationRepository.save(workCalculation);
                     }
                 }
@@ -172,6 +177,8 @@ public class WorkCalculationDispatcher {
                     .emptyDescription(emptyCalcDescription)
                     .isPaidWork(isPaidWork != null && isPaidWork)
                     .amountOfMoneyTaken(amountOfMoneyTaken)
+                    .comment(comment)
+                    .isLegalEntity(isLegalEntity)
                     .build();
             WorkCalculation saved = workCalculationRepository.save(workCalculation);
             savedCalculation.add(saved);
@@ -211,6 +218,8 @@ public class WorkCalculationDispatcher {
                 .employeesRatio(ratioValueMap)
                 .isPaidWork(workCalculations.get(0).getIsPaidWork())
                 .amountOfMoneyTaken(workCalculations.get(0).getAmountOfMoneyTaken())
+                .comment(workCalculations.get(0).getComment())
+                .isLegalEntity(workCalculations.get(0).getIsLegalEntity())
                 .build();
 
         return form;
@@ -224,7 +233,8 @@ public class WorkCalculationDispatcher {
         WorkLog workLog = workLogDispatcher.createWorkLog(task, form.getReportInfo(), form.getReportInfo().getDate(), employee);
         stompController.createWorkLog(workLog);
         workLog.getChat().setClosed(form.getReportInfo().getDate());
-        calculating(workLog, form.getActions(), form.getSpreading(), null, employee, null, form.getIsPaidWork(), form.getAmountOfMoneyTaken());
+        calculating(workLog, form.getActions(), form.getSpreading(), null, employee, null,
+                form.getIsPaidWork(), form.getAmountOfMoneyTaken(), form.getComment(), form.getIsLegalEntity());
         stompController.closeWorkLog(workLog);
         stompController.closeChat(workLog.getChat());
         taskDispatcher.close(task.getTaskId(), employee, false);

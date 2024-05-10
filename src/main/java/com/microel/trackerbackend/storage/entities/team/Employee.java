@@ -2,6 +2,7 @@ package com.microel.trackerbackend.storage.entities.team;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.microel.trackerbackend.storage.entities.team.notification.NotificationSettings;
 import com.microel.trackerbackend.storage.entities.team.util.*;
 import com.microel.trackerbackend.storage.entities.templating.DefaultObserver;
 import lombok.*;
@@ -81,6 +82,10 @@ public class Employee implements Observer{
     @JoinColumn(name = "telegram_options_id")
     @JsonIgnore
     private TelegramOptions telegramOptions;
+    @Nullable
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH}, orphanRemoval = true)
+    @JoinColumn(name = "f_notification_settings_id")
+    private NotificationSettings notificationSettings;
 
 
     public void setTelegramOptions(TelegramOptions telegramOptions){

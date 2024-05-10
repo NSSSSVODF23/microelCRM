@@ -25,6 +25,9 @@ public class BypassWorkCalculationForm {
     private Boolean isPaidWork;
     @Nullable
     private Float amountOfMoneyTaken;
+    @Nullable
+    private String comment;
+    private Boolean isLegalEntity;
 
     @Getter
     @Setter

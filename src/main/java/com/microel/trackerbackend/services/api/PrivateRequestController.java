@@ -740,9 +740,10 @@ public class PrivateRequestController {
 
     // Получает список уведомлений пользователя
     @GetMapping("notifications")
-    public ResponseEntity<Page<Notification>> getNotifications(@RequestParam Long first, @RequestParam Integer limit, @RequestParam Boolean unreadOnly, HttpServletRequest request) {
+    public ResponseEntity<Page<Notification>> getNotifications(@RequestParam Long first, @RequestParam Integer limit, HttpServletRequest request) {
+        Employee employee = getEmployeeFromRequest(request);
         try {
-            return ResponseEntity.ok(notificationDispatcher.getNotifications(getEmployeeFromRequest(request).getLogin(), first, limit, unreadOnly));
+            return ResponseEntity.ok(notificationDispatcher.getNotifications(employee, first, limit));
         } catch (EntryNotFound e) {
             throw new ResponseException(e.getMessage());
         }
@@ -765,6 +766,16 @@ public class PrivateRequestController {
         Employee employee = getEmployeeFromRequest(request);
         try {
             notificationDispatcher.setAllAsRead(employee.getLogin());
+            return ResponseEntity.ok().build();
+        } catch (EntryNotFound e) {
+            throw new ResponseException(e.getMessage());
+        }
+    }
+
+    @PatchMapping("notifications/{id}/read")
+    public ResponseEntity<Void> setNotificationsAsRead(@PathVariable Long id) {
+        try {
+            notificationDispatcher.markAsRead(id);
             return ResponseEntity.ok().build();
         } catch (EntryNotFound e) {
             throw new ResponseException(e.getMessage());
@@ -1103,61 +1114,6 @@ public class PrivateRequestController {
     public Mono<ResponseEntity<NetworkRemoteControl>> checkAccess(@PathVariable String ip) {
         if (ip == null) throw new IllegalFields("Не указан IP адрес");
         return NetworkRemoteControl.of(ip).map(ResponseEntity::ok);
-    }
-
-    @GetMapping("types/document-template")
-    public ResponseEntity<List<Map<String, String>>> getDocumentTemplateTypes() {
-        return ResponseEntity.ok(DocumentTemplate.getDocumentTypes());
-    }
-
-    @GetMapping("types/field-display")
-    public ResponseEntity<List<Map<String, String>>> getFieldDisplayTypes() {
-        return ResponseEntity.ok(FieldItem.DisplayType.getList());
-    }
-
-    @GetMapping("types/wireframe-field")
-    public ResponseEntity<List<Map<String, String>>> getWireframeFieldTypes() {
-        return ResponseEntity.ok(WireframeFieldType.getList());
-    }
-
-    @GetMapping("types/connection-service")
-    public ResponseEntity<List<Map<String, String>>> getConnectionServiceTypes() {
-        return ResponseEntity.ok(ConnectionService.getList());
-    }
-
-    @GetMapping("types/connection-type")
-    public ResponseEntity<List<Map<String, String>>> getConnectionTypeTypes() {
-        return ResponseEntity.ok(ConnectionType.getList());
-    }
-
-    @GetMapping("types/advertising-source")
-    public ResponseEntity<List<Map<String, String>>> getAdvertisingSourceTypes() {
-        return ResponseEntity.ok(AdvertisingSource.getList());
-    }
-
-    @GetMapping("types/billing-payment-type")
-    public ResponseEntity<List<ListItem>> getPaymentTypeTypes() {
-        return ResponseEntity.ok(BillingPayType.getList());
-    }
-
-    @GetMapping("types/files-sorting")
-    public ResponseEntity<List<Map<String, String>>> getFilesSortingTypes() {
-        return ResponseEntity.ok(FilesWatchService.FileSortingTypes.getList());
-    }
-
-    @GetMapping("types/phy-phone-models")
-    public ResponseEntity<List<Map<String, String>>> getPhyPhoneModelsTypes() {
-        return ResponseEntity.ok(PhyPhoneInfo.PhyPhoneModel.getList());
-    }
-
-    @GetMapping("types/connection-service/suggestions")
-    public ResponseEntity<List<Map<String, String>>> getSuggestionForConnectionService(@Nullable @RequestParam String query) {
-        return ResponseEntity.ok(
-                ConnectionService.getList()
-                        .stream()
-                        .filter(service -> service.get("label").toLowerCase().contains(query != null ? query.toLowerCase() : ""))
-                        .collect(Collectors.toList())
-        );
     }
 
     @GetMapping("configuration/telegram")

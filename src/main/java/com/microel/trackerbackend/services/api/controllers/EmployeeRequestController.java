@@ -5,6 +5,7 @@ import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.dispatchers.EmployeeDispatcher;
 import com.microel.trackerbackend.storage.entities.team.Employee;
+import com.microel.trackerbackend.storage.entities.team.notification.NotificationSettings;
 import com.microel.trackerbackend.storage.entities.team.util.EmployeeForm;
 import com.microel.trackerbackend.storage.entities.team.util.EmployeeStatus;
 import com.microel.trackerbackend.storage.exceptions.AlreadyExists;
@@ -195,5 +196,23 @@ public class EmployeeRequestController {
         }
     }
 
+    /**
+     * Сохраняет настройки уведомлений
+     */
+    @PatchMapping("notification-settings")
+    public ResponseEntity<Employee> saveNotificationSettings(@RequestBody NotificationSettings.Form form, HttpServletRequest request) {
+        Employee targetUser = employeeDispatcher.getEmployeeFromRequest(request);
+        try {
+            if (targetUser.getNotificationSettings() == null){
+                targetUser.setNotificationSettings(NotificationSettings.from(form));
+            } else {
+                targetUser.getNotificationSettings().update(form);
+            }
+            stompController.updateEmployee(targetUser);
+            return ResponseEntity.ok(employeeDispatcher.unsafeSave(targetUser));
+        } catch (EntryNotFound e) {
+            throw new ResponseException(e.getMessage());
+        }
+    }
 
 }

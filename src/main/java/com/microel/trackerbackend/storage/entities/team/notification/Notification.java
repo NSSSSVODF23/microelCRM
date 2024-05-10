@@ -36,6 +36,20 @@ public class Notification {
     @OnDelete(action = OnDeleteAction.NO_ACTION)
     private Employee employee;
 
+    public static Notification of(NotificationType type, String message, Employee recipient) {
+        NotificationSettings notiSettings = recipient.getNotificationSettings();
+        final boolean alreadyRead = notiSettings != null && (notiSettings.getMuted() || !notiSettings.getPassedTypes().contains(type));
+        final Timestamp now = Timestamp.from(Instant.now());
+        final Notification notification = new Notification();
+        notification.setType(type);
+        notification.setMessage(message);
+        notification.setCreated(now);
+        notification.setUnread(!alreadyRead);
+        if(alreadyRead) notification.setWhenRead(now);
+        notification.setEmployee(recipient);
+        return notification;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -69,15 +83,8 @@ public class Notification {
 
         private String message;
 
-        public Notification getInstace(Employee recipient){
-            return Notification.builder()
-                    .type(type)
-                    .message(message)
-                    .created(Timestamp.from(Instant.now()))
-                    .unread(true)
-                    .whenRead(null)
-                    .employee(recipient)
-                    .build();
+        public Notification getInstance(Employee recipient){
+            return Notification.of(type, message, recipient);
         }
 
     }
@@ -96,7 +103,7 @@ public class Notification {
 
         message.append("Задача #")
                 .append(task.getTaskId())
-                .append(" перемещена в каталог ")
+                .append(" изменена категория ")
                 .append(task.getCurrentDirectory().getName())
                 .append(" пользователем @")
                 .append(employee.getLogin());

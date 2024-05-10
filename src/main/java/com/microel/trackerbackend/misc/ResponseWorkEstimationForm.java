@@ -22,6 +22,8 @@ public class ResponseWorkEstimationForm {
     private Map<String, EmployeeRatioValue> employeesRatio;
     private Boolean isPaidWork;
     private Float amountOfMoneyTaken;
+    private String comment;
+    private Boolean isLegalEntity;
 
     @Getter
     @Setter

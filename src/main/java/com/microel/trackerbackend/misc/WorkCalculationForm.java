@@ -21,6 +21,9 @@ public class WorkCalculationForm {
     private Boolean isPaidWork;
     @Nullable
     private Float amountOfMoneyTaken;
+    @Nullable
+    private String comment;
+    private Boolean isLegalEntity;
 
     @Getter
     @Setter
