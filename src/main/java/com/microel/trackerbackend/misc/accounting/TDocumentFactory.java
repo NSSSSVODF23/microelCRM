@@ -119,10 +119,13 @@ public class TDocumentFactory {
 
                         List<ActionTaken> actions = calculation.getActions();
 
-                        CellRangeAddress commentRegion = new CellRangeAddress(globalRowIndex, globalRowIndex + actions.size() - 1, 4, 4);
-                        CellRangeAddress isLegalEntityRegion = new CellRangeAddress(globalRowIndex, globalRowIndex + actions.size() - 1, 5, 5);
-                        sheet.addMergedRegion(commentRegion);
-                        sheet.addMergedRegion(isLegalEntityRegion);
+                        if (actions.size() > 1) {
+                            CellRangeAddress commentRegion = new CellRangeAddress(globalRowIndex, globalRowIndex + actions.size() - 1, 4, 4);
+                            CellRangeAddress isLegalEntityRegion = new CellRangeAddress(globalRowIndex, globalRowIndex + actions.size() - 1, 5, 5);
+                            sheet.addMergedRegion(commentRegion);
+                            sheet.addMergedRegion(isLegalEntityRegion);
+                        }
+
                         Cell commentCell = contentRow.createCell(4);
                         Cell isLegalEntityCell = contentRow.createCell(5);
 
