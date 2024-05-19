@@ -4,6 +4,8 @@ import com.microel.trackerbackend.storage.dispatchers.TaskDispatcher;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.Objects;
+
 @Getter
 @Setter
 public class TaskSchedulingTypePath implements AbstractTaskCounterPath {
@@ -24,5 +26,22 @@ public class TaskSchedulingTypePath implements AbstractTaskCounterPath {
         TaskDispatcher.FiltrationConditions condition = new TaskDispatcher.FiltrationConditions();
         condition.setSchedulingType(schedulingType);
         return condition;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TaskSchedulingTypePath that)) return false;
+        return Objects.equals(getSchedulingType(), that.getSchedulingType());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(getSchedulingType());
+    }
+
+    @Override
+    public String toString() {
+        return "Path scheduling type: " + getSchedulingType();
     }
 }

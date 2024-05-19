@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 @Getter
@@ -29,5 +30,23 @@ public class TaskTypePath extends TaskClassPath {
         condition.setTemplate(taskClassId == null ? null : Set.of(taskClassId));
         condition.setStage(taskTypeId);
         return condition;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TaskTypePath that)) return false;
+        if (!super.equals(o)) return false;
+        return Objects.equals(getTaskTypeId(), that.getTaskTypeId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), getTaskTypeId());
+    }
+
+    @Override
+    public String toString() {
+        return super.toString() + ", taskTypeId: " + taskTypeId;
     }
 }

@@ -13,6 +13,7 @@ import com.microel.trackerbackend.controllers.telegram.reactor.*;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.services.FilesWatchService;
+import com.microel.trackerbackend.services.ServerTimings;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.RestPage;
@@ -1611,24 +1612,48 @@ public class TelegramController {
     }
 
     public void sendNotification(Employee employee, Notification notification) {
-        if (mainBot == null) {
-            log.warn("Попытка отправить уведомление при не инициализированном TelegramApi");
-            return;
-        }
-        if (employee.getTelegramUserId() == null || employee.getTelegramUserId().isBlank() || notification.getMessage() == null)
-            return;
-        SendMessage sendMessage = SendMessage.builder()
-                .chatId(employee.getTelegramUserId())
-                .parseMode("HTML")
-                .text(Decorator.convert(notification))
-                .disableNotification(!notification.getUnread())
-                .build();
-        try {
-            mainBot.execute(sendMessage);
-        } catch (TelegramApiException e) {
-            log.warn("Не удалось отправить уведомление " + notification.getType() + ":" + e.getMessage());
-        }
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        executorService.execute(() -> {
+            if (mainBot == null) {
+                log.warn("Попытка отправить уведомление при не инициализированном TelegramApi");
+                return;
+            }
+            if (employee.getTelegramUserId() == null || employee.getTelegramUserId().isBlank() || notification.getMessage() == null)
+                return;
+            SendMessage sendMessage = SendMessage.builder()
+                    .chatId(employee.getTelegramUserId())
+                    .parseMode("HTML")
+                    .text(Decorator.convert(notification))
+                    .disableNotification(!notification.getUnread())
+                    .build();
+            try {
+                mainBot.execute(sendMessage);
+            } catch (TelegramApiException e) {
+                log.warn("Не удалось отправить уведомление " + notification.getType() + ":" + e.getMessage());
+            }
+        });
+        executorService.shutdown();
     }
+
+//    public void sendNotification(Employee employee, Notification notification) {
+//        if (mainBot == null) {
+//            log.warn("Попытка отправить уведомление при не инициализированном TelegramApi");
+//            return;
+//        }
+//        if (employee.getTelegramUserId() == null || employee.getTelegramUserId().isBlank() || notification.getMessage() == null)
+//            return;
+//        SendMessage sendMessage = SendMessage.builder()
+//                .chatId(employee.getTelegramUserId())
+//                .parseMode("HTML")
+//                .text(Decorator.convert(notification))
+//                .disableNotification(!notification.getUnread())
+//                .build();
+//        try {
+//            mainBot.execute(sendMessage);
+//        } catch (TelegramApiException e) {
+//            log.warn("Не удалось отправить уведомление " + notification.getType() + ":" + e.getMessage());
+//        }
+//    }
 
 //    private void broadcastEditChatMessage(ChatDto chat, ChatMessageDto chatMessage) {
 //
@@ -2123,6 +2148,8 @@ public class TelegramController {
     }
 
     public void assignInstallers(WorkLog workLog, Employee employee, List<Employee> acceptedEmployees) throws TelegramApiException {
+        ServerTimings serverTimings = new ServerTimings();
+        serverTimings.start("Отправка сообщений в телеграм");
         if (workLog.getGangLeader() != null) {
             Employee gangLeader = workLog.getEmployees().stream().filter(emp -> Objects.equals(emp.getLogin(), workLog.getGangLeader())).findFirst().orElseThrow(() -> {
                 workLogDispatcher.remove(workLog);
@@ -2150,6 +2177,7 @@ public class TelegramController {
         boolean hasNotTelegram = workLog.getEmployees().stream().anyMatch(ins -> ins.getTelegramUserId() == null || ins.getTelegramUserId().isBlank());
         if (hasNotTelegram) {
             workLogDispatcher.remove(workLog);
+            serverTimings.stop("Отправка сообщений в телеграм");
             throw new ResponseException("У сотрудников не назначен telegram id");
         }
         try {

@@ -25,6 +25,7 @@ import java.util.*;
 @Service
 public class AuthorizationProvider {
     public final static long JWS_EXPIRATION = 3_600_000L;
+//    public final static long JWS_EXPIRATION = 30_000L;
     public final static long JWS_REFRESH_EXPIRATION = 2_592_000_000L;
     private final static Key secretKey = Keys.secretKeyFor(SignatureAlgorithm.HS256);
     private final static Key secretKeyRefresh = Keys.secretKeyFor(SignatureAlgorithm.HS256);

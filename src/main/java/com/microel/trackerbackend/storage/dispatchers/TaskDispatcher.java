@@ -5,10 +5,10 @@ import com.microel.tdo.dynamictable.DynamicTableColumn;
 import com.microel.tdo.dynamictable.TablePaging;
 import com.microel.trackerbackend.misc.DataPair;
 import com.microel.trackerbackend.misc.TagWithTaskCountItem;
-import com.microel.trackerbackend.misc.WireframeTaskCounter;
+import com.microel.trackerbackend.misc.TimeFrame;
 import com.microel.trackerbackend.misc.accounting.ConnectionAgreement;
 import com.microel.trackerbackend.misc.accounting.TDocumentFactory;
-import com.microel.trackerbackend.misc.task.counting.AbstractTaskCounterPath;
+import com.microel.trackerbackend.misc.task.counting.*;
 import com.microel.trackerbackend.misc.task.filtering.fields.types.TaskFieldFilter;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.modules.transport.IDuration;
@@ -43,10 +43,7 @@ import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterMo
 import com.microel.trackerbackend.storage.entities.templating.oldtracker.OldTrackerBind;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
-import com.microel.trackerbackend.storage.repositories.ModelItemRepository;
-import com.microel.trackerbackend.storage.repositories.TaskRepository;
-import com.microel.trackerbackend.storage.repositories.TaskStageRepository;
-import com.microel.trackerbackend.storage.repositories.TaskTagRepository;
+import com.microel.trackerbackend.storage.repositories.*;
 import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
@@ -73,8 +70,7 @@ import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -103,6 +99,10 @@ public class TaskDispatcher {
     private final ModelItemRepository modelItemRepository;
     private final ServerTimings serverTimings;
     private final TaskTagRepository taskTagRepository;
+    private final WireframeRepository wireframeRepository;
+    private final TaskTypeDirectoryRepository taskTypeDirectoryRepository;
+    @Getter
+    private final Map<TaskDispatcher.FiltrationConditions, Long> taskCounterCache = new ConcurrentHashMap<>();
 
     public TaskDispatcher(TaskRepository taskRepository, ModelItemDispatcher modelItemDispatcher,
                           WireframeDispatcher wireframeDispatcher, CommentDispatcher commentDispatcher,
@@ -110,9 +110,10 @@ public class TaskDispatcher {
                           EmployeeDispatcher employeeDispatcher, WorkLogDispatcher workLogDispatcher,
                           TaskTagDispatcher taskTagDispatcher, AddressDispatcher addressDispatcher,
                           @Lazy NotificationDispatcher notificationDispatcher, StompController stompController,
-                          OldTrackerService oldTrackerService, AddressDispatcher addressDispatcher1, TaskEventDispatcher taskEventDispatcher,
+                          OldTrackerService oldTrackerService, TaskEventDispatcher taskEventDispatcher,
                           ModelItemRepository modelItemRepository, ServerTimings serverTimings,
-                          TaskTagRepository taskTagRepository) {
+                          TaskTagRepository taskTagRepository, WireframeRepository wireframeRepository,
+                          TaskTypeDirectoryRepository taskTypeDirectoryRepository) {
         this.taskRepository = taskRepository;
         this.modelItemDispatcher = modelItemDispatcher;
         this.wireframeDispatcher = wireframeDispatcher;
@@ -125,11 +126,14 @@ public class TaskDispatcher {
         this.notificationDispatcher = notificationDispatcher;
         this.stompController = stompController;
         this.oldTrackerService = oldTrackerService;
-        this.addressDispatcher = addressDispatcher1;
+        this.addressDispatcher = addressDispatcher;
         this.taskEventDispatcher = taskEventDispatcher;
         this.modelItemRepository = modelItemRepository;
         this.serverTimings = serverTimings;
         this.taskTagRepository = taskTagRepository;
+        this.wireframeRepository = wireframeRepository;
+        this.taskTypeDirectoryRepository = taskTypeDirectoryRepository;
+        cacheTaskCounters();
     }
 
     @Async
@@ -154,11 +158,13 @@ public class TaskDispatcher {
             Set<Employee> recipient = task.getAllEmployeesObservers();
             if (task.getActualFrom() != null) {
                 notificationDispatcher.createNotification(recipient, Notification.taskHasBecomeActual(task));
-                UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
-                updateTasksCountWorker.appendPath(task);
+                decreaseTasksCount(task);
+//                UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+//                updateTasksCountWorker.appendPath(task);
                 task.setActualFrom(null);
                 Task save = taskRepository.save(task);
-                updateTasksCountWorker.appendPath(save).execute(this);
+                increaseTasksCount(task);
+//                updateTasksCountWorker.appendPath(save).execute(this);
                 stompController.updateTask(save);
             } else if (task.getActualTo() != null) {
                 notificationDispatcher.createNotification(recipient, Notification.taskExpired(task));
@@ -170,6 +176,94 @@ public class TaskDispatcher {
 //                stompController.updateTask(save);
             }
         }
+    }
+
+    // Update every 1am every day
+    @Scheduled(cron = "0 0 1 * * *")
+    public void cacheTaskCounters() {
+        for (TaskDispatcher.FiltrationConditions condition : getStandardFiltrationConditions()) {
+            Long tasksCount = getTasksCount(condition);
+            taskCounterCache.put(condition, tasksCount);
+        }
+    }
+
+    public List<FiltrationConditions> getStandardFiltrationConditions() {
+        TimeFrame[] closeTaskTimeFrames = new TimeFrame[]{TimeFrame.TODAY, TimeFrame.YESTERDAY, TimeFrame.LAST_WEEK,
+                TimeFrame.THIS_WEEK, TimeFrame.LAST_MONTH, TimeFrame.THIS_MONTH};
+        TimeFrame[] scheduledTaskTimeFrames = new TimeFrame[]{TimeFrame.TODAY, TimeFrame.TOMORROW, TimeFrame.THIS_WEEK,
+                TimeFrame.NEXT_WEEK, TimeFrame.THIS_MONTH, TimeFrame.NEXT_MONTH};
+
+        List<Wireframe> wireframes = wireframeRepository.findAllByDeletedIsFalse(Sort.by(Sort.Direction.ASC, "name"));
+
+        List<TaskTag> tags = taskTagRepository.findAll((root, query, cb) -> cb.and(
+                cb.isFalse(root.get("deleted"))
+        ));
+
+        List<TaskDispatcher.FiltrationConditions> collect = new ArrayList<>();
+
+        for (TaskStatus status : TaskStatus.values()) {
+            switch (status) {
+                case ACTIVE -> {
+                    collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, status));
+                    collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.PLANNED, status));
+                    collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.DEADLINE, status));
+                    for (Wireframe wireframe : wireframes) {
+                        collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, status, wireframe));
+                        collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.PLANNED, status, wireframe));
+                        collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.DEADLINE, status, wireframe));
+                        List<TaskStage> stages = taskStageRepository.findAll((root, query, cb) -> cb.equal(root.join("wireframe"), wireframe));
+                        for (TaskStage stage : stages) {
+                            collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, status, wireframe, stage));
+                            collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.PLANNED, status, wireframe, stage));
+                            collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.DEADLINE, status, wireframe, stage));
+                            for (TimeFrame timeFrame : scheduledTaskTimeFrames) {
+                                collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.PLANNED, status, wireframe, stage, FiltrationConditions.TimeFrameType.SCHEDULE, timeFrame));
+                                collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.DEADLINE, status, wireframe, stage, FiltrationConditions.TimeFrameType.DEADLINE, timeFrame));
+                                for (TaskTag tag : tags) {
+                                    collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.PLANNED, status, wireframe, stage, FiltrationConditions.TimeFrameType.SCHEDULE, timeFrame, tag));
+                                    collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.DEADLINE, status, wireframe, stage, FiltrationConditions.TimeFrameType.DEADLINE, timeFrame, tag));
+                                }
+                            }
+                            List<TaskTypeDirectory> stageDirectories = taskTypeDirectoryRepository.findAll((root, query, cb) -> cb.equal(root.join("stage"), stage));
+                            for (TaskTypeDirectory directory : stageDirectories) {
+                                collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, status, wireframe, stage, directory));
+                                for (TaskTag tag : tags) {
+                                    collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, status, wireframe, stage, directory, tag));
+                                }
+                            }
+                        }
+                    }
+                }
+                case PROCESSING -> {
+                    collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, status));
+                    for (Wireframe wireframe : wireframes) {
+                        collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, status, wireframe));
+                        List<TaskStage> stages = taskStageRepository.findAll((root, query, cb) -> cb.equal(root.join("wireframe"), wireframe));
+                        for (TaskStage stage : stages) {
+                            collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, status, wireframe, stage));
+                        }
+                    }
+                }
+                case CLOSE -> {
+                    collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, status));
+                    for (Wireframe wireframe : wireframes) {
+                        collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, status, wireframe));
+                        List<TaskStage> stages = taskStageRepository.findAll((root, query, cb) -> cb.equal(root.join("wireframe"), wireframe));
+                        for (TaskStage stage : stages) {
+                            collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, status, wireframe, stage));
+                            for (TimeFrame timeFrame : closeTaskTimeFrames) {
+                                collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, status, wireframe, stage, FiltrationConditions.TimeFrameType.CLOSE, timeFrame));
+                                for (TaskTag tag : tags) {
+                                    collect.add(TaskDispatcher.FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, status, wireframe, stage, FiltrationConditions.TimeFrameType.CLOSE, timeFrame, tag));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return collect;
     }
 
     @Transactional
@@ -194,7 +288,7 @@ public class TaskDispatcher {
     @Transactional
     public Task createTask(Task.CreationBody body, Timestamp timestamp, Employee employee) throws IllegalFields, EntryNotFound {
         serverTimings.start("Создание задачи");
-        serverTimings.start("Наполнение объекта");
+//        serverTimings.start("Наполнение объекта");
         // Создаем временный объект задачи
         Task createdTask = new Task();
         createdTask.setComments(new ArrayList<>());
@@ -208,9 +302,9 @@ public class TaskDispatcher {
         //Проверяем есть ли установленный шаблон в запросе
         if (body.getWireframeId() == null) throw new IllegalFields("Не установлен шаблон для создания задачи");
         // Получаем шаблон задачи из бд по идентификатору и устанавливаем его в createdTask
-        serverTimings.start("Получение шаблона");
+//        serverTimings.start("Получение шаблона");
         Wireframe wireframe = wireframeDispatcher.getWireframeById(body.getWireframeId(), false);
-        serverTimings.stop("Получение шаблона");
+//        serverTimings.stop("Получение шаблона");
         // Если wireframe null то выбрасываем исключение
         if (wireframe == null) throw new IllegalFields("В базе данных не найден шаблон для создания задачи");
 
@@ -231,7 +325,7 @@ public class TaskDispatcher {
 
 
         if (defaultObservers != null) {
-            serverTimings.start("Получение и установка наблюдателей");
+//            serverTimings.start("Получение и установка наблюдателей");
             // Выбираем из базы данных действующих наблюдателей задачи
             List<Employee> employeesObservers = employeeDispatcher.getByIdSet(DefaultObserver.getSetOfEmployees(defaultObservers).stream().map(Employee::getLogin).collect(Collectors.toSet()));
             List<Department> departmentsObservers = departmentDispatcher.getByIdSet(DefaultObserver.getSetOfDepartments(defaultObservers).stream().map(Department::getDepartmentId).collect(Collectors.toSet()));
@@ -240,10 +334,10 @@ public class TaskDispatcher {
             createdTask.setEmployeesObservers(employeesObservers);
             // Устанавливаем отделы как наблюдателей задачи
             createdTask.setDepartmentsObservers(departmentsObservers);
-            serverTimings.stop("Получение и установка наблюдателей");
+//            serverTimings.stop("Получение и установка наблюдателей");
         }
 
-        serverTimings.start("Получение и установка типа задачи");
+//        serverTimings.start("Получение и установка типа задачи");
         if (body.getType() == null) {
             createdTask.setCurrentStage(wireframe.getFirstStage());
         } else {
@@ -258,33 +352,35 @@ public class TaskDispatcher {
                                 && body.getIsDuplicateInOldTracker()
                                 && taskStage.getOldTrackerBind() != null
                 ) {
-                    try {
-                        OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
-                        Long newTaskId = requestFactory.getNewTaskId(taskStage.getOldTrackerBind().getClassId()).execute();
-                        if (newTaskId != null) {
-                            TaskClassOT taskClass = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                    com.microel.trackerbackend.misc.Async.of(() -> {
+                        try {
+                            OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                            Long newTaskId = requestFactory.getNewTaskId(taskStage.getOldTrackerBind().getClassId()).execute();
+                            if (newTaskId != null) {
+                                TaskClassOT taskClass = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
 
-                            List<OldTrackerRequestFactory.FieldData> fields = Stream.concat(taskClass.getStandardFieldsOnCreation().get().stream(), createdTask.getFieldsForOldTracker(taskClass).stream()).collect(Collectors.toList());
+                                List<OldTrackerRequestFactory.FieldData> fields = Stream.concat(taskClass.getStandardFieldsOnCreation().get().stream(), createdTask.getFieldsForOldTracker(taskClass).stream()).collect(Collectors.toList());
 
-                            requestFactory.createTask(newTaskId, taskStage.getOldTrackerBind().getInitialStageId(), fields)
-                                    .setInitialComment(body.getInitialComment())
-                                    .execute();
+                                requestFactory.createTask(newTaskId, taskStage.getOldTrackerBind().getInitialStageId(), fields)
+                                        .setInitialComment(body.getInitialComment())
+                                        .execute();
 
-                            requestFactory.close().execute();
+                                requestFactory.close().execute();
 
-                            createdTask.setOldTrackerTaskId(newTaskId);
-                            createdTask.setOldTrackerTaskClassId(taskStage.getOldTrackerBind().getClassId());
-                            createdTask.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
+                                createdTask.setOldTrackerTaskId(newTaskId);
+                                createdTask.setOldTrackerTaskClassId(taskStage.getOldTrackerBind().getClassId());
+                                createdTask.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
 
-                            System.out.println("Новый идентификатор задачи: " + newTaskId);
+                                System.out.println("Новый идентификатор задачи: " + newTaskId);
+                            }
+                        } catch (Exception ignored) {
+                            System.out.println("Не создать задачу в старом трекере");
                         }
-                    }catch (Exception ignored){
-                        System.out.println("Не создать задачу в старом трекере");
-                    }
+                    });
                 }
             }
         }
-        serverTimings.stop("Получение и установка типа задачи");
+//        serverTimings.stop("Получение и установка типа задачи");
 
         if (createdTask.getCurrentStage() != null && createdTask.getCurrentStage().getDirectories() != null && !createdTask.getCurrentStage().getDirectories().isEmpty()) {
             if (body.getDirectory() == null) {
@@ -333,13 +429,13 @@ public class TaskDispatcher {
 
         if (body.getTags() != null && taskTagDispatcher.valid(body.getTags()))
             createdTask.setTags(body.getTags());
-        serverTimings.stop("Наполнение объекта");
+//        serverTimings.stop("Наполнение объекта");
 
 
-        serverTimings.start("Запись задачи в БД");
+//        serverTimings.start("Запись задачи в БД");
         Task task = taskRepository.save(createdTask);
-        serverTimings.stop("Запись задачи в БД");
-        serverTimings.start("Отправка обновлений через сокеты");
+//        serverTimings.stop("Запись задачи в БД");
+//        serverTimings.start("Отправка обновлений через сокеты");
         stompController.createTask(task);
 //        Long wireframeId = task.getModelWireframe().getWireframeId();
 
@@ -357,10 +453,43 @@ public class TaskDispatcher {
 //        Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
 //        stompController.updateTagTaskCounter(tasksCountByTags);
 
-        UpdateTasksCountWorker.of(task).execute(this);
-        serverTimings.stop("Отправка обновлений через сокеты");
+//        UpdateTasksCountWorker.of(task).increase(this);
+        increaseTasksCount(task);
+//        serverTimings.stop("Отправка обновлений через сокеты");
         serverTimings.stop("Создание задачи");
         return task;
+    }
+
+    public void increaseTasksCount(Task task) {
+        List<FiltrationConditions> conditions = FiltrationConditions.from(task);
+        for (FiltrationConditions condition : conditions) {
+            Long newCount = taskCounterCache.compute(condition, (key, value) -> {
+                if (value == null) {
+                    value = 1L;
+                } else {
+                    value++;
+                }
+                return value;
+            });
+            stompController.updateCachedTaskCounter(newCount, condition);
+        }
+        stompController.movedTask();
+    }
+
+    public void decreaseTasksCount(Task task) {
+        List<FiltrationConditions> conditions = FiltrationConditions.from(task);
+        for (FiltrationConditions condition : conditions) {
+            Long newCount = taskCounterCache.compute(condition, (key, value) -> {
+                if (value == null) {
+                    value = 0L;
+                } else {
+                    value--;
+                }
+                return value;
+            });
+            stompController.updateCachedTaskCounter(newCount, condition);
+        }
+        stompController.movedTask();
     }
 
     public Page<Task> getTasks(Integer page, Integer limit, @Nullable FiltrationConditions conditions, @Nullable Employee employeeTask) {
@@ -417,7 +546,7 @@ public class TaskDispatcher {
     public Task deleteTask(Long id, Employee employee) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound();
-        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+//        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         task.setDeleted(true);
         task.setCurrentDirectory(null);
         task.setUpdated(Timestamp.from(Instant.now()));
@@ -425,19 +554,22 @@ public class TaskDispatcher {
         if (employee.isHasOldTrackerCredentials()) {
             TaskStage taskStage = task.getCurrentStage();
             if (taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
-                try {
-                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
-                    requestFactory.deleteTask(task.getOldTrackerTaskId()).execute();
-                    requestFactory.close().execute();
-                }catch (Exception ignored){
-                    System.out.println("Не удалось удалить задачу в старом трекере");
-                }
+                com.microel.trackerbackend.misc.Async.of(() -> {
+                    try {
+                        OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                        requestFactory.deleteTask(task.getOldTrackerTaskId()).execute();
+                        requestFactory.close().execute();
+                    } catch (Exception ignored) {
+                        System.out.println("Не удалось удалить задачу в старом трекере");
+                    }
+                });
             }
         }
 
         Task save = taskRepository.save(task);
         stompController.updateTask(task);
-        updateTasksCountWorker.execute(this);
+//        updateTasksCountWorker.execute(this);
+        decreaseTasksCount(task);
 
         return save;
     }
@@ -459,8 +591,8 @@ public class TaskDispatcher {
     public Task changeTaskStage(Long taskId, String stageId) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
-
-        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+        decreaseTasksCount(task);
+//        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
 
         TaskStage stage = taskStageRepository.findById(stageId).orElse(null);
         if (stage == null) throw new EntryNotFound("Не найден тип задачи с идентификатором " + stageId);
@@ -479,9 +611,10 @@ public class TaskDispatcher {
 
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
+        increaseTasksCount(task);
         stompController.updateTask(save);
 
-        updateTasksCountWorker.appendPath(save).execute(this);
+//        updateTasksCountWorker.appendPath(save).execute(this);
 
         return save;
     }
@@ -506,7 +639,7 @@ public class TaskDispatcher {
         try {
             Task task = taskRepository.findByTaskId(taskId).orElse(null);
             if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
-            UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+            decreaseTasksCount(task);
             WorkLog existed = workLogDispatcher.getActiveWorkLogByTask(task).orElse(null);
             if (existed != null) throw new IllegalFields("Задаче уже назначены другие монтажники");
             workLog = workLogDispatcher.createWorkLog(task, body, creator);
@@ -518,38 +651,24 @@ public class TaskDispatcher {
             if (creator.isHasOldTrackerCredentials()) {
                 TaskStage taskStage = task.getCurrentStage();
                 if (taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
-                    try {
-                        OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(creator.getOldTrackerCredentials().getUsername(), creator.getOldTrackerCredentials().getPassword());
-                        TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(task.getOldTrackerTaskClassId());
-                        List<OldTrackerRequestFactory.FieldData> dataList = taskClassOT.getStandardFieldsOnAssignation().get(workLog.getEmployees().toArray(Employee[]::new));
-                        requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getProcessingStageId(), dataList).execute();
-                        requestFactory.close().execute();
-                        task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getProcessingStageId());
-                    }catch (Exception ignored){
-                        System.out.println("Не удалось изменить этап в старом трекере");
-                    }
+                    WorkLog finalWorkLog = workLog;
+                    com.microel.trackerbackend.misc.Async.of(() -> {
+                        try {
+                            OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(creator.getOldTrackerCredentials().getUsername(), creator.getOldTrackerCredentials().getPassword());
+                            TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(task.getOldTrackerTaskClassId());
+                            List<OldTrackerRequestFactory.FieldData> dataList = taskClassOT.getStandardFieldsOnAssignation().get(finalWorkLog.getEmployees().toArray(Employee[]::new));
+                            requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getProcessingStageId(), dataList).execute();
+                            requestFactory.close().execute();
+                            task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getProcessingStageId());
+                        } catch (Exception ignored) {
+                            System.out.println("Не удалось изменить этап в старом трекере");
+                        }
+                    });
                 }
             }
 
             stompController.updateTask(taskRepository.save(task));
-
-//            Long wireframeId = task.getModelWireframe().getWireframeId();
-//
-//            task.getAllEmployeesObservers().forEach(observer -> {
-//                Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
-//                Map<String, Long> incomingTasksCountByStages = getIncomingTasksCountByStages(observer, wireframeId);
-//                stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
-//                Map<Long, Map<Long, Long>> incomingTasksCountByTags = getIncomingTasksCountByTags(observer);
-//                stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
-//            });
-//
-//            Long tasksCount = getTasksCount(task.getModelWireframe().getWireframeId());
-//            Map<String, Long> tasksCountByStages = getTasksCountByStages(wireframeId);
-//            stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
-//            Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
-//            stompController.updateTagTaskCounter(tasksCountByTags);
-
-            updateTasksCountWorker.appendPath(task).execute(this);
+            increaseTasksCount(task);
 
             return workLog;
         } catch (Exception e) {
@@ -562,51 +681,38 @@ public class TaskDispatcher {
     public void abortAssignation(Long taskId, Employee employee) {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
-        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+        decreaseTasksCount(task);
         workLogDispatcher.getActiveWorkLogByTask(task).ifPresent(workLogDispatcher::remove);
         task.setTaskStatus(TaskStatus.ACTIVE);
         task.setUpdated(Timestamp.from(Instant.now()));
-        Long wireframeId = task.getModelWireframe().getWireframeId();
 
         if (employee.isHasOldTrackerCredentials()) {
             TaskStage taskStage = task.getCurrentStage();
             if (taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
-                try {
-                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
-                    TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
-                    requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getInitialStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
-                    requestFactory.close().execute();
-                    task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
-                }catch (Exception ignored){
-                    System.out.println("Не удалось сменить этап в старом трекере");
-                }
+                com.microel.trackerbackend.misc.Async.of(() -> {
+                    try {
+                        OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                        TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                        requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getInitialStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
+                        requestFactory.close().execute();
+                        task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
+                    } catch (Exception ignored) {
+                        System.out.println("Не удалось сменить этап в старом трекере");
+                    }
+                });
             }
         }
 
         stompController.updateTask(taskRepository.save(task));
-
-//        task.getAllEmployeesObservers().forEach(observer -> {
-//            Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
-//            Map<String, Long> incomingTasksCountByStages = getIncomingTasksCountByStages(observer, wireframeId);
-//            stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
-//            Map<Long, Map<Long, Long>> incomingTasksCountByTags = getIncomingTasksCountByTags(observer);
-//            stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
-//        });
-//
-//        Long tasksCount = getTasksCount(task.getModelWireframe().getWireframeId());
-//        Map<String, Long> tasksCountByStages = getTasksCountByStages(wireframeId);
-//        stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
-//        Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
-//        stompController.updateTagTaskCounter(tasksCountByTags);
-
-        updateTasksCountWorker.appendPath(task).execute(this);
+        increaseTasksCount(task);
     }
 
     @Transactional
     public WorkLog forceCloseWorkLog(Long taskId, String reasonOfClosing, Employee employee) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
-        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+        decreaseTasksCount(task);
+//        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         WorkLog workLog = workLogDispatcher.getActiveWorkLogByTask(task).orElse(null);
 
         if (workLog == null) throw new EntryNotFound("Не найдено ни одного журнала работ для принудительного закрытия");
@@ -629,20 +735,23 @@ public class TaskDispatcher {
         if (employee.isHasOldTrackerCredentials()) {
             TaskStage taskStage = task.getCurrentStage();
             if (taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
-                try {
-                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
-                    TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
-                    requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getInitialStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
-                    requestFactory.close().execute();
-                    task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
-                }catch (Exception ignored){
-                    System.out.println("Не удалось сменить этап в старом трекере");
-                }
+                com.microel.trackerbackend.misc.Async.of(() -> {
+                    try {
+                        OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                        TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                        requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getInitialStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
+                        requestFactory.close().execute();
+                        task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
+                    } catch (Exception ignored) {
+                        System.out.println("Не удалось сменить этап в старом трекере");
+                    }
+                });
             }
         }
 
         stompController.updateTask(taskRepository.save(task));
-        updateTasksCountWorker.appendPath(task).execute(this);
+        increaseTasksCount(task);
+//        updateTasksCountWorker.appendPath(task).execute(this);
 
 //        Long wireframeId = task.getModelWireframe().getWireframeId();
 
@@ -811,14 +920,16 @@ public class TaskDispatcher {
     public Task modifyTags(Long taskId, Set<TaskTag> tags) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
-        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+        decreaseTasksCount(task);
+//        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         // Check if tags are valid
         if (!taskTagDispatcher.valid(tags)) throw new EntryNotFound("Часть тегов не найдена в базе данных");
         task.setTags(tags);
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
         stompController.updateTask(save);
-        updateTasksCountWorker.appendPath(save).execute(this);
+        increaseTasksCount(task);
+//        updateTasksCountWorker.appendPath(save).execute(this);
         return save;
     }
 
@@ -854,14 +965,16 @@ public class TaskDispatcher {
     public Task changeTaskActualFrom(Long id, Instant datetime) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
-        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
-        updateTasksCountWorker.appendPath(task);
+//        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+        decreaseTasksCount(task);
+//        updateTasksCountWorker.appendPath(task);
         if (task.getActualTo() != null && datetime.isAfter(task.getActualTo().toInstant())) task.setActualTo(null);
         task.setActualFrom(Timestamp.from(datetime));
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
         stompController.updateTask(save);
-        updateTasksCountWorker.appendPath(save).execute(this);
+//        updateTasksCountWorker.appendPath(save).execute(this);
+        increaseTasksCount(task);
         return save;
     }
 
@@ -869,14 +982,16 @@ public class TaskDispatcher {
     public Task changeTaskActualTo(Long id, Instant datetime) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
-        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
-        updateTasksCountWorker.appendPath(task);
+        decreaseTasksCount(task);
+//        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+//        updateTasksCountWorker.appendPath(task);
         if (task.getActualFrom() != null && datetime.isBefore(task.getActualFrom().toInstant()))
             task.setActualFrom(null);
         task.setActualTo(Timestamp.from(datetime));
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
-        updateTasksCountWorker.appendPath(save).execute(this);
+        increaseTasksCount(task);
+//        updateTasksCountWorker.appendPath(save).execute(this);
         return save;
     }
 
@@ -884,13 +999,15 @@ public class TaskDispatcher {
     public Task clearTaskActualFrom(Long id) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
-        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
-        updateTasksCountWorker.appendPath(task);
+//        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+//        updateTasksCountWorker.appendPath(task);
+        decreaseTasksCount(task);
         task.setActualFrom(null);
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
         stompController.updateTask(save);
-        updateTasksCountWorker.appendPath(save).execute(this);
+        increaseTasksCount(task);
+//        updateTasksCountWorker.appendPath(save).execute(this);
         return save;
     }
 
@@ -898,13 +1015,15 @@ public class TaskDispatcher {
     public Task clearTaskActualTo(Long id) throws EntryNotFound {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
-        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
-        updateTasksCountWorker.appendPath(task);
+//        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+//        updateTasksCountWorker.appendPath(task);
+        decreaseTasksCount(task);
         task.setActualTo(null);
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
         stompController.updateTask(save);
-        updateTasksCountWorker.appendPath(save).execute(this);
+        increaseTasksCount(task);
+//        updateTasksCountWorker.appendPath(save).execute(this);
         return save;
     }
 
@@ -912,7 +1031,8 @@ public class TaskDispatcher {
     public Task close(Long id, Employee employee, @Nullable Boolean userClose) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(id).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + id);
-        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+        decreaseTasksCount(task);
+//        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         if (task.getTaskStatus().equals(TaskStatus.CLOSE)) throw new IllegalFields("Задача уже закрыта");
         if ((userClose != null && userClose) && task.getTaskStatus().equals(TaskStatus.PROCESSING))
             throw new IllegalFields("Пока задача отдана монтажникам её нельзя закрыть");
@@ -924,41 +1044,28 @@ public class TaskDispatcher {
         task.setCurrentDirectory(null);
         task.setActualFrom(null);
         task.setActualTo(null);
-        // Обновляем счетчики задач на странице
-        Long wireframeId = task.getModelWireframe().getWireframeId();
 
         if (employee == null) employee = task.getCreator();
         if (employee.isHasOldTrackerCredentials()) {
             TaskStage taskStage = task.getCurrentStage();
             if (taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
-                try {
-                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
-                    TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
-                    requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getManualCloseStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
-                    requestFactory.close().execute();
-                    task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getManualCloseStageId());
-                }catch (Exception ignored){
-                    System.out.println("Не удалось сменить этап в старом трекере");
-                }
+                Employee finalEmployee = employee;
+                com.microel.trackerbackend.misc.Async.of(() -> {
+                    try {
+                        OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(finalEmployee.getOldTrackerCredentials().getUsername(), finalEmployee.getOldTrackerCredentials().getPassword());
+                        TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                        requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getManualCloseStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
+                        requestFactory.close().execute();
+                        task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getManualCloseStageId());
+                    } catch (Exception ignored) {
+                        System.out.println("Не удалось сменить этап в старом трекере");
+                    }
+                });
             }
         }
 
-//        task.getAllEmployeesObservers().forEach(observer -> {
-//            Long incomingTasksCount = getIncomingTasksCount(observer, wireframeId);
-//            Map<String, Long> incomingTasksCountByStages = getIncomingTasksCountByStages(observer, wireframeId);
-//            stompController.updateIncomingTaskCounter(observer.getLogin(), WireframeTaskCounter.of(wireframeId, incomingTasksCount, incomingTasksCountByStages));
-//            Map<Long, Map<Long, Long>> incomingTasksCountByTags = getIncomingTasksCountByTags(observer);
-//            stompController.updateIncomingTagTaskCounter(observer.getLogin(), incomingTasksCountByTags);
-//        });
-//
-//        Long tasksCount = getTasksCount(task.getModelWireframe().getWireframeId());
-//        Map<String, Long> tasksCountByStages = getTasksCountByStages(wireframeId);
-//        stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
-//        Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
-//        stompController.updateTagTaskCounter(tasksCountByTags);
-
         Task save = taskRepository.save(task);
-        updateTasksCountWorker.appendPath(save).execute(this);
+        increaseTasksCount(task);
         stompController.updateTask(save);
         Set<Employee> observers = save.getAllEmployeesObservers(employee);
         notificationDispatcher.createNotification(observers, Notification.taskClosed(save, employee));
@@ -976,7 +1083,8 @@ public class TaskDispatcher {
     public Task reopen(Long taskId, Employee employee) throws EntryNotFound, IllegalFields {
         Task task = taskRepository.findByTaskId(taskId).orElse(null);
         if (task == null) throw new EntryNotFound("Не найдена задача с идентификатором " + taskId);
-        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
+        decreaseTasksCount(task);
+//        UpdateTasksCountWorker updateTasksCountWorker = UpdateTasksCountWorker.of(task);
         if (task.getTaskStatus().equals(TaskStatus.ACTIVE)) throw new IllegalFields("Задача уже активна");
         if (task.getTaskStatus().equals(TaskStatus.PROCESSING))
             throw new IllegalFields("Невозможно активировать задачу");
@@ -990,15 +1098,17 @@ public class TaskDispatcher {
         if (employee.isHasOldTrackerCredentials()) {
             TaskStage taskStage = task.getCurrentStage();
             if (taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
-                try {
-                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
-                    TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
-                    requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getInitialStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
-                    requestFactory.close().execute();
-                    task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
-                }catch (Exception ignored){
-                    System.out.println("Не удалось сменить этап в старом трекере");
-                }
+                com.microel.trackerbackend.misc.Async.of(() -> {
+                    try {
+                        OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                        TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                        requestFactory.changeStageTask(task.getOldTrackerTaskId(), taskStage.getOldTrackerBind().getInitialStageId(), task.getFieldsForOldTracker(taskClassOT)).execute();
+                        requestFactory.close().execute();
+                        task.setOldTrackerCurrentStageId(taskStage.getOldTrackerBind().getInitialStageId());
+                    } catch (Exception ignored) {
+                        System.out.println("Не удалось сменить этап в старом трекере");
+                    }
+                });
             }
         }
 
@@ -1008,7 +1118,7 @@ public class TaskDispatcher {
         notificationDispatcher.createNotification(observers, Notification.taskReopened(task, employee));
         TaskEvent taskEvent = taskEventDispatcher.appendEvent(TaskEvent.reopen(task, employee));
         stompController.createTaskEvent(taskId, taskEvent);
-
+        increaseTasksCount(task);
 //        Long wireframeId = task.getModelWireframe().getWireframeId();
 //
 //        task.getAllEmployeesObservers().forEach(observer -> {
@@ -1024,7 +1134,7 @@ public class TaskDispatcher {
 //        stompController.updateTaskCounter(WireframeTaskCounter.of(wireframeId, tasksCount, tasksCountByStages));
 //        Map<Long, Map<Long, Long>> tasksCountByTags = getTasksCountByTags();
 //        stompController.updateTagTaskCounter(tasksCountByTags);
-        updateTasksCountWorker.appendPath(task).execute(this);
+//        updateTasksCountWorker.appendPath(task).execute(this);
         return task;
     }
 
@@ -1032,9 +1142,10 @@ public class TaskDispatcher {
     public List<Task> moveToDirectory(MovingToDirectoryForm form) throws EntryNotFound {
         List<Task> tasks = taskRepository.findAllById(form.taskIds);
         if (tasks.size() != form.taskIds.size()) throw new EntryNotFound("Некоторые задачи не найдены");
-        UpdateTasksCountWorker updateTasksCountWorker = new UpdateTasksCountWorker();
+//        UpdateTasksCountWorker updateTasksCountWorker = new UpdateTasksCountWorker();
         for (Task task : tasks) {
-            updateTasksCountWorker.appendPath(task);
+            decreaseTasksCount(task);
+//            updateTasksCountWorker.appendPath(task);
             TaskStage currentStage = task.getCurrentStage();
             if (currentStage == null || currentStage.getDirectories() == null || currentStage.getDirectories().isEmpty())
                 throw new ResponseException("Некоторые задачи не удалось переместить, отсутствует тип или категории");
@@ -1043,12 +1154,14 @@ public class TaskDispatcher {
                 throw new ResponseException("Некоторые задачи не удалось переместить, не валидная целевая категория");
             task.setCurrentDirectory(currentDirectory);
             task.setUpdated(Timestamp.from(Instant.now()));
-            updateTasksCountWorker.appendPath(task);
+//            updateTasksCountWorker.appendPath(task);
         }
         List<Task> taskList = taskRepository.saveAll(tasks);
-        for (Task task : taskList)
+        for (Task task : taskList) {
+            increaseTasksCount(task);
             stompController.updateTask(task);
-        updateTasksCountWorker.execute(this);
+        }
+//        updateTasksCountWorker.execute(this);
         return taskList;
     }
 
@@ -1061,17 +1174,19 @@ public class TaskDispatcher {
         // Редактируем поля задачи и сохраняем их в БД
         task.editFields(modelItemDispatcher.prepareModelItems(modelItems));
         if (employee.isHasOldTrackerCredentials()) {
-            try {
-                OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
-                TaskStage taskStage = task.getCurrentStage();
-                if (taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
-                    TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
-                    requestFactory.editTask(task.getOldTrackerTaskId(), task.getFieldsForOldTracker(taskClassOT)).execute();
-                    requestFactory.close().execute();
+            com.microel.trackerbackend.misc.Async.of(() -> {
+                try {
+                    OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                    TaskStage taskStage = task.getCurrentStage();
+                    if (taskStage.getOldTrackerBind() != null && Objects.equals(taskStage.getOldTrackerBind().getClassId(), task.getOldTrackerTaskClassId())) {
+                        TaskClassOT taskClassOT = oldTrackerService.getTaskClassById(taskStage.getOldTrackerBind().getClassId());
+                        requestFactory.editTask(task.getOldTrackerTaskId(), task.getFieldsForOldTracker(taskClassOT)).execute();
+                        requestFactory.close().execute();
+                    }
+                } catch (Exception ignored) {
+                    System.out.println("Не удалось отредактировать задачу в старом трекере");
                 }
-            }catch (Exception ignored){
-                System.out.println("Не удалось отредактировать задачу в старом трекере");
-            }
+            });
         }
         task.setUpdated(Timestamp.from(Instant.now()));
         Task save = taskRepository.save(task);
@@ -1176,10 +1291,10 @@ public class TaskDispatcher {
 
             return cb.and(predicates.toArray(Predicate[]::new));
         });
-        for (Task task : tasks){
+        for (Task task : tasks) {
             if (task == null || task.getTags() == null) continue;
             Hibernate.initialize(task.getTags());
-            for (TaskTag tag : task.getTags()){
+            for (TaskTag tag : task.getTags()) {
                 Long wfId = task.getModelWireframe().getWireframeId();
                 tagsCounter.compute(tag.getTaskTagId(), (key, value) -> {
                     if (value == null) {
@@ -1352,6 +1467,12 @@ public class TaskDispatcher {
         });
     }
 
+    public Long getCachedTasksCount(TaskDispatcher.FiltrationConditions conditions) {
+        Long count = taskCounterCache.get(conditions);
+        System.out.printf("%s: %d\n", conditions, count);
+        return count;
+    }
+
     public Long getTasksCount(AbstractTaskCounterPath path) {
         return getTasksCount(path.toFiltrationCondition());
     }
@@ -1460,18 +1581,20 @@ public class TaskDispatcher {
         if (oldTrackerBind == null)
             throw new ResponseException("У типа задачи не установлена привязка к старому трекеру");
         if (!employee.isHasOldTrackerCredentials()) throw new ResponseException("У вас нет доступа к старому трекеру");
-        try {
-            OldTrackerRequestFactory oldTrackerRequestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
-            TaskClassOT taskClassById = oldTrackerService.getTaskClassById(oldTrackerBind.getClassId());
-            if (!taskClassById.isStageExist(taskStageId))
-                throw new ResponseException("Не существует стадии №" + taskStageId + " у класса задачи в трекере");
-            oldTrackerRequestFactory.changeStageTask(targetTask.getOldTrackerTaskId(), taskStageId, targetTask.getFieldsForOldTracker(taskClassById)).execute();
-            oldTrackerRequestFactory.close().execute();
-            targetTask.setOldTrackerCurrentStageId(taskStageId);
-            stompController.updateTask(taskRepository.save(targetTask));
-        }catch (Exception ignored){
-            System.out.println("Не удалось сменить этап в старом трекере");
-        }
+        com.microel.trackerbackend.misc.Async.of(() -> {
+            try {
+                OldTrackerRequestFactory oldTrackerRequestFactory = new OldTrackerRequestFactory(employee.getOldTrackerCredentials().getUsername(), employee.getOldTrackerCredentials().getPassword());
+                TaskClassOT taskClassById = oldTrackerService.getTaskClassById(oldTrackerBind.getClassId());
+                if (!taskClassById.isStageExist(taskStageId))
+                    throw new ResponseException("Не существует стадии №" + taskStageId + " у класса задачи в трекере");
+                oldTrackerRequestFactory.changeStageTask(targetTask.getOldTrackerTaskId(), taskStageId, targetTask.getFieldsForOldTracker(taskClassById)).execute();
+                oldTrackerRequestFactory.close().execute();
+                targetTask.setOldTrackerCurrentStageId(taskStageId);
+                stompController.updateTask(taskRepository.save(targetTask));
+            } catch (Exception ignored) {
+                System.out.println("Не удалось сменить этап в старом трекере");
+            }
+        });
     }
 
     public void getDocumentTemplate(Long taskId, Long documentTemplateId, HttpServletResponse response) {
@@ -1657,9 +1780,9 @@ public class TaskDispatcher {
         dynamicTableColumns.add(DynamicTableColumn.of("creator.login", "Кто создал", true, "employee"));
         dynamicTableColumns.add(DynamicTableColumn.of("created", "Дата создания", true, "date"));
         dynamicTableColumns.add(DynamicTableColumn.of("updated", "Дата изменения", true, "date"));
-        if(Objects.equals(taskStatus, TaskStatus.CLOSE)){
+        if (Objects.equals(taskStatus, TaskStatus.CLOSE)) {
             dynamicTableColumns.add(DynamicTableColumn.of("closed", "Дата закрытия", true, "date"));
-        } else if (Objects.equals(taskStatus, TaskStatus.ACTIVE)){
+        } else if (Objects.equals(taskStatus, TaskStatus.ACTIVE)) {
             dynamicTableColumns.add(DynamicTableColumn.of("actualFrom", "Запланирована", true, "date"));
             dynamicTableColumns.add(DynamicTableColumn.of("actualTo", "Срок", true, "date"));
         }
@@ -1684,9 +1807,9 @@ public class TaskDispatcher {
 
             predicates.add(cb.equal(taskJoin.get("taskStatus"), taskStatus));
             predicates.add(cb.equal(modelWireframeJoin.get("wireframeId"), taskClass));
-            switch (tagMode){
+            switch (tagMode) {
                 case "selected" -> {
-                    if(tags != null && !tags.isEmpty()) {
+                    if (tags != null && !tags.isEmpty()) {
                         Subquery<Long> taskSubquery = query.subquery(Long.class);
                         Root<Task> taskSubqueryRoot = taskSubquery.from(Task.class);
                         Join<Task, TaskTag> taskTagJoin = taskSubqueryRoot.join("tags", JoinType.LEFT);
@@ -1707,7 +1830,7 @@ public class TaskDispatcher {
             List<Predicate> taskFilterPredicates = getTaskFilterPredicates(paging.getFilters(), taskJoin, cb);
             predicates.addAll(taskFilterPredicates);
 
-            if(paging.getGlobalFilter() != null && !paging.getGlobalFilter().isBlank()){
+            if (paging.getGlobalFilter() != null && !paging.getGlobalFilter().isBlank()) {
                 List<Predicate> contextSearchPredicates = new ArrayList<>();
                 Join<Task, Comment> commentJoin = taskJoin.join("comments", JoinType.LEFT);
                 Join<ModelItem, Address> addressJoin = root.join("addressData", JoinType.LEFT);
@@ -1718,7 +1841,7 @@ public class TaskDispatcher {
                     contextSearchPredicates.add(lookupRequest.toPredicate(addressJoin, cb));
 
                 predicates.add(cb.or(contextSearchPredicates.toArray(Predicate[]::new)));
-            }else{
+            } else {
                 List<Predicate> fieldFilterPredicates = getFieldFilterPredicate(paging.getFilters(), root, query, cb);
                 if (!fieldFilterPredicates.isEmpty()) {
                     countOfFieldFilters.set(fieldFilterPredicates.size());
@@ -1760,7 +1883,8 @@ public class TaskDispatcher {
                                 orders.add(new OrderImpl(cb.selectCase().when(idExpr, root.get("integerData")), sortMeta.getOrder() > 0));
 
                             }
-                            case COUNTING_LIVES, LARGE_TEXT, LOGIN, SMALL_TEXT, IP, REQUEST_INITIATOR, AD_SOURCE, CONNECTION_TYPE -> {
+                            case COUNTING_LIVES, LARGE_TEXT, LOGIN, SMALL_TEXT, IP, REQUEST_INITIATOR, AD_SOURCE,
+                                 CONNECTION_TYPE -> {
                                 orders.add(new OrderImpl(cb.selectCase().when(idExpr, root.get("stringData")), sortMeta.getOrder() > 0));
 
                             }
@@ -1818,12 +1942,12 @@ public class TaskDispatcher {
                     .toList();
 
             dynamicCellMap.put("currentStage.label", DynamicCell.of(DynamicCell.Type.STRING, task.getCurrentStage().getLabel(), largeText.size() + task.getLastComments().size() + 1, null));
-            if(Objects.equals(taskStatus, TaskStatus.ACTIVE)) {
+            if (Objects.equals(taskStatus, TaskStatus.ACTIVE)) {
                 dynamicCellMap.put("currentDirectory.name",
                         DynamicCell.of(DynamicCell.Type.STRING, task.getCurrentDirectory() == null ? "Без директории" : task.getCurrentDirectory().getName(), largeText.size() + task.getLastComments().size() + 1, null));
             }
             for (ModelItem fieldItem : notLargeText) {
-                switch (fieldItem.getWireframeFieldType()){
+                switch (fieldItem.getWireframeFieldType()) {
                     case LOGIN -> {
                         dynamicCellMap.put(fieldItem.getId() + "." + fieldItem.getWireframeFieldType(), DynamicCell.of(DynamicCell.Type.LOGIN, fieldItem.getTextRepresentation()));
                     }
@@ -1838,9 +1962,9 @@ public class TaskDispatcher {
             dynamicCellMap.put("creator.login", DynamicCell.of(DynamicCell.Type.STRING, task.getCreator().getLogin()));
             dynamicCellMap.put("created", DynamicCell.of(DynamicCell.Type.DATE, task.getCreated()));
             dynamicCellMap.put("updated", DynamicCell.of(DynamicCell.Type.DATE, task.getUpdated()));
-            if(Objects.equals(taskStatus, TaskStatus.CLOSE)){
+            if (Objects.equals(taskStatus, TaskStatus.CLOSE)) {
                 dynamicCellMap.put("closed", DynamicCell.of(DynamicCell.Type.DATE, task.getClosed()));
-            } else if (Objects.equals(taskStatus, TaskStatus.ACTIVE)){
+            } else if (Objects.equals(taskStatus, TaskStatus.ACTIVE)) {
                 dynamicCellMap.put("actualFrom", DynamicCell.of(DynamicCell.Type.DATE, task.getActualFrom()));
                 dynamicCellMap.put("actualTo", DynamicCell.of(DynamicCell.Type.DATE, task.getActualTo()));
             }
@@ -1992,7 +2116,8 @@ public class TaskDispatcher {
                     switch (filter.getMatchMode()) {
                         case "startsWith" -> {
                             switch (fieldType) {
-                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP, REQUEST_INITIATOR, AD_SOURCE -> {
+                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP,
+                                     REQUEST_INITIATOR, AD_SOURCE -> {
                                     filterPredicate.add(cb.and(
                                             cb.like(cb.lower(subqueryRoot.get("stringData")), value.toLowerCase() + "%"),
                                             cb.equal(subqueryRoot.get("id"), field)
@@ -2019,11 +2144,11 @@ public class TaskDispatcher {
                         }
                         case "contains" -> {
                             switch (fieldType) {
-                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP, REQUEST_INITIATOR, AD_SOURCE ->
-                                        filterPredicate.add(cb.and(
-                                                cb.like(cb.lower(subqueryRoot.get("stringData")), "%" + value.toLowerCase() + "%"),
-                                                cb.equal(subqueryRoot.get("id"), field)
-                                        ));
+                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP,
+                                     REQUEST_INITIATOR, AD_SOURCE -> filterPredicate.add(cb.and(
+                                        cb.like(cb.lower(subqueryRoot.get("stringData")), "%" + value.toLowerCase() + "%"),
+                                        cb.equal(subqueryRoot.get("id"), field)
+                                ));
                                 case PHONE_ARRAY -> {
                                     String preparedString = "%" + value.replaceAll("\\D", "") + "%";
                                     filterPredicate.add(
@@ -2045,7 +2170,8 @@ public class TaskDispatcher {
                         }
                         case "notContains" -> {
                             switch (fieldType) {
-                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP, REQUEST_INITIATOR, AD_SOURCE -> {
+                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP,
+                                     REQUEST_INITIATOR, AD_SOURCE -> {
                                     filterPredicate.add(cb.and(
                                             cb.notLike(cb.lower(subqueryRoot.get("stringData")), "%" + value.toLowerCase() + "%"),
                                             cb.equal(subqueryRoot.get("id"), field)
@@ -2072,7 +2198,8 @@ public class TaskDispatcher {
                         }
                         case "endsWith" -> {
                             switch (fieldType) {
-                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP, REQUEST_INITIATOR, AD_SOURCE -> {
+                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP,
+                                     REQUEST_INITIATOR, AD_SOURCE -> {
                                     filterPredicate.add(cb.and(
                                             cb.like(cb.lower(subqueryRoot.get("stringData")), "%" + value.toLowerCase()),
                                             cb.equal(subqueryRoot.get("id"), field)
@@ -2099,7 +2226,8 @@ public class TaskDispatcher {
                         }
                         case "equals" -> {
                             switch (fieldType) {
-                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP, REQUEST_INITIATOR, AD_SOURCE -> {
+                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP,
+                                     REQUEST_INITIATOR, AD_SOURCE -> {
                                     filterPredicate.add(cb.and(
                                             cb.equal(cb.lower(subqueryRoot.get("stringData")), value.toLowerCase()),
                                             cb.equal(subqueryRoot.get("id"), field)
@@ -2140,7 +2268,8 @@ public class TaskDispatcher {
                         }
                         case "notEquals" -> {
                             switch (fieldType) {
-                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP, REQUEST_INITIATOR, AD_SOURCE -> {
+                                case LARGE_TEXT, LOGIN, SMALL_TEXT, CONNECTION_TYPE, COUNTING_LIVES, IP,
+                                     REQUEST_INITIATOR, AD_SOURCE -> {
                                     filterPredicate.add(cb.and(
                                             cb.notEqual(cb.lower(subqueryRoot.get("stringData")), value.toLowerCase()),
                                             cb.equal(subqueryRoot.get("id"), field)
@@ -2206,6 +2335,137 @@ public class TaskDispatcher {
         return fieldPredicates;
     }
 
+    public List<DashboardItem> getDashboard() {
+        List<Wireframe> wireframes = wireframeRepository.findAllByDeletedIsFalse(Sort.by(Sort.Order.asc("name")));
+        List<TaskTag> taskTags = taskTagRepository.findAllByDeletedIsFalse(Sort.by(Sort.Order.asc("name")));
+        TimeFrame[] scheduledTaskTimeFrames = new TimeFrame[]{TimeFrame.TODAY, TimeFrame.TOMORROW, TimeFrame.THIS_WEEK,
+                TimeFrame.NEXT_WEEK, TimeFrame.THIS_MONTH, TimeFrame.NEXT_MONTH};
+        TimeFrame[] closedTaskTimeFrames = new TimeFrame[]{TimeFrame.TODAY, TimeFrame.YESTERDAY, TimeFrame.THIS_WEEK,
+                TimeFrame.THIS_MONTH, TimeFrame.LAST_WEEK, TimeFrame.LAST_MONTH};
+
+        List<DashboardItem> dashboardItems = new ArrayList<>();
+
+        for (Wireframe wireframe : wireframes) {
+            List<TaskStage> stages = wireframe.getStages();
+            final DashboardItem dashboardItem = DashboardItem.of(wireframe);
+            dashboardItems.add(dashboardItem);
+            for (TaskStatus status : TaskStatus.values()) {
+                if(status == TaskStatus.ACTIVE) {
+                    DashboardItem.TaskStatusItem activeStatusItem = DashboardItem.TaskStatusItem.of(status, FiltrationConditions.SchedulingType.EXCEPT_PLANNED);
+                    FiltrationConditions activeFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, wireframe);
+                    Long activeCount = taskCounterCache.get(activeFC);
+                    activeStatusItem.setUpdatePath(activeFC.getId());
+                    activeStatusItem.setCount(activeCount);
+
+                    DashboardItem.TaskStatusItem scheduledStatusItem = DashboardItem.TaskStatusItem.of(status, FiltrationConditions.SchedulingType.PLANNED);
+                    FiltrationConditions scheduledFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.PLANNED, TaskStatus.ACTIVE, wireframe);
+                    Long scheduledCount = taskCounterCache.get(scheduledFC);
+                    scheduledStatusItem.setUpdatePath(scheduledFC.getId());
+                    scheduledStatusItem.setCount(scheduledCount);
+                    DashboardItem.TaskStatusItem deadlineStatusItem = DashboardItem.TaskStatusItem.of(status, FiltrationConditions.SchedulingType.DEADLINE);
+
+                    dashboardItem.getActiveTasks().add(activeStatusItem);
+                    dashboardItem.getScheduledTasks().add(scheduledStatusItem);
+                    dashboardItem.getDeadlinesTasks().add(deadlineStatusItem);
+
+                    for (TaskStage stage : stages) {
+                        List<TaskTypeDirectory> directories = stage.getDirectories();
+                        DashboardItem.TypeItem activeStatusTypeItem = DashboardItem.TypeItem.of(stage);
+                        FiltrationConditions activeTypeFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, wireframe, stage);
+                        Long activeTypeCount = taskCounterCache.get(activeTypeFC);
+                        activeStatusTypeItem.setUpdatePath(activeTypeFC.getId());
+                        activeStatusTypeItem.setCount(activeTypeCount);
+                        DashboardItem.TypeItem scheduledStatusTypeItem = DashboardItem.TypeItem.of(stage);
+                        FiltrationConditions scheduledTypeFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.PLANNED, TaskStatus.ACTIVE, wireframe, stage);
+                        Long scheduledTypeCount = taskCounterCache.get(scheduledTypeFC);
+                        scheduledStatusTypeItem.setUpdatePath(scheduledTypeFC.getId());
+                        scheduledStatusTypeItem.setCount(scheduledTypeCount);
+                        DashboardItem.TypeItem deadlineStatusTypeItem = DashboardItem.TypeItem.of(stage);
+                        activeStatusItem.getTypesItems().add(activeStatusTypeItem);
+                        scheduledStatusItem.getTypesItems().add(scheduledStatusTypeItem);
+                        deadlineStatusItem.getTypesItems().add(deadlineStatusTypeItem);
+
+                        for (TimeFrame timeFrame : scheduledTaskTimeFrames) {
+                            DashboardItem.TimeFrameItem timeFrameItem = DashboardItem.TimeFrameItem.of(timeFrame);
+                            FiltrationConditions timeFrameFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.PLANNED, status, wireframe, stage, FiltrationConditions.TimeFrameType.SCHEDULE, timeFrame);
+                            Long activeStatusTimeFrameCount = taskCounterCache.get(timeFrameFC);
+                            timeFrameItem.setUpdatePath(timeFrameFC.getId());
+                            timeFrameItem.setCount(activeStatusTimeFrameCount);
+                            scheduledStatusTypeItem.getTimeFramesItems().add(timeFrameItem);
+                            for(TaskTag tag : taskTags) {
+                                DashboardItem.TagItem tagItem = DashboardItem.TagItem.of(tag);
+                                FiltrationConditions tagFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.PLANNED, status, wireframe, stage, FiltrationConditions.TimeFrameType.SCHEDULE, timeFrame, tag);
+                                Long tagCount = taskCounterCache.get(tagFC);
+                                tagItem.setUpdatePath(tagFC.getId());
+                                tagItem.setCount(tagCount);
+                                timeFrameItem.getTagsItems().add(tagItem);
+                            }
+                        }
+
+                        for(TaskTypeDirectory directory : directories) {
+                            DashboardItem.DirectoryItem directoryItem = DashboardItem.DirectoryItem.of(directory);
+                            FiltrationConditions directoryFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, status, wireframe, stage, directory);
+                            Long directoryCount = taskCounterCache.get(directoryFC);
+                            directoryItem.setUpdatePath(directoryFC.getId());
+                            directoryItem.setCount(directoryCount);
+                            activeStatusTypeItem.getDirectoriesItems().add(directoryItem);
+                            for(TaskTag tag : taskTags) {
+                                DashboardItem.TagItem tagItem = DashboardItem.TagItem.of(tag);
+                                FiltrationConditions tagFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, status, wireframe, stage, directory, tag);
+                                Long tagCount = taskCounterCache.get(tagFC);
+                                tagItem.setUpdatePath(tagFC.getId());
+                                tagItem.setCount(tagCount);
+                                directoryItem.getTagsItems().add(tagItem);
+                            }
+                        }
+                    }
+                }
+                if(status == TaskStatus.PROCESSING) {
+                    DashboardItem.TaskStatusItem processingStatusItem = DashboardItem.TaskStatusItem.of(status, FiltrationConditions.SchedulingType.UNSCHEDULED);
+                    FiltrationConditions processingFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, TaskStatus.PROCESSING, wireframe);
+                    Long processingCount = taskCounterCache.get(processingFC);
+                    processingStatusItem.setUpdatePath(processingFC.getId());
+                    processingStatusItem.setCount(processingCount);
+                    dashboardItem.getProcessedTasks().add(processingStatusItem);
+                    for (TaskStage stage : stages) {
+                        DashboardItem.TypeItem typeItem = DashboardItem.TypeItem.of(stage);
+                        FiltrationConditions typeFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, TaskStatus.PROCESSING, wireframe, stage);
+                        Long typeCount = taskCounterCache.get(typeFC);
+                        typeItem.setUpdatePath(typeFC.getId());
+                        typeItem.setCount(typeCount);
+                        processingStatusItem.getTypesItems().add(typeItem);
+                    }
+                }
+                if(status == TaskStatus.CLOSE) {
+                    DashboardItem.TaskStatusItem closeStatusItem = DashboardItem.TaskStatusItem.of(status, FiltrationConditions.SchedulingType.UNSCHEDULED);
+                    FiltrationConditions closeFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, wireframe);
+                    Long closeCount = taskCounterCache.get(closeFC);
+                    closeStatusItem.setUpdatePath(closeFC.getId());
+                    closeStatusItem.setCount(closeCount);
+                    dashboardItem.getClosedTasks().add(closeStatusItem);
+                    for (TaskStage stage : stages) {
+                        DashboardItem.TypeItem typeItem = DashboardItem.TypeItem.of(stage);
+                        FiltrationConditions typeFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, wireframe, stage);
+                        Long typeCount = taskCounterCache.get(typeFC);
+                        typeItem.setUpdatePath(typeFC.getId());
+                        typeItem.setCount(typeCount);
+                        closeStatusItem.getTypesItems().add(typeItem);
+                        for(TimeFrame timeFrame : closedTaskTimeFrames) {
+                            DashboardItem.TimeFrameItem timeFrameItem = DashboardItem.TimeFrameItem.of(timeFrame);
+                            FiltrationConditions timeFrameFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, wireframe, stage, FiltrationConditions.TimeFrameType.CLOSE, timeFrame);
+                            Long timeFrameCount = taskCounterCache.get(timeFrameFC);
+                            timeFrameItem.setUpdatePath(timeFrameFC.getId());
+                            timeFrameItem.setCount(timeFrameCount);
+                            typeItem.getTimeFramesItems().add(timeFrameItem);
+                        }
+                    }
+                }
+            }
+        }
+
+        return dashboardItems;
+    }
+
     @Data
     public static class TaskRegistryRequestBody {
         private String tagMode;
@@ -2213,6 +2473,7 @@ public class TaskDispatcher {
         private List<Long> tags;
         private TablePaging paging;
     }
+
     @Data
     public static class RegistryTableEntry {
         private Long taskId;
@@ -2283,6 +2544,214 @@ public class TaskDispatcher {
         private DateRange actualFrom;
         @Nullable
         private DateRange actualTo;
+
+        public static FiltrationConditions of(SchedulingType schedulingType) {
+            FiltrationConditions conditions = new FiltrationConditions();
+            conditions.setSchedulingType(schedulingType);
+            return conditions;
+        }
+
+        public static FiltrationConditions of(SchedulingType schedulingType, TaskStatus status) {
+            FiltrationConditions conditions = new FiltrationConditions();
+            conditions.setSchedulingType(schedulingType);
+            conditions.setStatus(List.of(status));
+            return conditions;
+        }
+
+        public static FiltrationConditions of(SchedulingType schedulingType, TaskStatus status, Wireframe taskClass) {
+            FiltrationConditions conditions = new FiltrationConditions();
+            conditions.setSchedulingType(schedulingType);
+            conditions.setStatus(List.of(status));
+            conditions.setTemplate(Set.of(taskClass.getWireframeId()));
+            return conditions;
+        }
+
+        public static FiltrationConditions of(SchedulingType schedulingType, TaskStatus status, Wireframe taskClass,
+                                              TaskStage stage) {
+            FiltrationConditions conditions = new FiltrationConditions();
+            conditions.setSchedulingType(schedulingType);
+            conditions.setStatus(List.of(status));
+            conditions.setTemplate(Set.of(taskClass.getWireframeId()));
+            conditions.setStage(stage.getStageId());
+            return conditions;
+        }
+
+        public static FiltrationConditions of(SchedulingType schedulingType, TaskStatus status, Wireframe taskClass,
+                                              TaskStage stage, TaskTag tag) {
+            FiltrationConditions conditions = new FiltrationConditions();
+            conditions.setSchedulingType(schedulingType);
+            conditions.setStatus(List.of(status));
+            conditions.setTemplate(Set.of(taskClass.getWireframeId()));
+            conditions.setStage(stage.getStageId());
+            conditions.setTags(Set.of(tag.getTaskTagId()));
+            return conditions;
+        }
+
+        public static FiltrationConditions of(SchedulingType schedulingType, TaskStatus status, Wireframe taskClass,
+                                              TaskStage stage, TaskTypeDirectory directory) {
+            FiltrationConditions conditions = new FiltrationConditions();
+            conditions.setSchedulingType(schedulingType);
+            conditions.setStatus(List.of(status));
+            conditions.setTemplate(Set.of(taskClass.getWireframeId()));
+            conditions.setStage(stage.getStageId());
+            conditions.setDirectory(directory.getTaskTypeDirectoryId());
+            return conditions;
+        }
+
+        public static FiltrationConditions of(SchedulingType schedulingType, TaskStatus status, Wireframe taskClass,
+                                              TaskStage stage, TaskTypeDirectory directory, TaskTag tag) {
+            FiltrationConditions conditions = new FiltrationConditions();
+            conditions.setSchedulingType(schedulingType);
+            conditions.setStatus(List.of(status));
+            conditions.setTemplate(Set.of(taskClass.getWireframeId()));
+            conditions.setStage(stage.getStageId());
+            conditions.setDirectory(directory.getTaskTypeDirectoryId());
+            conditions.setTags(Set.of(tag.getTaskTagId()));
+            return conditions;
+        }
+
+        public static FiltrationConditions of(SchedulingType schedulingType, TaskStatus status, Wireframe taskClass,
+                                              TaskStage stage, TimeFrameType timeFrameType, TimeFrame timeFrame) {
+            FiltrationConditions conditions = new FiltrationConditions();
+            conditions.setSchedulingType(schedulingType);
+            conditions.setStatus(List.of(status));
+            conditions.setTemplate(Set.of(taskClass.getWireframeId()));
+            conditions.setStage(stage.getStageId());
+            switch (timeFrameType) {
+                case SCHEDULE -> conditions.setActualFrom(DateRange.of(timeFrame));
+                case DEADLINE -> conditions.setActualTo(DateRange.of(timeFrame));
+                case CLOSE -> conditions.setDateOfClose(DateRange.of(timeFrame));
+            }
+            return conditions;
+        }
+
+        public static FiltrationConditions of(SchedulingType schedulingType, TaskStatus status, Wireframe taskClass,
+                                              TaskStage stage, TimeFrameType timeFrameType, TimeFrame timeFrame, TaskTag tag) {
+            FiltrationConditions conditions = new FiltrationConditions();
+            conditions.setSchedulingType(schedulingType);
+            conditions.setStatus(List.of(status));
+            conditions.setTemplate(Set.of(taskClass.getWireframeId()));
+            conditions.setStage(stage.getStageId());
+            switch (timeFrameType) {
+                case SCHEDULE -> conditions.setActualFrom(DateRange.of(timeFrame));
+                case DEADLINE -> conditions.setActualTo(DateRange.of(timeFrame));
+                case CLOSE -> conditions.setDateOfClose(DateRange.of(timeFrame));
+            }
+            conditions.setTags(Set.of(tag.getTaskTagId()));
+            return conditions;
+        }
+
+        public static List<FiltrationConditions> from(Task task) {
+            List<FiltrationConditions> conditions = new ArrayList<>();
+            switch (task.getTaskStatus()) {
+                case ACTIVE -> {
+                    if (task.getActualFrom() != null) {
+                        conditions.add(FiltrationConditions.of(SchedulingType.PLANNED, TaskStatus.ACTIVE));
+                        conditions.add(FiltrationConditions.of(SchedulingType.PLANNED, TaskStatus.ACTIVE, task.getModelWireframe()));
+                        conditions.add(FiltrationConditions.of(SchedulingType.PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage()));
+                        List<TimeFrame> timeFrames = DateRange.recognizeTimeFrame(task.getActualFrom());
+                        for (TimeFrame timeFrame : timeFrames) {
+                            conditions.add(FiltrationConditions.of(SchedulingType.PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.SCHEDULE, timeFrame));
+                            for (TaskTag tag : task.getTags()) {
+                                conditions.add(FiltrationConditions.of(SchedulingType.PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.SCHEDULE, timeFrame, tag));
+                            }
+                        }
+                    } else {
+                        conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE));
+                        conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, task.getModelWireframe()));
+                        conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage()));
+                        if (task.getCurrentDirectory() != null)
+                            conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), task.getCurrentDirectory()));
+                        for (TaskTag tag : task.getTags()) {
+                            if (task.getCurrentDirectory() != null)
+                                conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), task.getCurrentDirectory(), tag));
+                            else
+                                conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), tag));
+                        }
+                        if (task.getActualTo() != null) {
+                            conditions.add(FiltrationConditions.of(SchedulingType.DEADLINE, TaskStatus.ACTIVE));
+                            conditions.add(FiltrationConditions.of(SchedulingType.DEADLINE, TaskStatus.ACTIVE, task.getModelWireframe()));
+                            conditions.add(FiltrationConditions.of(SchedulingType.DEADLINE, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage()));
+                            List<TimeFrame> timeFrames = DateRange.recognizeTimeFrame(task.getActualTo());
+                            for (TimeFrame timeFrame : timeFrames) {
+                                conditions.add(FiltrationConditions.of(SchedulingType.DEADLINE, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.DEADLINE, timeFrame));
+                                for (TaskTag tag : task.getTags()) {
+                                    conditions.add(FiltrationConditions.of(SchedulingType.DEADLINE, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.DEADLINE, timeFrame, tag));
+                                }
+                            }
+                        }
+                    }
+                }
+                case PROCESSING -> {
+                    conditions.add(FiltrationConditions.of(SchedulingType.UNSCHEDULED, TaskStatus.PROCESSING));
+                    conditions.add(FiltrationConditions.of(SchedulingType.UNSCHEDULED, TaskStatus.PROCESSING, task.getModelWireframe()));
+                    conditions.add(FiltrationConditions.of(SchedulingType.UNSCHEDULED, TaskStatus.PROCESSING, task.getModelWireframe(), task.getCurrentStage()));
+                }
+                case CLOSE -> {
+                    conditions.add(FiltrationConditions.of(SchedulingType.UNSCHEDULED, TaskStatus.CLOSE));
+                    conditions.add(FiltrationConditions.of(SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, task.getModelWireframe()));
+                    conditions.add(FiltrationConditions.of(SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, task.getModelWireframe(), task.getCurrentStage()));
+                    List<TimeFrame> timeFrames = DateRange.recognizeTimeFrame(task.getClosed());
+                    for (TimeFrame timeFrame : timeFrames) {
+                        conditions.add(FiltrationConditions.of(SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.CLOSE, timeFrame));
+                        for (TaskTag tag : task.getTags()) {
+                            conditions.add(FiltrationConditions.of(SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.CLOSE, timeFrame, tag));
+                        }
+                    }
+                }
+            }
+            return conditions;
+        }
+
+        public String getId() {
+            StringBuilder sb = new StringBuilder();
+            if (schedulingType != null) sb.append(schedulingType);
+            if (status != null && !status.isEmpty()) sb.append("/").append(status.get(0));
+            if (template != null && !template.isEmpty()) sb.append("/").append(template.stream().findFirst().get());
+            if (stage != null && !stage.isEmpty()) sb.append("/").append(stage);
+            if (directory != null && !directory.equals(0L)) sb.append("/").append(directory);
+            if (dateOfClose != null) sb.append("/").append(dateOfClose.getTimeFrame());
+            if (actualFrom != null) sb.append("/").append(actualFrom.getTimeFrame());
+            if (actualTo != null) sb.append("/").append(actualTo.getTimeFrame());
+            if (tags != null && !tags.isEmpty()) sb.append("/").append(tags.stream().findFirst().get());
+            return sb.toString();
+        }
+
+        public AbstractTaskCounterPath toPath() {
+            if (schedulingType != null) {
+                if (status != null && !status.isEmpty()) {
+                    TaskStatus taskStatus = status.get(0);
+                    if (template != null && !template.isEmpty()) {
+                        Long templateId = template.stream().findFirst().orElseThrow(() -> new IllegalStateException("Template is empty"));
+                        if (stage != null && !stage.isBlank()) {
+                            if (directory != null) {
+                                if (tags != null && !tags.isEmpty()) {
+                                    Long tagId = tags.stream().findFirst().orElseThrow(() -> new IllegalStateException("Tags is empty"));
+                                    return TaskTagPath.of(schedulingType, taskStatus, templateId, stage, tagId);
+                                }
+                                return TaskDirectoryPath.of(schedulingType, taskStatus, templateId, stage, directory);
+                            } else if (dateOfClose != null && dateOfClose.getTimeFrame() != null) {
+                                return TaskClosingDatePath.of(schedulingType, taskStatus, templateId, stage, dateOfClose.getTimeFrame());
+                            } else if (actualFrom != null && actualFrom.getTimeFrame() != null) {
+                                return TaskScheduleDatePath.of(schedulingType, taskStatus, templateId, stage, actualFrom.getTimeFrame());
+                            } else if (actualTo != null && actualTo.getTimeFrame() != null) {
+                                return TaskTermDatePath.of(schedulingType, taskStatus, templateId, stage, actualTo.getTimeFrame());
+                            }
+                            return TaskTypePath.of(schedulingType, taskStatus, templateId, stage);
+                        }
+                        return TaskClassPath.of(schedulingType, taskStatus, templateId);
+                    }
+                    if (schedulingType == SchedulingType.EXCEPT_PLANNED && taskStatus == TaskStatus.ACTIVE) {
+                        TaskStatusPath taskStatusPath = TaskStatusPath.of(schedulingType, taskStatus);
+                        AbstractTaskCounterPath testStatusPath = TaskStatusPath.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE);
+                        System.out.printf("Is equal: %s\n Objects: %s - %s\n", Objects.equals(taskStatusPath, testStatusPath), taskStatusPath, testStatusPath);
+                        return testStatusPath;
+                    }
+                    return TaskStatusPath.of(schedulingType, taskStatus);
+                }
+            }
+            throw new IllegalStateException("Scheduling type is null");
+        }
 
         public void clean() {
             Field[] fields = this.getClass().getDeclaredFields();
@@ -2398,6 +2867,23 @@ public class TaskDispatcher {
             return predicates.toArray(Predicate[]::new);
         }
 
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof FiltrationConditions that)) return false;
+            return Objects.equals(getStatus(), that.getStatus()) && Objects.equals(getTemplate(), that.getTemplate()) && Objects.equals(getTemplateFilter(), that.getTemplateFilter()) && Objects.equals(getFieldFilters(), that.getFieldFilters()) && Objects.equals(getSearchPhrase(), that.getSearchPhrase()) && Objects.equals(getAuthor(), that.getAuthor()) && Objects.equals(getAssignedEmployee(), that.getAssignedEmployee()) && Objects.equals(getDateOfCreation(), that.getDateOfCreation()) && Objects.equals(getExclusionIds(), that.getExclusionIds()) && Objects.equals(getTags(), that.getTags()) && Objects.equals(getOnlyMy(), that.getOnlyMy()) && Objects.equals(getLimit(), that.getLimit()) && Objects.equals(getPage(), that.getPage()) && Objects.equals(getStage(), that.getStage()) && Objects.equals(getDirectory(), that.getDirectory()) && getSchedulingType() == that.getSchedulingType() && Objects.equals(getDateOfClose(), that.getDateOfClose()) && Objects.equals(getActualFrom(), that.getActualFrom()) && Objects.equals(getActualTo(), that.getActualTo());
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(getStatus(), getTemplate(), getTemplateFilter(), getFieldFilters(), getSearchPhrase(), getAuthor(), getAssignedEmployee(), getDateOfCreation(), getExclusionIds(), getTags(), getOnlyMy(), getLimit(), getPage(), getStage(), getDirectory(), getSchedulingType(), getDateOfClose(), getActualFrom(), getActualTo());
+        }
+
+        @Override
+        public String toString() {
+            return "FiltrationConditions = " + getId();
+        }
+
         public enum SchedulingType {
             ALL("ALL"),
             SCHEDULED("SCHEDULED"),
@@ -2415,6 +2901,12 @@ public class TaskDispatcher {
             public String getValue() {
                 return value;
             }
+        }
+
+        public enum TimeFrameType {
+            SCHEDULE,
+            DEADLINE,
+            CLOSE
         }
     }
 
@@ -2440,11 +2932,157 @@ public class TaskDispatcher {
 
         public void execute(TaskDispatcher context) {
             for (AbstractTaskCounterPath path : paths) {
-                context.serverTimings.start("Сбор количества задач");
+//                context.serverTimings.start("Сбор количества задач");
                 context.stompController.updateTaskCounter(context.getTasksCount(path), path);
-                context.serverTimings.stop("Сбор количества задач");
+//                context.serverTimings.stop("Сбор количества задач");
             }
             context.stompController.movedTask();
+        }
+    }
+
+    @Data
+    public static class DashboardItem {
+        private Long taskClassId;
+        private String taskClassName;
+        private String updatePath;
+
+        private List<TaskStatusItem> activeTasks;
+        private List<TaskStatusItem> processedTasks;
+        private List<TaskStatusItem> closedTasks;
+        private List<TaskStatusItem> scheduledTasks;
+        private List<TaskStatusItem> deadlinesTasks;
+
+        public static DashboardItem of(Wireframe wireframe) {
+            DashboardItem item = new DashboardItem();
+            item.taskClassId = wireframe.getWireframeId();
+            item.taskClassName = wireframe.getName();
+            item.activeTasks = new ArrayList<>();
+            item.processedTasks = new ArrayList<>();
+            item.closedTasks = new ArrayList<>();
+            item.scheduledTasks = new ArrayList<>();
+            item.deadlinesTasks = new ArrayList<>();
+            return item;
+        }
+
+        @Data
+        public static class TaskStatusItem {
+            private TaskStatus status;
+            private FiltrationConditions.SchedulingType schedulingType;
+            private String statusName;
+            private Long count;
+            private String updatePath;
+
+            private List<TypeItem> typesItems;
+            private List<TagItem> tagsItems;
+
+            public static TaskStatusItem of(TaskStatus status, FiltrationConditions.SchedulingType schedulingType) {
+                TaskStatusItem item = new TaskStatusItem();
+                item.status = status;
+                item.schedulingType = schedulingType;
+                switch (status) {
+                    case ACTIVE -> {
+                        switch (schedulingType) {
+                            case EXCEPT_PLANNED -> item.statusName = "Активные";
+                            case PLANNED -> item.statusName = "Запланированные";
+                            case DEADLINE -> item.statusName = "Срок";
+                        }
+                    }
+                    case PROCESSING -> item.statusName = "У монтажников";
+                    case CLOSE -> item.statusName = "Закрытые";
+                }
+                item.count = 0L;
+                item.typesItems = new ArrayList<>();
+                item.tagsItems = new ArrayList<>();
+                return item;
+            }
+        }
+
+        @Data
+        public static class TypeItem {
+            private String typeId;
+            private String typeName;
+            private Long count;
+            private String updatePath;
+
+            private List<DirectoryItem> directoriesItems;
+            private List<TimeFrameItem> timeFramesItems;
+            private List<TagItem> tagsItems;
+
+            public static TypeItem of(TaskStage type) {
+                TypeItem item = new TypeItem();
+                item.typeId = type.getStageId();
+                item.typeName = type.getLabel();
+                item.count = 0L;
+                item.directoriesItems = new ArrayList<>();
+                item.timeFramesItems = new ArrayList<>();
+                item.tagsItems = new ArrayList<>();
+                return item;
+            }
+        }
+
+        @Data
+        public static class DirectoryItem {
+            private Long directoryId;
+            private String directoryName;
+            private Long count;
+            private String updatePath;
+
+            private List<TagItem> tagsItems;
+
+            public static DirectoryItem of(TaskTypeDirectory directory) {
+                DirectoryItem item = new DirectoryItem();
+                item.directoryId = directory.getTaskTypeDirectoryId();
+                item.directoryName = directory.getName();
+                item.count = 0L;
+                item.tagsItems = new ArrayList<>();
+                return item;
+            }
+        }
+
+        @Data
+        public static class TimeFrameItem {
+            private TimeFrame timeFrame;
+            private String timeFrameName;
+            private Long count;
+            private String updatePath;
+
+            private List<TagItem> tagsItems;
+
+            public static TimeFrameItem of(TimeFrame timeFrame) {
+                TimeFrameItem item = new TimeFrameItem();
+                item.timeFrame = timeFrame;
+                switch (timeFrame) {
+                    case TODAY -> item.timeFrameName = "Сегодня";
+                    case TOMORROW -> item.timeFrameName = "Завтра";
+                    case YESTERDAY -> item.timeFrameName = "Вчера";
+                    case THIS_WEEK -> item.timeFrameName = "На этой неделе";
+                    case THIS_MONTH -> item.timeFrameName = "В этом месяце";
+                    case LAST_WEEK -> item.timeFrameName = "На прошлой неделе";
+                    case LAST_MONTH -> item.timeFrameName = "В прошлом месяце";
+                    case NEXT_WEEK -> item.timeFrameName = "На следующей неделе";
+                    case NEXT_MONTH -> item.timeFrameName = "В следующем месяце";
+                }
+                item.count = 0L;
+                item.tagsItems = new ArrayList<>();
+                return item;
+            }
+        }
+
+        @Data
+        public static class TagItem {
+            private Long tagId;
+            private String tagName;
+            private String color;
+            private Long count;
+            private String updatePath;
+
+            public static TagItem of(TaskTag tag) {
+                TagItem item = new TagItem();
+                item.tagId = tag.getTaskTagId();
+                item.tagName = tag.getName();
+                item.color = tag.getColor();
+                return item;
+            }
         }
     }
 }

@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.util.List;
+import java.util.Objects;
 
 @Getter
 @Setter
@@ -29,5 +30,22 @@ public class TaskStatusPath extends TaskSchedulingTypePath {
         condition.setSchedulingType(schedulingType);
         condition.setStatus(List.of(taskStatus));
         return condition;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TaskStatusPath that)) return false;
+        return Objects.equals(getTaskStatus(), that.getTaskStatus());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(getTaskStatus());
+    }
+
+    @Override
+    public String toString() {
+        return super.toString() + ", taskStatus: " + getTaskStatus();
     }
 }

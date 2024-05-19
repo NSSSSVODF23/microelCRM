@@ -346,6 +346,21 @@ public class BillingRequestController {
         return ResponseEntity.ok().build();
     }
 
+    @GetMapping("user/{login}/password")
+    public ResponseEntity<String> getPassword(@PathVariable String login, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base1783 base = ApiBillingController.createBase1783Session(employee);
+        base.login();
+
+        base.selectTargetUser(login);
+        String password = base.getUserPassword(login);
+
+        base.logout();
+
+        return ResponseEntity.ok(password);
+    }
+
     @PatchMapping("user/{login}/change/full-name")
     public ResponseEntity<Void> changeFullName(@PathVariable String login, @RequestBody String fullName, HttpServletRequest request){
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);

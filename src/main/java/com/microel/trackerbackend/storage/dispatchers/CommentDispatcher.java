@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.dispatchers;
 
+import com.microel.trackerbackend.misc.Async;
 import com.microel.trackerbackend.misc.sorting.TaskJournalSortingTypes;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.oldtracker.OldTrackerRequestFactory;
@@ -22,7 +23,6 @@ import com.microel.trackerbackend.storage.repositories.CommentRepository;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
@@ -31,9 +31,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
-import java.util.Collections;
-import java.util.Collections;
-import java.util.Collections;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -59,8 +56,8 @@ public class CommentDispatcher {
 
     public Page<CommentDto> getComments(Long taskId, Long offset, Integer limit, @Nullable TaskJournalSortingTypes sortingTypes) {
         Sort sort = Sort.by(Sort.Direction.DESC, "created");
-        if(sortingTypes != null)
-            switch (sortingTypes){
+        if (sortingTypes != null)
+            switch (sortingTypes) {
                 case CREATE_DATE_ASC -> sort = Sort.by(Sort.Direction.ASC, "created");
                 case CREATE_DATE_DESC -> sort = Sort.by(Sort.Direction.DESC, "created");
             }
@@ -72,13 +69,13 @@ public class CommentDispatcher {
         Task targetTask = taskDispatcher.getTask(data.getTaskId());
 
         Comment replyComment = null;
-        if(data.getReplyComment()!=null) {
+        if (data.getReplyComment() != null) {
             replyComment = commentRepository.findById(data.getReplyComment()).orElse(null);
         }
 
         List<Attachment> attachments = new ArrayList<>();
 
-        if (data.getFiles().size() > 0) {
+        if (!data.getFiles().isEmpty()) {
             attachments = attachmentDispatcher.saveAttachments(data.getFiles());
         }
 
@@ -96,7 +93,7 @@ public class CommentDispatcher {
         );
 
         targetTask.getLastComments().add(comment);
-        if(targetTask.getLastComments().size() > 5)
+        if (targetTask.getLastComments().size() > 5)
             targetTask.getLastComments().remove(0);
 
         Task savedTask = taskDispatcher.unsafeSave(targetTask);
@@ -104,14 +101,17 @@ public class CommentDispatcher {
         stompController.createComment(Objects.requireNonNull(CommentMapper.toDto(comment), "Созданные комментарий равен null"), targetTask.getTaskId().toString());
         stompController.updateTask(savedTask);
 
-        if(currentUser.isHasOldTrackerCredentials() && targetTask.getOldTrackerTaskId() != null){
-            try {
-                OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(currentUser.getOldTrackerCredentials().getUsername(), currentUser.getOldTrackerCredentials().getPassword());
-                requestFactory.createComment(targetTask.getOldTrackerTaskId(), comment.getMessage()).execute();
-                requestFactory.close().execute();
-            }catch (Exception ignored){
-                System.out.println("Не удалось оставить комментарий в старом трекере");
-            }
+        if (currentUser.isHasOldTrackerCredentials() && targetTask.getOldTrackerTaskId() != null) {
+            Async.of(() -> {
+                    try {
+                        OldTrackerRequestFactory requestFactory = new OldTrackerRequestFactory(currentUser.getOldTrackerCredentials().getUsername(), currentUser.getOldTrackerCredentials().getPassword());
+                        requestFactory.createComment(targetTask.getOldTrackerTaskId(), comment.getMessage()).execute();
+                        requestFactory.close().execute();
+                    } catch (Exception ignored) {
+                        System.out.println("Не удалось оставить комментарий в старом трекере");
+                    }
+                }
+            );
         }
 
         return comment;
@@ -189,7 +189,7 @@ public class CommentDispatcher {
     }
 
     @Transactional
-    public void setLastCommentsToTask(Task task){
+    public void setLastCommentsToTask(Task task) {
         Page<Comment> taskComments = commentRepository.findAll((root, query, cb) -> {
             return cb.and(cb.equal(root.get("parent"), task), cb.isFalse(root.get("deleted")));
         }, PageRequest.of(0, 5, Sort.by(Sort.Direction.DESC, "created")));

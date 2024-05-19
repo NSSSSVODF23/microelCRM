@@ -2,10 +2,12 @@ package com.microel.trackerbackend.misc.task.counting;
 
 import com.microel.trackerbackend.storage.dispatchers.TaskDispatcher;
 import com.microel.trackerbackend.storage.entities.task.TaskStatus;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 @Getter
@@ -31,5 +33,22 @@ public class TaskClassPath extends TaskStatusPath {
         condition.setStatus(List.of(taskStatus));
         condition.setTemplate(taskClassId == null ? null : Set.of(taskClassId));
         return condition;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TaskClassPath that)) return false;
+        return Objects.equals(getTaskClassId(), that.getTaskClassId());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(getTaskClassId());
+    }
+
+    @Override
+    public String toString() {
+        return super.toString() + ", taskClassId=" + taskClassId;
     }
 }

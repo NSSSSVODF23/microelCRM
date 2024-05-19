@@ -1,5 +1,7 @@
 package com.microel.trackerbackend.services.api;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.tdo.pon.Worker;
 import com.microel.tdo.pon.events.OntStatusChangeEvent;
 import com.microel.tdo.pon.schema.events.PonSchemeChangeEvent;
@@ -7,6 +9,7 @@ import com.microel.tdo.pon.terminal.OpticalNetworkTerminal;
 import com.microel.trackerbackend.misc.*;
 import com.microel.trackerbackend.misc.task.counting.*;
 import com.microel.trackerbackend.services.RemoteTelnetService;
+import com.microel.trackerbackend.services.ServerTimings;
 import com.microel.trackerbackend.services.api.controllers.ProxyRemoteConnectionController;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
@@ -19,6 +22,7 @@ import com.microel.trackerbackend.services.MonitoringService;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
 import com.microel.trackerbackend.services.external.acp.types.Switch;
 import com.microel.trackerbackend.services.external.billing.ApiBillingController;
+import com.microel.trackerbackend.storage.dispatchers.TaskDispatcher;
 import com.microel.trackerbackend.storage.dispatchers.TemperatureSensorsDispatcher;
 import com.microel.trackerbackend.storage.dto.chat.ChatDto;
 import com.microel.trackerbackend.storage.dto.comment.CommentDto;
@@ -50,6 +54,8 @@ import org.springframework.stereotype.Controller;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Controller
 public class StompController {
@@ -57,6 +63,15 @@ public class StompController {
 
     public StompController(SimpMessagingTemplate stompBroker) {
         this.stompBroker = stompBroker;
+    }
+
+    private void sendAllAsync(Object payload, String... patch) {
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        executorService.execute(() -> {
+            String destination = String.join("/", patch);
+            stompBroker.convertAndSend(StompConfig.SIMPLE_BROKER_PREFIX + "/" + destination, payload);
+        });
+        executorService.shutdown();
     }
 
     private void sendAll(Object payload, String... patch) {
@@ -67,6 +82,15 @@ public class StompController {
     private void sendToUser(String login, Object payload, String... patch) {
         String destination = String.join("/", patch);
         stompBroker.convertAndSendToUser(login, destination, payload);
+    }
+
+    private void sendToUserAsync(String login, Object payload, String... patch) {
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        executorService.execute(() -> {
+            String destination = String.join("/", patch);
+            stompBroker.convertAndSendToUser(login, destination, payload);
+        });
+        executorService.shutdown();
     }
 
     public void createTask(Task task) {
@@ -105,6 +129,13 @@ public class StompController {
                     classPath.getTaskClassId());
         else if (path instanceof TaskStatusPath statusPath)
             sendAll(count, "task", "counter", statusPath.getSchedulingType(), statusPath.getTaskStatus());
+    }
+
+    public void updateCachedTaskCounter(Long count, TaskDispatcher.FiltrationConditions conditions){
+        sendAll(Map.of(
+                "count", count,
+                "conditions", conditions
+        ), "task", "cached", "counter");
     }
 
     public void movedTask(){

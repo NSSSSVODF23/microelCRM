@@ -4,6 +4,7 @@ import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.controllers.telegram.TelegramMessageFactory;
 import com.microel.trackerbackend.misc.BypassWorkCalculationForm;
 import com.microel.trackerbackend.services.FilesWatchService;
+import com.microel.trackerbackend.services.ServerTimings;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.oldtracker.OldTrackerService;
@@ -636,7 +637,18 @@ public class WorkLogDispatcher {
 
     @Transactional
     public void remove(WorkLog workLog) {
+        ServerTimings serverTimings = new ServerTimings();
+        serverTimings.start("removeWorkLog");
+        workLog.getComments().forEach(comment -> comment.getWorkLogs().remove(workLog));
+        workLog.getComments().clear();
+//        workLog.getConcludedContracts().clear();
+//        workLog.getWorkCalculations().clear();
+        workLog.getEmployees().clear();
+        workLog.getTargetFiles().clear();
+//        workLog.getWorkReports().clear();
+        WorkLog save = workLogRepository.save(workLog);
         workLogRepository.delete(workLog);
+        serverTimings.stop("removeWorkLog");
     }
 
     public WorkLog getByChatId(Long chatId) {

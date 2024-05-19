@@ -4,10 +4,12 @@ import com.microel.trackerbackend.misc.TimeFrame;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.storage.dispatchers.TaskDispatcher;
 import com.microel.trackerbackend.storage.entities.task.TaskStatus;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 @Getter
@@ -35,5 +37,23 @@ public class TaskClosingDatePath extends TaskTypePath {
         condition.setStage(taskTypeId);
         condition.setDateOfClose(DateRange.of(dateOfClose));
         return condition;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TaskClosingDatePath that)) return false;
+        if (!super.equals(o)) return false;
+        return Objects.equals(getDateOfClose(), that.getDateOfClose());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), getDateOfClose());
+    }
+
+    @Override
+    public String toString() {
+        return super.toString() + ", dateOfClose: " + getDateOfClose();
     }
 }

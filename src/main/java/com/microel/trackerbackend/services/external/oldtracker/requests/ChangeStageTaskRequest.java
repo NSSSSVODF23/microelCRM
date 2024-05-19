@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Data
 public class ChangeStageTaskRequest implements OldTrackerRequest<Void> {
@@ -34,14 +36,13 @@ public class ChangeStageTaskRequest implements OldTrackerRequest<Void> {
             body.put("force_save", "1");
             body.put("obji_action", "0");
             body.put("doc_id", "0");
-            Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=show_obji&obji="+taskId+"&from_cat=1")
+            Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=show_obji&obji=" + taskId + "&from_cat=1")
                     .headers(headers).cookies(cookies).data(body).method(Connection.Method.POST).execute();
             for (OldTrackerRequestFactory.FieldData field : fields) {
                 body.put(field.getFieldName(), field.getData());
             }
-            Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=show_obji&obji="+taskId+"&from_cat=1")
+            Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=show_obji&obji=" + taskId + "&from_cat=1")
                     .headers(headers).cookies(cookies).data(body).method(Connection.Method.POST).timeout(10000).execute();
-            return null;
         } catch (Exception e) {
             System.out.println("Не удалось изменить стадию задачи в старом трекере");
         }

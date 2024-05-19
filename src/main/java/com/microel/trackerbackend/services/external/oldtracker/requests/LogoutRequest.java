@@ -10,6 +10,8 @@ import org.jsoup.nodes.Document;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,7 +26,6 @@ public class LogoutRequest implements OldTrackerRequest<Void> {
     public Void execute() {
         try {
             Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=logout").headers(headers).cookies(cookies).method(Connection.Method.GET).timeout(15000).execute();
-            return null;
         } catch (Exception e) {
             System.out.println("Не удалось logout из старого трекера");
         }

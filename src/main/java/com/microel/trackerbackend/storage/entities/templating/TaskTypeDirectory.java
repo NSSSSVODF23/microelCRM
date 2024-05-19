@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.entities.templating;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.storage.entities.templating.documents.DocumentTemplate;
 import lombok.*;
@@ -19,6 +20,9 @@ public class TaskTypeDirectory {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long taskTypeDirectoryId;
     private String name;
+    @ManyToOne
+    @JsonIgnore
+    private TaskStage stage;
     @Nullable
     private String description;
     @Nullable

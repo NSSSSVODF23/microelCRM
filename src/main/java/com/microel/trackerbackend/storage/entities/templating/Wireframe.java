@@ -42,8 +42,7 @@ public class Wireframe {
     @Type(type = "json")
     @Column(columnDefinition = "jsonb")
     private List<StepItem> steps;
-    @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
-    @JoinColumn(name = "f_wireframe_id")
+    @OneToMany(mappedBy = "wireframe", cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @BatchSize(size = 25)
     @OrderBy(value="orderIndex")
     private List<TaskStage> stages;
@@ -63,6 +62,17 @@ public class Wireframe {
     @JoinColumn(name = "f_wireframe_id")
     @BatchSize(size = 25)
     private List<DocumentTemplate> documentTemplates;
+
+    public void setStages(List<TaskStage> stages) {
+        if(stages == null){
+            this.stages = new ArrayList<>();
+            return;
+        }
+        for(TaskStage stage : stages){
+            if(stage.getWireframe() == null) stage.setWireframe(this);
+        }
+        this.stages = stages;
+    }
 
     public void setDefaultObservers(List<DefaultObserver> newObservers) {
         if(newObservers == null) return;

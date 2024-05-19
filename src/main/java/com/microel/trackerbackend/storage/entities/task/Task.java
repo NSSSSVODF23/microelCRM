@@ -23,15 +23,13 @@ import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import com.microel.trackerbackend.storage.entities.templating.oldtracker.fields.*;
 import lombok.*;
-import org.hibernate.annotations.*;
+import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import org.javatuples.Pair;
 import org.springframework.lang.Nullable;
 
 import javax.persistence.*;
-import javax.persistence.CascadeType;
-import javax.persistence.Entity;
-import javax.persistence.OrderBy;
-import javax.persistence.Table;
 import java.sql.Timestamp;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -148,62 +146,100 @@ public class Task {
     private List<WorkLog> workLogs;
 
     @JsonIgnore
-    public String getClassName(){
-        if(getModelWireframe() != null){
+    public String getShortDescription() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getModelWireframe().getName())
+                .append(" - ")
+                .append(getCurrentStage().getLabel());
+        if (getCurrentDirectory() != null) {
+            sb.append(" (")
+                    .append(getCurrentDirectory().getName())
+                    .append(")");
+        }
+        ModelItem addressItem = getFields().stream()
+                .filter(item -> item.getWireframeFieldType() == WireframeFieldType.ADDRESS)
+                .findFirst().orElse(null);
+        if (addressItem != null &&
+                addressItem.getAddressData() != null &&
+                addressItem.getAddressData().getAddressName() != null &&
+                !addressItem.getAddressData().getAddressName().isBlank()) {
+            sb.append(" • ")
+                    .append(addressItem.getAddressData().getAddressName());
+        } else {
+            ModelItem shortTextItem = getFields().stream()
+                    .filter(item -> item.getWireframeFieldType() == WireframeFieldType.SMALL_TEXT)
+                    .findFirst().orElse(null);
+            if (shortTextItem != null &&
+                    shortTextItem.getStringData() != null &&
+                    !shortTextItem.getStringData().isBlank()) {
+                sb.append(" • ")
+                        .append(shortTextItem.getStringData());
+            } else if (!getLastComments().isEmpty()) {
+                Comment comment = getLastComments().get(0);
+                sb.append(" • ")
+                        .append(comment.getSimpleText());
+            }
+        }
+        return sb.toString();
+    }
+
+    @JsonIgnore
+    public String getClassName() {
+        if (getModelWireframe() != null) {
             return getModelWireframe().getName();
         }
         return "Неизвестно";
     }
 
     @JsonIgnore
-    public String getTypeName(){
-        if(getCurrentStage() != null){
+    public String getTypeName() {
+        if (getCurrentStage() != null) {
             return getCurrentStage().getLabel();
         }
         return "Неизвестно";
     }
 
     @JsonIgnore
-    public List<AbstractTaskCounterPath> getListOfCounterPaths(){
+    public List<AbstractTaskCounterPath> getListOfCounterPaths() {
         TimeFrame[] closeTaskTimeFrames = new TimeFrame[]{TimeFrame.TODAY, TimeFrame.YESTERDAY, TimeFrame.LAST_WEEK,
                 TimeFrame.THIS_WEEK, TimeFrame.LAST_MONTH, TimeFrame.THIS_MONTH};
         TimeFrame[] scheduledTaskTimeFrames = new TimeFrame[]{TimeFrame.TODAY, TimeFrame.TOMORROW, TimeFrame.THIS_WEEK,
                 TimeFrame.NEXT_WEEK, TimeFrame.THIS_MONTH, TimeFrame.NEXT_MONTH};
         List<AbstractTaskCounterPath> collect = new ArrayList<>();
-        if(getTaskStatus() != null){
-            switch (getTaskStatus()){
+        if (getTaskStatus() != null) {
+            switch (getTaskStatus()) {
                 case ACTIVE -> {
-                    if(getActualFrom() == null){
+                    if (getActualFrom() == null) {
                         collect.add(TaskStatusPath.of(SchedulingType.EXCEPT_PLANNED, getTaskStatus()));
-                        if(getModelWireframe() != null){
+                        if (getModelWireframe() != null) {
                             collect.add(TaskClassPath.of(SchedulingType.EXCEPT_PLANNED, getTaskStatus(), getModelWireframe().getWireframeId()));
-                            if(getCurrentStage() != null){
+                            if (getCurrentStage() != null) {
                                 collect.add(TaskTypePath.of(SchedulingType.EXCEPT_PLANNED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId()));
-                                if(getCurrentDirectory() != null){
+                                if (getCurrentDirectory() != null) {
                                     collect.add(TaskDirectoryPath.of(SchedulingType.EXCEPT_PLANNED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId(), getCurrentDirectory().getTaskTypeDirectoryId()));
                                 }
                             }
                         }
-                    }else{
+                    } else {
                         collect.add(TaskStatusPath.of(SchedulingType.PLANNED, getTaskStatus()));
-                        if(getModelWireframe() != null){
+                        if (getModelWireframe() != null) {
                             collect.add(TaskClassPath.of(SchedulingType.PLANNED, getTaskStatus(), getModelWireframe().getWireframeId()));
-                            if(getCurrentStage() != null){
+                            if (getCurrentStage() != null) {
                                 collect.add(TaskTypePath.of(SchedulingType.PLANNED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId()));
-                                for(TimeFrame timeFrame : scheduledTaskTimeFrames){
+                                for (TimeFrame timeFrame : scheduledTaskTimeFrames) {
                                     collect.add(TaskScheduleDatePath.of(SchedulingType.PLANNED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId(), timeFrame));
                                 }
                             }
                         }
                     }
 
-                    if(getActualTo() != null){
+                    if (getActualTo() != null) {
                         collect.add(TaskStatusPath.of(SchedulingType.DEADLINE, getTaskStatus()));
-                        if(getModelWireframe() != null){
+                        if (getModelWireframe() != null) {
                             collect.add(TaskClassPath.of(SchedulingType.DEADLINE, getTaskStatus(), getModelWireframe().getWireframeId()));
-                            if(getCurrentStage() != null){
+                            if (getCurrentStage() != null) {
                                 collect.add(TaskTypePath.of(SchedulingType.DEADLINE, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId()));
-                                for(TimeFrame timeFrame : scheduledTaskTimeFrames){
+                                for (TimeFrame timeFrame : scheduledTaskTimeFrames) {
                                     collect.add(TaskTermDatePath.of(SchedulingType.DEADLINE, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId(), timeFrame));
                                 }
                             }
@@ -212,20 +248,20 @@ public class Task {
                 }
                 case PROCESSING -> {
                     collect.add(TaskClassPath.of(SchedulingType.UNSCHEDULED, getTaskStatus()));
-                    if(getModelWireframe() != null){
+                    if (getModelWireframe() != null) {
                         collect.add(TaskClassPath.of(SchedulingType.UNSCHEDULED, getTaskStatus(), getModelWireframe().getWireframeId()));
-                        if(getCurrentStage() != null){
+                        if (getCurrentStage() != null) {
                             collect.add(TaskTypePath.of(SchedulingType.UNSCHEDULED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId()));
                         }
                     }
                 }
                 case CLOSE -> {
                     collect.add(TaskClassPath.of(SchedulingType.UNSCHEDULED, getTaskStatus()));
-                    if(getModelWireframe() != null){
+                    if (getModelWireframe() != null) {
                         collect.add(TaskClassPath.of(SchedulingType.UNSCHEDULED, getTaskStatus(), getModelWireframe().getWireframeId()));
-                        if(getCurrentStage() != null){
+                        if (getCurrentStage() != null) {
                             collect.add(TaskTypePath.of(SchedulingType.UNSCHEDULED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId()));
-                            for(TimeFrame timeFrame : closeTaskTimeFrames){
+                            for (TimeFrame timeFrame : closeTaskTimeFrames) {
                                 collect.add(TaskClosingDatePath.of(SchedulingType.UNSCHEDULED, getTaskStatus(), getModelWireframe().getWireframeId(), getCurrentStage().getStageId(), timeFrame));
                             }
                         }
@@ -273,21 +309,19 @@ public class Task {
 
     @Override
     public String toString() {
-        final StringBuilder sb = new StringBuilder("Задача {");
-        sb.append("taskId=").append(taskId);
-        sb.append(", Создана=").append(created);
-        sb.append(", Статус=").append(taskStatus);
-        sb.append(", Шаблон=").append(modelWireframe);
-        sb.append(", Поля=").append(fields);
-        sb.append('}');
-        return sb.toString();
+        String sb = "Задача {" + "taskId=" + taskId +
+                ", Создана=" + created +
+                ", Статус=" + taskStatus +
+                ", Шаблон=" + modelWireframe +
+                ", Поля=" + fields +
+                '}';
+        return sb;
     }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (!(o instanceof Task)) return false;
-        Task task = (Task) o;
+        if (!(o instanceof Task task)) return false;
         return Objects.equals(getTaskId(), task.getTaskId());
     }
 
@@ -351,7 +385,7 @@ public class Task {
     }
 
     public void appendEvent(TaskEvent taskEvent) {
-        if(getTaskEvents() == null)
+        if (getTaskEvents() == null)
             setTaskEvents(new ArrayList<>());
         getTaskEvents().add(taskEvent);
     }
@@ -448,25 +482,25 @@ public class Task {
                                         Utils.stringConvertor(modelItem.getPassportDetailsData().getPassportSeries()).orElse("")
                                 )
                         );
-                    if(passportDetailsFieldDataBind.getPassportNumberFieldId() != null)
+                    if (passportDetailsFieldDataBind.getPassportNumberFieldId() != null)
                         result.add(
                                 new OldTrackerRequestFactory.FieldData(passportDetailsFieldDataBind.getPassportNumberFieldId(),
                                         TaskFieldOT.Type.TEXT,
                                         Utils.stringConvertor(modelItem.getPassportDetailsData().getPassportNumber()).orElse(""))
                         );
-                    if(passportDetailsFieldDataBind.getPassportIssuedByFieldId() != null)
+                    if (passportDetailsFieldDataBind.getPassportIssuedByFieldId() != null)
                         result.add(
                                 new OldTrackerRequestFactory.FieldData(passportDetailsFieldDataBind.getPassportIssuedByFieldId(),
                                         TaskFieldOT.Type.TEXT,
                                         Utils.stringConvertor(modelItem.getPassportDetailsData().getPassportIssuedBy()).orElse(""))
                         );
-                    if(passportDetailsFieldDataBind.getPassportIssuedDateFieldId() != null)
+                    if (passportDetailsFieldDataBind.getPassportIssuedDateFieldId() != null)
                         result.add(
                                 new OldTrackerRequestFactory.FieldData(passportDetailsFieldDataBind.getPassportIssuedDateFieldId(),
                                         TaskFieldOT.Type.TEXT,
                                         Utils.stringConvertor(modelItem.getPassportDetailsData().getPassportIssuedDate()).orElse(""))
                         );
-                    if(passportDetailsFieldDataBind.getRegistrationAddressFieldId() != null)
+                    if (passportDetailsFieldDataBind.getRegistrationAddressFieldId() != null)
                         result.add(
                                 new OldTrackerRequestFactory.FieldData(passportDetailsFieldDataBind.getRegistrationAddressFieldId(),
                                         TaskFieldOT.Type.TEXT,
@@ -477,7 +511,7 @@ public class Task {
                     if (dataBind instanceof TextFieldDataBind textFieldDataBind) {
                         result.add(new OldTrackerRequestFactory.FieldData(textFieldDataBind.getTextFieldId(), TaskFieldOT.Type.TEXT, Utils.stringConvertor(modelItem.getTextRepresentation()).orElse("-")));
                     } else if (dataBind instanceof FullNameFieldDataBind fullNameFieldDataBind) {
-                        if(modelItem.getStringData() == null) break;
+                        if (modelItem.getStringData() == null) break;
                         List<String> split = List.of(modelItem.getStringData().split(" "));
 
                         String lastName = null;

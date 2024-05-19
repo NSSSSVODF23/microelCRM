@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 @Getter
@@ -35,5 +36,23 @@ public class TaskTermDatePath extends TaskTypePath {
         condition.setStage(taskTypeId);
         condition.setActualTo(DateRange.of(actualTo));
         return condition;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TaskTermDatePath that)) return false;
+        if (!super.equals(o)) return false;
+        return getActualTo() == that.getActualTo();
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), getActualTo());
+    }
+
+    @Override
+    public String toString() {
+        return super.toString() + ", actualTo=" + getActualTo();
     }
 }

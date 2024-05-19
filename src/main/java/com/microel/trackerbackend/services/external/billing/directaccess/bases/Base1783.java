@@ -74,6 +74,26 @@ public class Base1783 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
+    public String getUserPassword(@NotBlank String login) {
+        try {
+            Connection.Response response = request(
+                    Request.of("oldstat/show_logins/rq.uname/"+login)
+            );
+            Document document = response.bufferUp().parse();
+            if(document.body().children().isEmpty() || document.body().text().contains("Произошел ТРАП на стороне сервера"))
+                throw new ResponseException("Абонент не найден");
+
+            Element passwordElement = document.selectFirst("#show_user > table:nth-child(9) > tbody > tr:nth-child(2) > td:nth-child(3)");
+
+            if(passwordElement == null)
+                throw new ResponseException("Не удалось получить пароль абонента");
+
+            return passwordElement.text();
+        } catch (IOException e) {
+            throw new ResponseException("Ошибка получения пароля абонента");
+        }
+    }
+
     public void changeAddress(@NotBlank String login, @NotBlank String address) {
         UserInfo userInfo = selectTargetUser(login);
         UserInfo changedUserInfo = userInfo.copy();

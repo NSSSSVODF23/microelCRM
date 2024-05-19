@@ -7,6 +7,7 @@ import com.microel.trackerbackend.misc.WireframeTaskCounter;
 import com.microel.trackerbackend.misc.sorting.TaskJournalSortingTypes;
 import com.microel.trackerbackend.modules.transport.ChangeTaskObserversDTO;
 import com.microel.trackerbackend.modules.transport.IDuration;
+import com.microel.trackerbackend.services.ServerTimings;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.dispatchers.*;
@@ -310,6 +311,17 @@ public class TaskRequestController {
     public ResponseEntity<Long> getCountTasks(@RequestBody TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
 //        Employee employee = getEmployeeFromRequest(request);
         return ResponseEntity.ok(taskDispatcher.getTasksCount(condition));
+    }
+
+    @GetMapping("dashboard")
+    public ResponseEntity<List<TaskDispatcher.DashboardItem>> getDashboard() {
+        return ResponseEntity.ok(taskDispatcher.getDashboard());
+    }
+
+    @PostMapping("count/cached")
+    public ResponseEntity<Long> getCachedCountTasks(@RequestBody TaskDispatcher.FiltrationConditions condition, HttpServletRequest request) {
+//        Employee employee = getEmployeeFromRequest(request);
+        return ResponseEntity.ok(taskDispatcher.getCachedTasksCount(condition));
     }
 
     // Получает количество всех не закрытых задач по шаблонам

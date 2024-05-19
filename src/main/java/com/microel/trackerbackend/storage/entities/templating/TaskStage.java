@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.entities.templating;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.microel.trackerbackend.storage.entities.templating.oldtracker.OldTrackerBind;
 import lombok.*;
 import org.hibernate.annotations.BatchSize;
@@ -26,14 +27,31 @@ public class TaskStage {
     private String stageId;
     private String label;
     private Integer orderIndex;
+    @ManyToOne
+    @JoinColumn(name = "f_wireframe_id")
+    @JsonIgnore
+    private Wireframe wireframe;
     @Nullable
     @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @JoinColumn(name = "f_old_tracker_bind_id")
     private OldTrackerBind oldTrackerBind;
-    @OneToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
+    @OneToMany(mappedBy = "stage", cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REFRESH})
     @BatchSize(size = 25)
     @OrderBy(value = "orderIndex")
     private List<TaskTypeDirectory> directories;
+
+    public void setDirectories(List<TaskTypeDirectory> directories) {
+        if(this.directories == null) {
+            this.directories = new ArrayList<>();
+            return;
+        }
+        for(TaskTypeDirectory directory : directories) {
+            if(directory.getStage() == null) {
+                directory.setStage(this);
+            }
+        }
+        this.directories = directories;
+    }
 
     @Data
     public static class Form {

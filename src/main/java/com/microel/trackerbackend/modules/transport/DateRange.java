@@ -11,6 +11,9 @@ import org.springframework.lang.Nullable;
 import java.sql.Timestamp;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 @Getter
 @Setter
@@ -233,6 +236,36 @@ public class DateRange {
             return end;
         }
         return null;
+    }
+
+    public boolean between(Timestamp target) {
+        return (target.after(start()) || target.equals(start())) && target.before(end());
+    }
+
+    /**
+     * Подбирает список TimeFrame по заданному времени
+     * @param target
+     * @return
+     */
+    public static List<TimeFrame> recognizeTimeFrame(Timestamp target){
+        List<TimeFrame> list = new ArrayList<>();
+        for (TimeFrame timeFrame : TimeFrame.values()) {
+            DateRange dateRange = DateRange.of(timeFrame);
+            if(dateRange.between(target)) list.add(timeFrame);
+        }
+        return list;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof DateRange dateRange)) return false;
+        return getTimeFrame() == dateRange.getTimeFrame() && Objects.equals(getStart(), dateRange.getStart()) && Objects.equals(getEnd(), dateRange.getEnd());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getTimeFrame(), getStart(), getEnd());
     }
 
     @Override

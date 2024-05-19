@@ -1,6 +1,5 @@
 package com.microel.trackerbackend.services.external.oldtracker.requests;
 
-import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.external.oldtracker.OldTrackerRequest;
 import com.microel.trackerbackend.services.external.oldtracker.OldTrackerRequestFactory;
 import lombok.Data;
@@ -8,7 +7,6 @@ import lombok.NonNull;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,9 +14,9 @@ import java.util.Map;
 @Data
 public class EditTaskRequest implements OldTrackerRequest<Void> {
     @NonNull
-    private Map<String,String> headers;
+    private Map<String, String> headers;
     @NonNull
-    private Map<String,String> cookies;
+    private Map<String, String> cookies;
     @NonNull
     private Long taskId;
     @NonNull
@@ -34,9 +32,8 @@ public class EditTaskRequest implements OldTrackerRequest<Void> {
             for (OldTrackerRequestFactory.FieldData field : fields) {
                 body.put(field.getFieldName(), field.getData());
             }
-            Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=show_obji&obji="+taskId+"&from_cat=1")
+            Jsoup.connect("http://tracker.vdonsk.ru/main.php?mode=show_obji&obji=" + taskId + "&from_cat=1")
                     .headers(headers).cookies(cookies).data(body).method(Connection.Method.POST).timeout(15000).execute();
-            return null;
         } catch (Exception e) {
             System.out.println("Не удалось отредактировать задачу в старом трекере");
         }

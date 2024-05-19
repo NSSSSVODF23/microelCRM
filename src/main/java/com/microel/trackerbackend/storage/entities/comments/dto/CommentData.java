@@ -14,4 +14,8 @@ public class CommentData {
     private String text;
     private List<FileData> files;
     private Long replyComment;
+
+    public void setText(String text) {
+        this.text = text.replaceAll("(<p><br></p>)+$", "").strip();
+    }
 }
