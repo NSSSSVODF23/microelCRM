@@ -18,6 +18,7 @@ import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
@@ -359,6 +360,20 @@ public class BillingRequestController {
         base.logout();
 
         return ResponseEntity.ok(password);
+    }
+
+    @PostMapping("user/logs")
+    public ResponseEntity<Page<Base1783.LogItem>> getUserLogs(@RequestBody Base1783.LogsForm form, HttpServletRequest request){
+        Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
+
+        Base1783 base = ApiBillingController.createBase1783Session(employee);
+        base.login();
+
+        Page<Base1783.LogItem> logItems = base.getLogs(form);
+
+        base.logout();
+
+        return ResponseEntity.ok(logItems);
     }
 
     @PatchMapping("user/{login}/change/full-name")

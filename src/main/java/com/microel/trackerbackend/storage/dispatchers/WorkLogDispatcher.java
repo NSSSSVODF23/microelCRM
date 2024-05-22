@@ -19,6 +19,8 @@ import com.microel.trackerbackend.storage.entities.chat.Chat;
 import com.microel.trackerbackend.storage.entities.comments.Comment;
 import com.microel.trackerbackend.storage.entities.comments.events.TaskEvent;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
+import com.microel.trackerbackend.storage.entities.salary.ActionTaken;
+import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.task.*;
 import com.microel.trackerbackend.storage.entities.task.utils.AcceptingEntry;
 import com.microel.trackerbackend.storage.entities.team.Employee;
@@ -881,6 +883,38 @@ public class WorkLogDispatcher {
 
         public boolean isNonEmpty() {
             return searchQuery != null && !searchQuery.isBlank();
+        }
+    }
+
+    @Data
+    public static class TrainingData {
+        private Long classId;
+        private String typeId;
+        private String report;
+        private List<Action> actions;
+
+        public static TrainingData of(WorkCalculation workCalculation) {
+            TrainingData data = new TrainingData();
+            data.classId = workCalculation.getWorkLog().getTask().getModelWireframe().getWireframeId();
+            data.typeId = workCalculation.getWorkLog().getTask().getCurrentStage().getStageId();
+            data.report = workCalculation.getWorkLog().getWorkReports()
+                    .stream().filter(report -> report.getDescription() != null && !report.getDescription().isBlank() && report.getDescription().length() > 3)
+                    .map(WorkReport::getDescription).distinct().collect(Collectors.joining("\n"));
+            data.actions = workCalculation.getActions().stream().map(Action::of).collect(Collectors.toList());
+            return data;
+        }
+
+        @Data
+        public static class Action {
+            private String id;
+            private Integer count;
+
+            public static Action of(ActionTaken actionTaken) {
+                Action action = new Action();
+                action.id = actionTaken.getPaidAction().getIdentifier().toString();
+                action.count = actionTaken.getCount();
+                return action;
+            }
         }
     }
 }

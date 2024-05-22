@@ -8,11 +8,14 @@ import com.microel.trackerbackend.storage.dispatchers.WorkLogDispatcher;
 import com.microel.trackerbackend.storage.entities.comments.Attachment;
 import com.microel.trackerbackend.storage.entities.comments.FileType;
 import com.microel.trackerbackend.storage.entities.filesys.TFile;
+import com.microel.trackerbackend.storage.entities.salary.WorkCalculation;
 import com.microel.trackerbackend.storage.entities.task.TypesOfContracts;
 import com.microel.trackerbackend.storage.entities.task.WorkLog;
 import com.microel.trackerbackend.storage.entities.task.WorkLogTargetFile;
+import com.microel.trackerbackend.storage.entities.task.WorkReport;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.repositories.ModelItemRepository;
+import com.microel.trackerbackend.storage.repositories.WorkCalculationRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -21,12 +24,15 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
+import javax.persistence.criteria.Join;
+import javax.persistence.criteria.JoinType;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Controller
 @Slf4j
@@ -38,14 +44,37 @@ public class WorkLogRequestController {
     private final ModelItemRepository modelItemRepository;
     private final StompController stompController;
     private final WorkLogDispatcher workLogDispatcher;
+    private final WorkCalculationRepository workCalculationRepository;
 
     public WorkLogRequestController(ApiBillingController apiBillingController, EmployeeDispatcher employeeDispatcher,
-                                    ModelItemRepository modelItemRepository, StompController stompController, WorkLogDispatcher workLogDispatcher) {
+                                    ModelItemRepository modelItemRepository, StompController stompController, WorkLogDispatcher workLogDispatcher, WorkCalculationRepository workCalculationRepository) {
         this.apiBillingController = apiBillingController;
         this.employeeDispatcher = employeeDispatcher;
         this.modelItemRepository = modelItemRepository;
         this.stompController = stompController;
         this.workLogDispatcher = workLogDispatcher;
+        this.workCalculationRepository = workCalculationRepository;
+    }
+
+    @GetMapping("training-data")
+    public ResponseEntity<List<WorkLogDispatcher.TrainingData>> getTrainingData() {
+        List<WorkCalculation> workCalculations = workCalculationRepository.findAll((root, query, cb) -> {
+            Join<WorkCalculation, WorkLog> workLogJoin = root.join("workLog", JoinType.LEFT);
+            return cb.and(
+                    cb.isNotNull(workLogJoin.get("closed")),
+                    cb.isFalse(workLogJoin.get("isForceClosed")),
+                    cb.isFalse(root.get("isPaidWork")),
+                    cb.isFalse(root.get("empty"))
+            );
+        });
+        // Кол-во журналов
+        System.out.printf("Кол-во журналов: %d\n", workCalculations.size());
+        return ResponseEntity.ok(workCalculations.stream()
+                .filter(workCalculation ->
+                        workCalculation.getWorkLog().getWorkReports().stream()
+                                .anyMatch(workReport -> workReport.getDescription() != null && !workReport.getDescription().isBlank() && workReport.getDescription().length() > 3))
+                .map(WorkLogDispatcher.TrainingData::of).collect(Collectors.toList())
+        );
     }
 
     // Получить WorkLog по его идентификатору

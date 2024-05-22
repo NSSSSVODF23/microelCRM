@@ -10,6 +10,7 @@ import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigu
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
+import com.microel.trackerbackend.misc.Async;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.services.FilesWatchService;
@@ -55,7 +56,6 @@ import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
 import com.microel.trackerbackend.storage.exceptions.*;
 import com.microel.trackerbackend.storage.repositories.*;
 import lombok.extern.slf4j.Slf4j;
-import org.hibernate.Hibernate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
@@ -126,6 +126,7 @@ public class TelegramController {
     private MainBot mainBot;
     @Nullable
     private BotSession mainBotSession;
+    private final Set<String> isRunningTariffCommandsSet = ConcurrentHashMap.newKeySet();
 
     public TelegramController(Configuration configuration, TaskDispatcher taskDispatcher, WorkLogDispatcher workLogDispatcher,
                               ChatDispatcher chatDispatcher, ChatMessageDispatcher chatMessageDispatcher, EmployeeDispatcher employeeDispatcher,
@@ -483,64 +484,97 @@ public class TelegramController {
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
             String callbackId = update.getCallbackQuery().getId();
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
-            if (data != null) {
+
+            int tariffId;
+            String login;
+            String billingDispatcher;
+            try {
+                if (data == null) {
+                    messageFactory.answerCallback(callbackId, "Нет данных для установки тарифа").execute();
+                    messageFactory.deleteMessage(messageId).execute();
+                    return false;
+                }
+                List<String> dataSet = data.getList();
+                if (dataSet == null || dataSet.size() < 3) {
+                    messageFactory.answerCallback(callbackId, "Не верные данные для установки тарифа").execute();
+                    messageFactory.deleteMessage(messageId).execute();
+                    return false;
+                }
+                tariffId = Integer.parseInt(dataSet.get(0));
+                login = dataSet.get(1);
+                billingDispatcher = dataSet.get(2);
+            }catch (Exception e) {
+                messageFactory.answerCallback(callbackId, "Не верные данные для установки тарифа").execute();
+                messageFactory.deleteMessage(messageId).execute();
+                return false;
+            }
+
+            try {
+                Employee employee = getEmployeeByChat(userId);
+                if (!employee.getOffsite()) {
+                    messageFactory.answerCallback(callbackId, "Вы не являетесь монтажником").execute();
+                    return false;
+                }
                 try {
-                    Employee employee = getEmployeeByChat(userId);
-                    if (!employee.getOffsite()) {
-                        messageFactory.answerCallback(callbackId, "Вы не являетесь монтажником").execute();
+
+                    ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(login);
+                    if (userInfo == null) {
+                        messageFactory.answerCallback(callbackId, "Не удалось найти абонента").execute();
+                        messageFactory.deleteMessage(messageId).execute();
                         return false;
                     }
-                    try {
-                        List<String> dataSet = data.getList();
-                        if (dataSet == null || dataSet.size() < 3) {
-                            messageFactory.answerCallback(callbackId, "Не верные данные").execute();
+                    switch (userInfo.getNewTarif().getUserStatus()) {
+                        case ACTIVE, DEFERRED_PAYMENT -> {
+                            messageFactory.answerCallback(callbackId, "Тариф уже установлен").execute();
+                            messageFactory.deleteMessage(messageId).execute();
                             return false;
                         }
-                        Integer tariffId = Integer.parseInt(dataSet.get(0));
-                        String login = dataSet.get(1);
-                        String billingDispatcher = dataSet.get(2);
+                    }
+                    if (billingDispatcher.isBlank()) {
+                        messageFactory.answerCallback(callbackId, "Не указан диспетчер биллинга").execute();
+                        messageFactory.deleteMessage(messageId).execute();
+                        return false;
+                    }
 
-                        ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(login);
-                        if (userInfo == null) {
-                            messageFactory.answerCallback(callbackId, "Не удалось найти абонента").execute();
-                            return false;
-                        }
-                        if (userInfo.getNewTarif().getUserStatus() == ApiBillingController.UserStatus.ACTIVE) {
-                            messageFactory.answerCallback(callbackId, "Абонент не должен быть активным").execute();
-                            return false;
-                        }
-                        if (billingDispatcher.isBlank()) {
-                            messageFactory.answerCallback(callbackId, "Не указан диспетчер биллинга").execute();
-                            return false;
-                        }
+                    if (isRunningTariffCommandsSet.contains(login)) {
+                        messageFactory.answerCallback(callbackId, "Уже запущена установка тарифа").execute();
+                        messageFactory.deleteMessage(messageId).execute();
+                        return false;
+                    }
+                    isRunningTariffCommandsSet.add(login);
 
-                        Employee manager = employeeDispatcher.getEmployee(billingDispatcher);
-                        Base1785 base = ApiBillingController.createBase1785Session(manager);
-                        base.login();
+                    Employee manager = employeeDispatcher.getEmployee(billingDispatcher);
+                    Base1785 base = ApiBillingController.createBase1785Session(manager);
+                    base.login();
 
-                        base.changeTariff(login, tariffId);
-                        base.enableLogin(login);
+                    base.changeTariff(login, tariffId);
+                    base.enableLogin(login);
 
-                        base.logout();
+                    base.logout();
 
-                        userInfo = apiBillingController.getUserInfo(login);
-                        Float money = userInfo.getIbase().getMoney();
+                    Async.of(() -> {
+                        Float money = apiBillingController.getUserInfo(login).getIbase().getMoney();
 
                         if (money != null && money < 0f) {
                             apiBillingController.deferredPayment(login);
                         }
 
                         apiBillingController.getUpdatedUserAndPushUpdate(login);
-                        messageFactory.deleteMessage(messageId).execute();
-                        messageFactory.simpleMessage("Тариф установлен").execute();
-                        return true;
-                    } catch (EmptyResponse e) {
-                        messageFactory.answerCallback(callbackId, "Не удалось найти информацию о пользователе").execute();
-                    }
-                } catch (Exception e) {
-                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+                    });
+
+                    isRunningTariffCommandsSet.remove(login);
+                    messageFactory.deleteMessage(messageId).execute();
+                    messageFactory.simpleMessage("Тариф установлен").execute();
+                    return true;
+                } catch (EmptyResponse e) {
+                    isRunningTariffCommandsSet.remove(login);
+                    messageFactory.simpleMessage("Не удалось найти информацию о пользователе").execute();
                 }
+            } catch (Exception e) {
+                isRunningTariffCommandsSet.remove(login);
+                messageFactory.simpleMessage(e.getMessage()).execute();
             }
+            isRunningTariffCommandsSet.remove(login);
             return false;
         }));
 
@@ -550,65 +584,96 @@ public class TelegramController {
             Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
             String callbackId = update.getCallbackQuery().getId();
             TelegramMessageFactory messageFactory = TelegramMessageFactory.create(chatId, mainBot);
-            if (data != null) {
+
+            int tariffId;
+            String login;
+            String billingDispatcher;
+            try {
+                if (data == null) {
+                    messageFactory.answerCallback(callbackId, "Нет данных для установки тарифа").execute();
+                    messageFactory.deleteMessage(messageId).execute();
+                    return false;
+                }
+                List<String> dataSet = data.getList();
+                if (dataSet == null || dataSet.size() < 3) {
+                    messageFactory.answerCallback(callbackId, "Не верные данные для установки тарифа").execute();
+                    messageFactory.deleteMessage(messageId).execute();
+                    return false;
+                }
+                tariffId = Integer.parseInt(dataSet.get(0));
+                login = dataSet.get(1);
+                billingDispatcher = dataSet.get(2);
+            }catch (Exception e) {
+                messageFactory.answerCallback(callbackId, "Не верные данные для установки тарифа").execute();
+                messageFactory.deleteMessage(messageId).execute();
+                return false;
+            }
+
+            try {
+                Employee employee = getEmployeeByChat(userId);
+                if (!employee.getOffsite()) {
+                    messageFactory.answerCallback(callbackId, "Вы не являетесь монтажником").execute();
+                    return false;
+                }
                 try {
-                    Employee employee = getEmployeeByChat(userId);
-                    if (!employee.getOffsite()) {
-                        messageFactory.answerCallback(callbackId, "Вы не являетесь монтажником").execute();
+
+                    ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(login);
+                    if (userInfo == null) {
+                        messageFactory.answerCallback(callbackId, "Не удалось найти абонента").execute();
                         return false;
                     }
-                    try {
-                        List<String> dataSet = data.getList();
-                        if (dataSet == null || dataSet.size() < 3) {
-                            messageFactory.answerCallback(callbackId, "Не верные данные").execute();
+
+                    switch (userInfo.getNewTarif().getUserStatus()) {
+                        case NO_MONEY, DEFERRED_PAYMENT_IS_OVERDUE, DISABLED, NO_STATUS, UNKNOWN, SUSPENDED -> {
+                            messageFactory.answerCallback(callbackId, "Абонент должен быть активен").execute();
+                            messageFactory.deleteMessage(messageId).execute();
                             return false;
                         }
-                        Integer tariffId = Integer.parseInt(dataSet.get(0));
-                        String login = dataSet.get(1);
-                        String billingDispatcher = dataSet.get(2);
+                    }
 
-                        ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(login);
-                        if (userInfo == null) {
-                            messageFactory.answerCallback(callbackId, "Не удалось найти абонента").execute();
-                            return false;
-                        }
-                        if (userInfo.getNewTarif().getUserStatus() == ApiBillingController.UserStatus.ACTIVE) {
-                            messageFactory.answerCallback(callbackId, "Абонент не должен быть активным").execute();
-                            return false;
-                        }
-                        if (billingDispatcher.isBlank()) {
-                            messageFactory.answerCallback(callbackId, "Не указан диспетчер биллинга").execute();
-                            return false;
-                        }
+                    if (billingDispatcher.isBlank()) {
+                        messageFactory.answerCallback(callbackId, "Не указан диспетчер биллинга").execute();
+                        return false;
+                    }
 
-                        Employee manager = employeeDispatcher.getEmployee(billingDispatcher);
-                        Base1785 base = ApiBillingController.createBase1785Session(manager);
-                        base.login();
+                    if (isRunningTariffCommandsSet.contains(login)) {
+                        messageFactory.answerCallback(callbackId, "Уже запущена установка тарифа").execute();
+                        messageFactory.deleteMessage(messageId).execute();
+                        return false;
+                    }
+                    isRunningTariffCommandsSet.add(login);
 
-                        base.appendService(login, tariffId);
-//                        base.enableLogin(login);
+                    Employee manager = employeeDispatcher.getEmployee(billingDispatcher);
+                    Base1785 base = ApiBillingController.createBase1785Session(manager);
+                    base.login();
 
-                        base.logout();
+                    base.appendService(login, tariffId);
 
-                        userInfo = apiBillingController.getUserInfo(login);
-                        Float money = userInfo.getIbase().getMoney();
+                    base.logout();
 
-                        if (money != null && money < 0f
-                                && !Objects.equals(userInfo.getNewTarif().getUserStatus(), ApiBillingController.UserStatus.DEFERRED_PAYMENT)) {
+                    Async.of(() -> {
+                        Float money = apiBillingController.getUserInfo(login).getIbase().getMoney();
+
+                        if (money != null && money < 0f) {
                             apiBillingController.deferredPayment(login);
                         }
 
                         apiBillingController.getUpdatedUserAndPushUpdate(login);
-                        messageFactory.deleteMessage(messageId).execute();
-                        messageFactory.simpleMessage("Сервис добавлен").execute();
-                        return true;
-                    } catch (EmptyResponse e) {
-                        messageFactory.answerCallback(callbackId, "Не удалось найти информацию о пользователе").execute();
-                    }
-                } catch (Exception e) {
-                    messageFactory.answerCallback(callbackId, e.getMessage()).execute();
+                    });
+
+                    isRunningTariffCommandsSet.remove(login);
+                    messageFactory.deleteMessage(messageId).execute();
+                    messageFactory.simpleMessage("Сервис добавлен").execute();
+                    return true;
+                } catch (EmptyResponse e) {
+                    isRunningTariffCommandsSet.remove(login);
+                    messageFactory.answerCallback(callbackId, "Не удалось найти информацию о пользователе").execute();
                 }
+            } catch (Exception e) {
+                isRunningTariffCommandsSet.remove(login);
+                messageFactory.answerCallback(callbackId, e.getMessage()).execute();
             }
+            isRunningTariffCommandsSet.remove(login);
             return false;
         }));
 
@@ -1400,7 +1465,7 @@ public class TelegramController {
                             Short bd = address.getBuild();
 
                             if (fr != null && lt != null && bd != null) {
-                                houseNames.add(hn + "/" + fr + "" + lt);
+                                houseNames.add(hn + "/" + fr + lt);
                                 houseNames.add(hn + "" + lt + "_" + bd);
                                 houseNames.add(hn + "/" + fr + "_" + bd);
                             }
@@ -2231,7 +2296,7 @@ public class TelegramController {
         ).execute();
     }
 
-    public void sendSensorAlert(TemperatureSensorsDispatcher.SensorAlertEvent event) throws TelegramApiException{
+    public void sendSensorAlert(TemperatureSensorsDispatcher.SensorAlertEvent event) throws TelegramApiException {
         if (telegramConf == null || !telegramConf.isFilled()) {
             log.warn("Отсутствует конфигурация телеграмма");
             return;
@@ -2264,7 +2329,7 @@ public class TelegramController {
         TelegramMessageFactory.create(chatId, mainBot).simpleMessage(sb.toString()).execute();
     }
 
-    public void sendTempSensorRange(TemperatureSensor sensor) throws TelegramApiException{
+    public void sendTempSensorRange(TemperatureSensor sensor) throws TelegramApiException {
         if (telegramConf == null || !telegramConf.isFilled()) {
             log.warn("Отсутствует конфигурация телеграмма");
             return;

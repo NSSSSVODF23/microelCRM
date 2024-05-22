@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.services.external.billing.directaccess.bases;
 
+import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.controllers.BillingRequestController;
 import com.microel.trackerbackend.services.external.billing.directaccess.DirectBaseAccess;
@@ -11,13 +12,22 @@ import org.jsoup.Connection;
 import org.jsoup.HttpStatusException;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+import org.springframework.boot.autoconfigure.data.web.SpringDataWebProperties;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import javax.validation.constraints.NotBlank;
 import java.io.IOException;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.HashMap;
 import java.util.HashMap;
 import java.util.HashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 public class Base1783 extends DirectBaseSession implements DirectBaseAccess {
@@ -137,6 +147,64 @@ public class Base1783 extends DirectBaseSession implements DirectBaseAccess {
         }
     }
 
+    public Page<LogItem> getLogs(LogsForm form) {
+        try {
+            Connection.Response setRoleResponse = request(
+                    Request.of("main/set_role/role/admin/rolename/Админы")
+            );
+//            Connection.Response response = request(
+//                    Request.ofBody(
+//                            "ajax_c.php",
+//                            form.toRequestBody(),
+//                            Connection.Method.POST
+//                    )
+//            );
+            Connection.Response tableResponse = request(
+                    Request.ofBody(
+                            "oldstat/stat",
+                            form.toRequestBody(),
+                            Connection.Method.POST
+                    )
+            );
+//            authSuccessfulCheck(response);
+//            Connection.Response tableResponse = request(
+//                    Request.of(
+//                            "oldstat/stat"
+//                    )
+//            );
+            authSuccessfulCheck(tableResponse);
+            Document document = tableResponse.bufferUp().parse();
+            Element totalElement = document.selectFirst("#stat > pre");
+            Elements hDateColumn = document.select("#stat > table:nth-child(3) > tbody > tr > td:nth-child(3)");
+            Elements hTimeColumn = document.select("#stat > table:nth-child(3) > tbody > tr > td:nth-child(4)");
+            Elements actionColumn = document.select("#stat > table:nth-child(3) > tbody > tr > td:nth-child(8)");
+            Elements descriptionColumn = document.select("#stat > table:nth-child(3) > tbody > tr > td:nth-child(10)");
+            Elements amountColumn = document.select("#stat > table:nth-child(3) > tbody > tr > td:nth-child(12)");
+            Elements balanceColumn = document.select("#stat > table:nth-child(3) > tbody > tr > td:nth-child(13)");
+
+            Pattern pattern = Pattern.compile("Всего строк (\\d+),");
+            Matcher matcher = pattern.matcher(totalElement != null ? totalElement.text() : "");
+            int totalLogs = 0;
+            if(matcher.find())
+                totalLogs = Integer.parseInt(matcher.group(1));
+
+            List<LogItem> logItems = new ArrayList<>();
+            for(int i = 0; i < hDateColumn.size(); i++){
+                logItems.add(LogItem.of(
+                        hDateColumn.get(i).text(),
+                        hTimeColumn.get(i).text(),
+                        actionColumn.get(i).text(),
+                        descriptionColumn.get(i).text(),
+                        amountColumn.get(i).text(),
+                        balanceColumn.get(i).text()
+                ));
+            }
+            return new PageImpl<>(logItems, PageRequest.of(form.getPage(), form.getPlen()), totalLogs);
+        } catch (IOException e) {
+            throw new ResponseException("Не удалось получить логи абонента");
+        }
+    }
+
     private void authSuccessfulCheck(Connection.Response response) throws IOException {
         Document document = response.bufferUp().parse();
         if (document.body().text().isEmpty() || document.body().text().contains("Код ошибки")) {
@@ -220,6 +288,58 @@ public class Base1783 extends DirectBaseSession implements DirectBaseAccess {
 
             body.put("__act", "oldstat-SaveEditUser");
             return body;
+        }
+    }
+
+    @Data
+    public static class LogsForm {
+        private DateRange dateRange;
+        private Integer page;
+        private Integer plen;
+        private String login;
+
+        public Map<String, String> toRequestBody(){
+            Map<String, String> body = new HashMap<>();
+
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+
+            body.put("period.hdate", sdf.format(dateRange.start()));
+            body.put("period.edate", sdf.format(dateRange.end()));
+            body.put("filtr.__page", String.valueOf(page+1));
+            body.put("filtr.__plen", plen.toString());
+            body.put("filtr.__filtr_name", "stat");
+            body.put("filtr.login", login);
+            body.put("filtr._sel_login", "0");
+            body.put("filtr._sel_hdate", "0");
+            body.put("filtr._sel_htime", "0");
+            body.put("filtr._sel_edate", "0");
+            body.put("filtr._sel_etime", "0");
+            body.put("filtr.service", "");
+            body.put("filtr.cause", "0");
+            body.put("filtr._sel_cid", "0");
+            body.put("filtr.ip", "");
+            body.put("__act", "oldstat-stat");
+
+            return body;
+        }
+    }
+
+    @Data
+    public static class LogItem {
+        private Timestamp timestamp;
+        private String action;
+        private String description;
+        private Float amount;
+        private Float balance;
+
+        public static LogItem of(String date, String time, String action, String description, String amount, String balance) {
+            LogItem logItem = new LogItem();
+            logItem.setTimestamp(Timestamp.valueOf(date + " " + time));
+            logItem.setAction(action);
+            logItem.setDescription(description);
+            logItem.setAmount(Float.parseFloat(amount));
+            logItem.setBalance(Float.parseFloat(balance));
+            return logItem;
         }
     }
 
