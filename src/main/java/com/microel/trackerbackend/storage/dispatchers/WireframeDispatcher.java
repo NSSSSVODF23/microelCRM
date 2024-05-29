@@ -13,15 +13,12 @@ import com.microel.trackerbackend.storage.entities.templating.oldtracker.OldTrac
 import com.microel.trackerbackend.storage.entities.templating.oldtracker.fields.FieldDataBind;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.repositories.*;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Sort;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.persistence.criteria.CriteriaBuilder;
-import javax.persistence.criteria.Join;
-import javax.persistence.criteria.JoinType;
-import javax.persistence.criteria.Predicate;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -39,7 +36,9 @@ public class WireframeDispatcher {
     private final DefaultObserverRepository defaultObserverRepository;
 
 
-    public WireframeDispatcher(WireframeRepository wireframeRepository, TaskStageRepository taskStageRepository, TaskTypeDirectoryRepository taskTypeDirectoryRepository, TaskRepository taskRepository, DefaultObserverRepository defaultObserverRepository) {
+    public WireframeDispatcher(WireframeRepository wireframeRepository, TaskStageRepository taskStageRepository,
+                               TaskTypeDirectoryRepository taskTypeDirectoryRepository, TaskRepository taskRepository,
+                               DefaultObserverRepository defaultObserverRepository) {
         this.wireframeRepository = wireframeRepository;
         this.taskStageRepository = taskStageRepository;
         this.taskTypeDirectoryRepository = taskTypeDirectoryRepository;
@@ -87,12 +86,12 @@ public class WireframeDispatcher {
         return wireframeRepository.findByWireframeIdAndDeleted(id, isDeleted).orElse(null);
     }
 
-    public List<DefaultObserver> replaceExistedObservers(List<DefaultObserver> targetList){
+    public List<DefaultObserver> replaceExistedObservers(List<DefaultObserver> targetList) {
         List<DefaultObserver> existedObservers = defaultObserverRepository.findAll((root, query, cb) ->
                 root.get("targetId").in(targetList.stream().map(DefaultObserver::getTargetId).toList())
         );
         // Replace existed observers in targetList
-        for(DefaultObserver existedObserver : existedObservers){
+        for (DefaultObserver existedObserver : existedObservers) {
             targetList.removeIf(target -> target.getTargetId().equals(existedObserver.getTargetId()));
             targetList.add(existedObserver);
         }
@@ -113,6 +112,9 @@ public class WireframeDispatcher {
         founded.setListViewType(form.getListViewType());
         founded.setDetailedViewType(form.getDetailedViewType());
 
+        founded.clearRemovedStages(form.getStages());
+
+
         if (founded.getDocumentTemplates() != null) {
             founded.getDocumentTemplates().removeIf(documentTemplate -> form.getDocumentTemplates().stream().map(DocumentTemplate.Form::getDocumentTemplateId).noneMatch(fdt -> Objects.equals(fdt, documentTemplate.getDocumentTemplateId())));
         } else {
@@ -130,8 +132,6 @@ public class WireframeDispatcher {
             }
         }
 
-        founded.getStages().removeIf(taskStage -> form.getStages().stream().map(TaskStage.Form::getStageId).noneMatch(fs -> Objects.equals(fs, taskStage.getStageId())));
-
         for (TaskStage.Form stageForm : form.getStages()) {
             TaskStage existedStage = founded.getStages().stream().filter(taskStage -> Objects.equals(taskStage.getStageId(), stageForm.getStageId())).findFirst().orElse(null);
             if (existedStage != null) {
@@ -143,14 +143,17 @@ public class WireframeDispatcher {
                                     .stream().map(TaskTypeDirectory.Form::toEntity)
                                     .noneMatch(formDir -> Objects.equals(formDir.getTaskTypeDirectoryId(), dir.getTaskTypeDirectoryId()))
                             ).toList();
-                    if(!removingDirectories.isEmpty()) {
-                        List<Task> tasks = taskRepository.findByCurrentDirectory_TaskTypeDirectoryIdIn(
-                                removingDirectories.stream().map(TaskTypeDirectory::getTaskTypeDirectoryId).toList()
-                        );
-                        tasks.forEach(task -> task.setCurrentDirectory(null));
-                        taskRepository.saveAll(tasks);
-                        taskTypeDirectoryRepository.deleteAll(removingDirectories);
-                        existedStage.getDirectories().removeAll(removingDirectories);
+                    if (!removingDirectories.isEmpty()) {
+//                        List<Long> dirIdList = removingDirectories.stream().map(TaskTypeDirectory::getTaskTypeDirectoryId).toList();
+//                        List<Task> tasks = taskRepository.findAll((root, query, cb) -> cb.and(
+//                                root.join("currentDirectory")
+//                                        .get("taskTypeDirectoryId")
+//                                        .in(dirIdList)
+//                        ));
+//                        tasks.forEach(task -> task.setCurrentDirectory(null));
+//                        taskRepository.saveAll(tasks);
+//                        taskTypeDirectoryRepository.deleteAll(removingDirectories);
+                        existedStage.clearRemovedDirectories(removingDirectories);
                     }
                     for (TaskTypeDirectory.Form taskDirForm : stageForm.getDirectories()) {
                         TaskTypeDirectory existedTaskTypeDirectory = null;
@@ -159,7 +162,7 @@ public class WireframeDispatcher {
                         if (existedTaskTypeDirectory != null) {
                             existedTaskTypeDirectory.update(taskDirForm);
                         } else {
-                            existedStage.getDirectories().add(taskDirForm.toEntity());
+                            existedStage.appendDirectory(taskDirForm.toEntity());
                         }
                     }
                 } else {
@@ -180,7 +183,7 @@ public class WireframeDispatcher {
                     existedStage.setOldTrackerBind(stageForm.getOldTrackerBind().toEntity());
                 }
             } else {
-                founded.getStages().add(stageForm.toEntity());
+                founded.appendStage(stageForm.toEntity());
             }
         }
 

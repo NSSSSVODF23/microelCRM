@@ -52,6 +52,7 @@ import com.microel.trackerbackend.storage.entities.templating.documents.Document
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldItem;
 import com.microel.trackerbackend.storage.entities.templating.model.dto.FilterModelItem;
 import com.microel.trackerbackend.storage.exceptions.*;
+import com.microel.trackerbackend.storage.repositories.TaskTypeDirectoryRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.imgscalr.Scalr;
 import org.springframework.data.domain.Page;
@@ -109,6 +110,7 @@ public class PrivateRequestController {
     private final FilesWatchService filesWatchService;
     private final PhyPhoneService phyPhoneService;
     private final OldTrackerService oldTrackerService;
+    private final TaskTypeDirectoryRepository taskTypeDirectoryRepository;
 
     public PrivateRequestController(WireframeDispatcher wireframeDispatcher, TaskDispatcher taskDispatcher,
                                     StreetDispatcher streetDispatcher, HouseDispatcher houseDispatcher, CityDispatcher cityDispatcher,
@@ -124,7 +126,7 @@ public class PrivateRequestController {
                                     PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher,
                                     WorkingDayDispatcher workingDayDispatcher, ClientEquipmentDispatcher clientEquipmentDispatcher,
                                     FilesWatchService filesWatchService, PhyPhoneService phyPhoneService,
-                                    OldTrackerService oldTrackerService) {
+                                    OldTrackerService oldTrackerService, TaskTypeDirectoryRepository taskTypeDirectoryRepository) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.streetDispatcher = streetDispatcher;
@@ -153,6 +155,7 @@ public class PrivateRequestController {
         this.filesWatchService = filesWatchService;
         this.phyPhoneService = phyPhoneService;
         this.oldTrackerService = oldTrackerService;
+        this.taskTypeDirectoryRepository = taskTypeDirectoryRepository;
     }
 
     // Получает список доступных наблюдателей из базы данных
@@ -189,6 +192,10 @@ public class PrivateRequestController {
     public ResponseEntity<Wireframe> updateWireframe(@PathVariable Long id, @RequestBody Wireframe.Form body) {
         Wireframe wireframe = wireframeDispatcher.updateWireframe(id, body);
         taskDispatcher.restoreTasksToOriginalDirectory(wireframe);
+        List<TaskTypeDirectory> directories = taskTypeDirectoryRepository.findAll((root, query, cb) -> cb.and(
+                cb.isNull(root.get("stage"))
+        ));
+        taskTypeDirectoryRepository.deleteAll(directories);
         stompController.updateWireframe(wireframe);
         return ResponseEntity.ok(wireframe);
     }

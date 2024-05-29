@@ -50,18 +50,9 @@ public class DGS8WebAccess extends CommutatorCredentials implements AbstractRemo
             byte[] md5PassEncoded = md.digest(getPassword().getBytes(StandardCharsets.UTF_8));
             String pass = isPassCrypt ? HexFormat.of().formatHex(md5PassEncoded) : getPassword();
             Map<String, String> headers = new HashMap<>();
-
-//            headers.put("Host", getIp());
-//            headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/117.0");
-//            headers.put("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
-//            headers.put("Accept-Language", "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3");
-//            headers.put("Accept-Encoding", "gzip, deflate");
             headers.put("Content-Type", "application/x-www-form-urlencoded");
-//            headers.put("Content-Length", "37");
-//            headers.put("Origin", "http://"+getIp());
-//            headers.put("Connection", "keep-alive");
             headers.put("Referer", "http://"+getIp()+"/"+sessionPath+"/login2.htm");
-//            headers.put("Upgrade-Insecure-Requests", "1");
+
             Connection.Response loginResponse = Jsoup.connect("http://" + getIp() + "/cgi/login.cgi")
                     .data("pass", pass)
                     .headers(headers)

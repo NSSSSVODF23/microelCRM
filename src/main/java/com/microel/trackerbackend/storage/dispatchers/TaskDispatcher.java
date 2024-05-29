@@ -1680,7 +1680,7 @@ public class TaskDispatcher {
     public void restoreTasksToOriginalDirectory(Wireframe wireframe) {
         if (wireframe.getStages() != null) {
             for (TaskStage taskStage : wireframe.getStages()) {
-                if (taskStage.getDirectories() != null && !taskStage.getDirectories().isEmpty()) {
+                if (taskStage.getDirectories() == null || taskStage.getDirectories().isEmpty()) {
                     List<Task> tasks = taskRepository.findAll((root, query, cb) -> {
                         query.distinct(true);
                         return cb.and(
@@ -1690,16 +1690,35 @@ public class TaskDispatcher {
                                 cb.equal(root.join("currentStage").get("stageId"), taskStage.getStageId())
                         );
                     });
-                    UpdateTasksCountWorker updateTasksCountWorker = new UpdateTasksCountWorker();
                     for (Task task : tasks) {
-                        updateTasksCountWorker.appendPath(task);
-                        task.setCurrentDirectory(taskStage.getDirectories().get(0));
-                        updateTasksCountWorker.appendPath(task);
+                        decreaseTasksCount(task);
+                        task.setCurrentDirectory(null);
+                        increaseTasksCount(task);
                     }
                     List<Task> taskList = taskRepository.saveAll(tasks);
                     for (Task task : taskList)
                         stompController.updateTask(task);
-                    updateTasksCountWorker.execute(this);
+                } else {
+                    List<Task> tasks = taskRepository.findAll((root, query, cb) -> {
+                        query.distinct(true);
+                        Join<Task, TaskTypeDirectory> currentDirectory = root.join("currentDirectory", JoinType.LEFT);
+                        Join<Task, TaskStage> currentStage = root.join("currentStage", JoinType.LEFT);
+                        return cb.and(
+                                cb.isNotNull(root.get("currentDirectory")),
+                                cb.isNull(currentDirectory.get("stage")),
+                                cb.isFalse(root.get("deleted")),
+                                cb.notEqual(root.get("taskStatus"), TaskStatus.CLOSE),
+                                cb.equal(currentStage.get("stageId"), taskStage.getStageId())
+                        );
+                    });
+                    for (Task task : tasks) {
+                        decreaseTasksCount(task);
+                        task.setCurrentDirectory(taskStage.getDirectories().get(0));
+                        increaseTasksCount(task);
+                    }
+                    List<Task> taskList  = taskRepository.saveAll(tasks);
+                    for (Task task  : taskList)
+                        stompController.updateTask(task);
                 }
             }
         }
@@ -2350,7 +2369,7 @@ public class TaskDispatcher {
             final DashboardItem dashboardItem = DashboardItem.of(wireframe);
             dashboardItems.add(dashboardItem);
             for (TaskStatus status : TaskStatus.values()) {
-                if(status == TaskStatus.ACTIVE) {
+                if (status == TaskStatus.ACTIVE) {
                     DashboardItem.TaskStatusItem activeStatusItem = DashboardItem.TaskStatusItem.of(status, FiltrationConditions.SchedulingType.EXCEPT_PLANNED);
                     FiltrationConditions activeFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, wireframe);
                     Long activeCount = taskCounterCache.get(activeFC);
@@ -2392,7 +2411,7 @@ public class TaskDispatcher {
                             timeFrameItem.setUpdatePath(timeFrameFC.getId());
                             timeFrameItem.setCount(activeStatusTimeFrameCount);
                             scheduledStatusTypeItem.getTimeFramesItems().add(timeFrameItem);
-                            for(TaskTag tag : taskTags) {
+                            for (TaskTag tag : taskTags) {
                                 DashboardItem.TagItem tagItem = DashboardItem.TagItem.of(tag);
                                 FiltrationConditions tagFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.PLANNED, status, wireframe, stage, FiltrationConditions.TimeFrameType.SCHEDULE, timeFrame, tag);
                                 Long tagCount = taskCounterCache.get(tagFC);
@@ -2402,14 +2421,14 @@ public class TaskDispatcher {
                             }
                         }
 
-                        for(TaskTypeDirectory directory : directories) {
+                        for (TaskTypeDirectory directory : directories) {
                             DashboardItem.DirectoryItem directoryItem = DashboardItem.DirectoryItem.of(directory);
                             FiltrationConditions directoryFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, status, wireframe, stage, directory);
                             Long directoryCount = taskCounterCache.get(directoryFC);
                             directoryItem.setUpdatePath(directoryFC.getId());
                             directoryItem.setCount(directoryCount);
                             activeStatusTypeItem.getDirectoriesItems().add(directoryItem);
-                            for(TaskTag tag : taskTags) {
+                            for (TaskTag tag : taskTags) {
                                 DashboardItem.TagItem tagItem = DashboardItem.TagItem.of(tag);
                                 FiltrationConditions tagFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.EXCEPT_PLANNED, status, wireframe, stage, directory, tag);
                                 Long tagCount = taskCounterCache.get(tagFC);
@@ -2420,7 +2439,7 @@ public class TaskDispatcher {
                         }
                     }
                 }
-                if(status == TaskStatus.PROCESSING) {
+                if (status == TaskStatus.PROCESSING) {
                     DashboardItem.TaskStatusItem processingStatusItem = DashboardItem.TaskStatusItem.of(status, FiltrationConditions.SchedulingType.UNSCHEDULED);
                     FiltrationConditions processingFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, TaskStatus.PROCESSING, wireframe);
                     Long processingCount = taskCounterCache.get(processingFC);
@@ -2436,7 +2455,7 @@ public class TaskDispatcher {
                         processingStatusItem.getTypesItems().add(typeItem);
                     }
                 }
-                if(status == TaskStatus.CLOSE) {
+                if (status == TaskStatus.CLOSE) {
                     DashboardItem.TaskStatusItem closeStatusItem = DashboardItem.TaskStatusItem.of(status, FiltrationConditions.SchedulingType.UNSCHEDULED);
                     FiltrationConditions closeFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, wireframe);
                     Long closeCount = taskCounterCache.get(closeFC);
@@ -2450,7 +2469,7 @@ public class TaskDispatcher {
                         typeItem.setUpdatePath(typeFC.getId());
                         typeItem.setCount(typeCount);
                         closeStatusItem.getTypesItems().add(typeItem);
-                        for(TimeFrame timeFrame : closedTaskTimeFrames) {
+                        for (TimeFrame timeFrame : closedTaskTimeFrames) {
                             DashboardItem.TimeFrameItem timeFrameItem = DashboardItem.TimeFrameItem.of(timeFrame);
                             FiltrationConditions timeFrameFC = FiltrationConditions.of(FiltrationConditions.SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, wireframe, stage, FiltrationConditions.TimeFrameType.CLOSE, timeFrame);
                             Long timeFrameCount = taskCounterCache.get(timeFrameFC);
@@ -2464,6 +2483,14 @@ public class TaskDispatcher {
         }
 
         return dashboardItems;
+    }
+
+    public List<Task> getTasksByDirectory(List<Long> directories) {
+        return taskRepository.findAll((root, query, cb) -> cb.and(
+                root.join("currentDirectory")
+                        .get("taskTypeDirectoryId")
+                        .in(directories)
+        ));
     }
 
     @Data
