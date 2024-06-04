@@ -209,7 +209,7 @@ public class Notification {
         String commentMessage = comment.getMessage();
         // Сначала заменяем все теги </p> на символ переноса строки
         commentMessage = commentMessage.replaceAll("</p>", "\n");
-        // Затем отчищаем всё остальное
+        // Затем очищаем всё остальное
         commentMessage = commentMessage.replaceAll("<.*?>", "");
 
         StringBuilder messageBuilder = new StringBuilder()

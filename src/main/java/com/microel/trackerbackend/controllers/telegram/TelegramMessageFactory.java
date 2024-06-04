@@ -458,7 +458,7 @@ public class TelegramMessageFactory {
 
     public AbstractExecutor<Message> clearKeyboardMenu() {
         ReplyKeyboardRemove clearKeyboardMarkup = ReplyKeyboardRemove.builder().removeKeyboard(true).build();
-        return new MessageExecutor<>(SendMessage.builder().chatId(chatId).text("Меню отчищено").replyMarkup(clearKeyboardMarkup).build(), context);
+        return new MessageExecutor<>(SendMessage.builder().chatId(chatId).text("Меню очищено").replyMarkup(clearKeyboardMarkup).build(), context);
     }
 
     public AbstractExecutor<Message> closeWorkLogMessage() {
