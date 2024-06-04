@@ -2,7 +2,9 @@ package com.microel.trackerbackend.services.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
+import com.microel.trackerbackend.controllers.configuration.entity.UserTelegramConf;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
+import com.microel.trackerbackend.controllers.telegram.UserTelegramController;
 import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.misc.*;
 import com.microel.trackerbackend.misc.accounting.MonthlySalaryReportTable;
@@ -98,6 +100,7 @@ public class PrivateRequestController {
     private final WorkLogDispatcher workLogDispatcher;
     private final ChatDispatcher chatDispatcher;
     private final TelegramController telegramController;
+    private final UserTelegramController userTelegramController;
     private final OldTracker oldTracker;
     private final AddressParser addressParser;
     private final AddressDispatcher addressDispatcher;
@@ -120,7 +123,7 @@ public class PrivateRequestController {
                                     StompController stompController,
                                     TaskTagDispatcher taskTagDispatcher,
                                     NotificationDispatcher notificationDispatcher, WorkLogDispatcher workLogDispatcher,
-                                    ChatDispatcher chatDispatcher, TelegramController telegramController,
+                                    ChatDispatcher chatDispatcher, TelegramController telegramController, UserTelegramController userTelegramController,
                                     OldTracker oldTracker, AddressParser addressParser, AddressDispatcher addressDispatcher,
                                     PaidActionDispatcher paidActionDispatcher, PaidWorkGroupDispatcher paidWorkGroupDispatcher,
                                     PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher,
@@ -143,6 +146,7 @@ public class PrivateRequestController {
         this.workLogDispatcher = workLogDispatcher;
         this.chatDispatcher = chatDispatcher;
         this.telegramController = telegramController;
+        this.userTelegramController = userTelegramController;
         this.oldTracker = oldTracker;
         this.addressParser = addressParser;
         this.addressDispatcher = addressDispatcher;
@@ -1128,10 +1132,27 @@ public class PrivateRequestController {
         return ResponseEntity.ok(telegramController.getConfiguration());
     }
 
+    @GetMapping("configuration/user-telegram")
+    public ResponseEntity<UserTelegramConf> getUserTelegramConfiguration() {
+        return ResponseEntity.ok(userTelegramController.getConfiguration());
+    }
+
     @PostMapping("configuration/telegram")
     public ResponseEntity<Void> updateTelegramConfiguration(@RequestBody TelegramConf conf) {
         try {
             telegramController.changeTelegramConf(conf);
+            return ResponseEntity.ok().build();
+        } catch (TelegramApiException e) {
+            throw new ResponseException(e.getMessage());
+        } catch (IOException e) {
+            throw new TelegramBotNotInitialized(e.getMessage());
+        }
+    }
+
+    @PostMapping("configuration/user-telegram")
+    public ResponseEntity<Void> updateUserTelegramConfiguration(@RequestBody UserTelegramConf conf) {
+        try {
+            userTelegramController.changeTelegramConf(conf);
             return ResponseEntity.ok().build();
         } catch (TelegramApiException e) {
             throw new ResponseException(e.getMessage());

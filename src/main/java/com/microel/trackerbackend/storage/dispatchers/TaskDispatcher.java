@@ -2689,12 +2689,13 @@ public class TaskDispatcher {
                         conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage()));
                         if (task.getCurrentDirectory() != null)
                             conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), task.getCurrentDirectory()));
-                        for (TaskTag tag : task.getTags()) {
-                            if (task.getCurrentDirectory() != null)
-                                conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), task.getCurrentDirectory(), tag));
-                            else
-                                conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), tag));
-                        }
+                        if(task.getTags() != null)
+                            for (TaskTag tag : task.getTags()) {
+                                if (task.getCurrentDirectory() != null)
+                                    conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), task.getCurrentDirectory(), tag));
+                                else
+                                    conditions.add(FiltrationConditions.of(SchedulingType.EXCEPT_PLANNED, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), tag));
+                            }
                         if (task.getActualTo() != null) {
                             conditions.add(FiltrationConditions.of(SchedulingType.DEADLINE, TaskStatus.ACTIVE));
                             conditions.add(FiltrationConditions.of(SchedulingType.DEADLINE, TaskStatus.ACTIVE, task.getModelWireframe()));
@@ -2702,9 +2703,10 @@ public class TaskDispatcher {
                             List<TimeFrame> timeFrames = DateRange.recognizeTimeFrame(task.getActualTo());
                             for (TimeFrame timeFrame : timeFrames) {
                                 conditions.add(FiltrationConditions.of(SchedulingType.DEADLINE, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.DEADLINE, timeFrame));
-                                for (TaskTag tag : task.getTags()) {
-                                    conditions.add(FiltrationConditions.of(SchedulingType.DEADLINE, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.DEADLINE, timeFrame, tag));
-                                }
+                                if(task.getTags() != null)
+                                    for (TaskTag tag : task.getTags()) {
+                                        conditions.add(FiltrationConditions.of(SchedulingType.DEADLINE, TaskStatus.ACTIVE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.DEADLINE, timeFrame, tag));
+                                    }
                             }
                         }
                     }
@@ -2721,9 +2723,10 @@ public class TaskDispatcher {
                     List<TimeFrame> timeFrames = DateRange.recognizeTimeFrame(task.getClosed());
                     for (TimeFrame timeFrame : timeFrames) {
                         conditions.add(FiltrationConditions.of(SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.CLOSE, timeFrame));
-                        for (TaskTag tag : task.getTags()) {
-                            conditions.add(FiltrationConditions.of(SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.CLOSE, timeFrame, tag));
-                        }
+                        if(task.getTags() != null)
+                            for (TaskTag tag : task.getTags()) {
+                                conditions.add(FiltrationConditions.of(SchedulingType.UNSCHEDULED, TaskStatus.CLOSE, task.getModelWireframe(), task.getCurrentStage(), TimeFrameType.CLOSE, timeFrame, tag));
+                            }
                     }
                 }
             }

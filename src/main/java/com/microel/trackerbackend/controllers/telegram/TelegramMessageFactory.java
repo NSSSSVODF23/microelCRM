@@ -27,6 +27,7 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.util.TelegramOptions;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
+import com.microel.trackerbackend.storage.entities.userstlg.UserTariff;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.exceptions.IllegalMediaType;
 import lombok.AllArgsConstructor;
@@ -899,9 +900,9 @@ public class TelegramMessageFactory {
                 try {
                     Map<String, List<Attachment>> atcByTypes = attachments.stream().collect(Collectors.groupingBy(attachment -> {
                         FileType type = attachment.getType();
-                        if(type == FileType.PHOTO || type == FileType.VIDEO) return "visual";
-                        if(type == FileType.AUDIO) return "audio";
-                        if(type == FileType.FILE || type == FileType.DOCUMENT) return "files";
+                        if (type == FileType.PHOTO || type == FileType.VIDEO) return "visual";
+                        if (type == FileType.AUDIO) return "audio";
+                        if (type == FileType.FILE || type == FileType.DOCUMENT) return "files";
                         return "other";
                     }));
                     List<PartialBotApiMethod<?>> messages = new ArrayList<>();
@@ -909,7 +910,7 @@ public class TelegramMessageFactory {
                     atcByTypes.forEach((k, v) -> {
                         if (v.size() > 1 && v.size() <= 10) {
                             List<InputMedia> inputMedia = v.stream().map(Attachment::getInputMedia).filter(Objects::nonNull).toList();
-                            if(!isMessageAdded.get()) {
+                            if (!isMessageAdded.get()) {
                                 isMessageAdded.set(true);
                                 inputMedia.get(0).setCaption(sb.toString());
                             }
@@ -948,8 +949,8 @@ public class TelegramMessageFactory {
                                             .parseMode("HTML")
                                             .build();
                             }
-                            if(mediaMessage!= null) {
-                                if(!isMessageAdded.get()) {
+                            if (mediaMessage != null) {
+                                if (!isMessageAdded.get()) {
                                     isMessageAdded.set(true);
                                 }
                                 messages.add(mediaMessage);
@@ -1235,6 +1236,110 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(sendMessage, context);
     }
 
+    public AbstractExecutor<Message> linkForUserAuth(Long telegramId, String secretKey) {
+        String url = Decorator.url("страницу авторизации", "http://127.0.0.1:4412/tauth?id=" + telegramId + "&sc=" + secretKey);
+        String text = "Для начала нужно перейти на " + url + " и ввести свой логин и пароль из договора";
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .replyMarkup(ReplyKeyboardRemove.builder().removeKeyboard(true).build())
+                .parseMode(ParseMode.HTML)
+                .build();
+
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> userMainMenu(String message) {
+        KeyboardFactory keyboardFactory = new KeyboardFactory()
+                .newLine("\uD83D\uDCC8 Активный тариф", "\uD83D\uDCFA Активные доп.услуги")
+                .newLine("\uD83D\uDCB0 Проверить баланс")
+                .newLine("\uD83D\uDED1 Приостановка обслуживания");
+
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(message)
+                .replyMarkup(keyboardFactory.getReplyKeyboard())
+                .parseMode(ParseMode.HTML)
+                .build();
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> userTariffRequest(ApiBillingController.TotalUserInfo userInfo) {
+        String text = "Текущий тариф - " + Decorator.bold(userInfo.getNewTarif().getTarif())
+                + "\nСо скоростью " + userInfo.getNewTarif().getTspeed() + " Mbit/s • "
+                + userInfo.getOldTarif().get(0).getPrice() + " руб./п.";
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .parseMode(ParseMode.HTML)
+                .build();
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> userServicesRequest(ApiBillingController.TotalUserInfo userInfo) {
+        StringBuilder stringBuilder = new StringBuilder();
+        KeyboardFactory keyboardFactory = new KeyboardFactory()
+                .newLine("✅ Подключить доп.услугу");
+
+        if(userInfo.getOldTarif().size() <= 1) {
+            stringBuilder.append(Decorator.italic("Доп.услуги не подключены"));
+        }else{
+            keyboardFactory.newLine("❌ Отключить доп.услугу");
+            stringBuilder.append("Доп.услуги:\n");
+            for (int i = 1; i < userInfo.getOldTarif().size(); i++) {
+                ApiBillingController.OldTarifItem service = userInfo.getOldTarif().get(i);
+                stringBuilder.append(Decorator.bold(service.getService())).append(" • ").append(service.getPrice()).append(" руб./п.").append("\n");
+            }
+        }
+
+        keyboardFactory.newLine("◀\uFE0F Главное меню");
+
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(stringBuilder.toString())
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(keyboardFactory.getReplyKeyboard())
+                .build();
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> connectUserService(ApiBillingController.TotalUserInfo userInfo, List<UserTariff> services) {
+        KeyboardFactory keyboardFactory  = new KeyboardFactory();
+        services.forEach(service -> keyboardFactory.newLine(KeyboardFactory.IKButton.of(service.getName() + " " + service.getPriceLabel(), "connect_user_service", service.getBaseName())));
+        SendMessage sendMessage  = SendMessage.builder()
+                .chatId(chatId)
+                .text("Какую услугу подключить?")
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(keyboardFactory.getInlineKeyboard())
+                .build();
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> disconnectUserService(ApiBillingController.TotalUserInfo userInfo) {
+        final KeyboardFactory keyboardFactory   = new KeyboardFactory();
+        List<ApiBillingController.OldTarifItem> connectedServices  = userInfo.getOldTarif().stream().skip(1).toList();
+        connectedServices.forEach(service  -> keyboardFactory.newLine(KeyboardFactory.IKButton.of(service.getService(),  "disconnect_user_service", service.getService())));
+        SendMessage sendMessage   = SendMessage.builder()
+                .chatId(chatId)
+                .text("Какую услугу отключить?")
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(keyboardFactory.getInlineKeyboard())
+                .build();
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Serializable> userRequestResponse(Integer messageId, String text) {
+        KeyboardFactory keyboardFactory   = new KeyboardFactory();
+        keyboardFactory.newLine(KeyboardFactory.IKButton.of("Посмотреть активные запросы", "get_user_requests", ""));
+        return new MessageExecutor<>(EditMessageText.builder()
+                .chatId(chatId)
+                .messageId(messageId)
+                .text(text)
+                .replyMarkup(keyboardFactory.getInlineKeyboard())
+                .parseMode("HTML")
+                .build(), context);
+    }
+
     /**
      * Позволяет отправить запрос в Telegram API и получить результат согласно заданному контексту
      *
@@ -1372,9 +1477,9 @@ public class TelegramMessageFactory {
 
         public Message execute() throws TelegramApiException {
             Message message = null;
-            if(visualGroup != null) message = context.execute(visualGroup).get(0);
-            if(audioGroup != null) message = context.execute(audioGroup).get(0);
-            if(filesGroup != null) message = context.execute(filesGroup).get(0);
+            if (visualGroup != null) message = context.execute(visualGroup).get(0);
+            if (audioGroup != null) message = context.execute(audioGroup).get(0);
+            if (filesGroup != null) message = context.execute(filesGroup).get(0);
             return message;
         }
     }
@@ -1390,7 +1495,7 @@ public class TelegramMessageFactory {
 
         public Message execute() throws TelegramApiException {
             Message sentMsg = null;
-            for(PartialBotApiMethod<?> message : messages){
+            for (PartialBotApiMethod<?> message : messages) {
                 if (message instanceof SendMessage) {
                     sentMsg = context.execute((SendMessage) message);
                 }

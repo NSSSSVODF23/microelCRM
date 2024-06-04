@@ -1,10 +1,11 @@
 package com.microel.trackerbackend.controllers.telegram;
 
+import com.microel.trackerbackend.CustomException;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
-import com.microel.trackerbackend.controllers.telegram.handle.TelegramUpdateChatJoinHandler;
+import com.microel.trackerbackend.controllers.configuration.entity.UserTelegramConf;
 import com.microel.trackerbackend.controllers.telegram.handle.TelegramUpdateSubscribe;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
-import com.microel.trackerbackend.CustomException;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.lang.Nullable;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
@@ -19,12 +20,21 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public class MainBot extends TelegramLongPollingBot {
+    private final String botName;
+    @Getter
+    private final String token;
     public Map<UUID, TelegramUpdateSubscribe> reactors = new ConcurrentHashMap<>();
-    private TelegramConf configuration;
 
     public MainBot(TelegramConf conf) {
         super(conf.getBotToken());
-        configuration = conf;
+        botName = conf.getBotName();
+        token = conf.getBotToken();
+    }
+
+    public MainBot(UserTelegramConf conf) {
+        super(conf.getBotToken());
+        botName = conf.getBotName();
+        token = conf.getBotToken();
     }
 
     public TelegramUpdateSubscribe subscribe(TelegramUpdateReactor reactor, Boolean once) {
@@ -141,10 +151,10 @@ public class MainBot extends TelegramLongPollingBot {
                 Long chatId = null;
                 if (update.hasMessage()) {
                     chatId = update.getMessage().getChatId();
-                }else if(update.hasCallbackQuery()){
+                } else if (update.hasCallbackQuery()) {
                     chatId = update.getCallbackQuery().getMessage().getChatId();
                 }
-                if(chatId != null) {
+                if (chatId != null) {
                     try {
                         TelegramMessageFactory.create(chatId, this).simpleMessage(e.getMessage()).execute();
                     } catch (TelegramApiException ignored) {
@@ -157,11 +167,6 @@ public class MainBot extends TelegramLongPollingBot {
 
     @Override
     public String getBotUsername() {
-        return configuration.getBotName();
+        return botName;
     }
-
-    public String getToken(){
-        return configuration.getBotToken();
-    }
-
 }

@@ -1,15 +1,18 @@
 package com.microel.trackerbackend.services.api;
 
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
+import com.microel.trackerbackend.controllers.telegram.UserTelegramController;
 import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.modules.transport.Credentials;
 import com.microel.trackerbackend.parsers.commutator.ra.DES28RemoteAccess;
-import com.microel.trackerbackend.services.external.acp.AcpClient;
-import com.microel.trackerbackend.storage.entities.acp.commutator.PortInfo;
-import com.microel.trackerbackend.storage.entities.acp.commutator.SystemInfo;
 import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.security.exceptions.JwsTokenParseError;
+import com.microel.trackerbackend.services.UserAccountService;
+import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
+import com.microel.trackerbackend.services.external.billing.ApiBillingController;
+import com.microel.trackerbackend.storage.entities.acp.commutator.PortInfo;
+import com.microel.trackerbackend.storage.entities.acp.commutator.SystemInfo;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import org.springframework.http.HttpStatus;
@@ -22,6 +25,7 @@ import javax.servlet.http.Cookie;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.util.List;
+import java.util.Map;
 
 @Controller
 @RequestMapping("api/public")
@@ -31,12 +35,18 @@ public class PublicRequestController {
     private final TelegramController telegramController;
     private final AcpClient acpClient;
     private final StompController stompController;
+    private final UserTelegramController userTelegramController;
+    private final UserAccountService userAccountService;
+    private final ApiBillingController apiBillingController;
 
-    public PublicRequestController(AuthorizationProvider authorizationProvider, TelegramController telegramController, AcpClient acpClient, StompController stompController) {
+    public PublicRequestController(AuthorizationProvider authorizationProvider, TelegramController telegramController, AcpClient acpClient, StompController stompController, UserTelegramController userTelegramController, UserAccountService userAccountService, ApiBillingController apiBillingController) {
         this.authorizationProvider = authorizationProvider;
         this.telegramController = telegramController;
         this.acpClient = acpClient;
         this.stompController = stompController;
+        this.userTelegramController = userTelegramController;
+        this.userAccountService = userAccountService;
+        this.apiBillingController = apiBillingController;
     }
 
     @PostMapping("sign-in")
@@ -151,5 +161,18 @@ public class PublicRequestController {
         List<PortInfo> ports = remoteAccess.getPorts();
         remoteAccess.close();
         return ResponseEntity.ok(ports);
+    }
+
+    @PostMapping("user/telegram/auth")
+    public ResponseEntity<Map<String, String>> userTelegramAuth(@RequestBody UserTelegramController.UserTelegramCredentials credentials) {
+        if(!userTelegramController.checkSecret(credentials))
+            return ResponseEntity.ok(Map.of("error", "wrong_auth_token"));
+        if(!userAccountService.isCredentialsValid(credentials.getLogin(), credentials.getPassword()))
+            return ResponseEntity.ok(Map.of("error",  "wrong_credentials"));
+        ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(credentials.getLogin());
+        if(!userTelegramController.doSendAuthConfirmation(credentials.getId(), userInfo))
+            return ResponseEntity.ok(Map.of("error",  "wrong_tlg_user"));
+        userAccountService.doSaveUserAccount(credentials);
+        return ResponseEntity.ok(Map.of("success",  "OK"));
     }
 }
