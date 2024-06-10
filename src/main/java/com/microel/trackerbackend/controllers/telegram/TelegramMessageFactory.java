@@ -1236,7 +1236,7 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> linkForUserAuth(Long telegramId, String secretKey) {
-        String url = Decorator.url("страницу авторизации", "http://127.0.0.1:4412/tauth?id=" + telegramId + "&sc=" + secretKey);
+        String url = Decorator.url("страницу авторизации", "https://vdonsk.ru/tauth?id=" + telegramId + "&sc=" + secretKey);
         String text = "Для начала нужно перейти на " + url + " и ввести свой логин и пароль из договора";
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
@@ -1452,7 +1452,7 @@ public class TelegramMessageFactory {
         StringBuilder messageBuilder = new StringBuilder();
         double negativeBalance = Math.ceil(userInfo.getIbase().getMoney() < 0f ? Math.abs(userInfo.getIbase().getMoney()) : 0f);
         long payAmount = Math.round(Math.max(negativeBalance, userInfo.getTotalCost()));
-        String payUrl = Decorator.url("Пополнить баланс", "http://127.0.0.1:4412/?form=open&login=" + userInfo.getUname() + "&amount=" + payAmount);
+        String payUrl = Decorator.url("Пополнить баланс", "https://vdonsk.ru/?form=open&login=" + userInfo.getUname() + "&amount=" + payAmount);
         messageBuilder.append(Decorator.bold("Баланс: ")).append(userInfo.getIbase().getMoney()).append(" руб.\n");
         SimpleDateFormat dateFormat = new SimpleDateFormat("dd-MM-yyyy");
         switch (userInfo.getNewTarif().getUserStatus()) {
