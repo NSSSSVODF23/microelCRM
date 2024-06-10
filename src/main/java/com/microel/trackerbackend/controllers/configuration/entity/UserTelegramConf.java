@@ -14,6 +14,7 @@ import lombok.Setter;
 public class UserTelegramConf implements AbstractConfiguration {
     private String botToken;
     private String botName;
+    private String microelHubIpPort;
 
 
     @Override

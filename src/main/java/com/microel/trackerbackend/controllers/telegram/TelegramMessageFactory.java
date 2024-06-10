@@ -27,6 +27,8 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.util.TelegramOptions;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
+import com.microel.trackerbackend.storage.entities.userstlg.TelegramUserAuth;
+import com.microel.trackerbackend.storage.entities.userstlg.UserRequest;
 import com.microel.trackerbackend.storage.entities.userstlg.UserTariff;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.exceptions.IllegalMediaType;
@@ -38,10 +40,7 @@ import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.ParseMode;
 import org.telegram.telegrambots.meta.api.methods.PartialBotApiMethod;
 import org.telegram.telegrambots.meta.api.methods.send.*;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.DeleteMessage;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageCaption;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageMedia;
-import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageText;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.*;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.media.InputMedia;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
@@ -1251,9 +1250,8 @@ public class TelegramMessageFactory {
 
     public AbstractExecutor<Message> userMainMenu(String message) {
         KeyboardFactory keyboardFactory = new KeyboardFactory()
-                .newLine("\uD83D\uDCC8 Активный тариф", "\uD83D\uDCFA Активные доп.услуги")
                 .newLine("\uD83D\uDCB0 Проверить баланс")
-                .newLine("\uD83D\uDED1 Приостановка обслуживания");
+                .newLine("\uD83D\uDCC8 Активный тариф", "\uD83D\uDCFA Активные доп.услуги");
 
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
@@ -1265,13 +1263,21 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> userTariffRequest(ApiBillingController.TotalUserInfo userInfo) {
-        String text = "Текущий тариф - " + Decorator.bold(userInfo.getNewTarif().getTarif())
-                + "\nСо скоростью " + userInfo.getNewTarif().getTspeed() + " Mbit/s • "
-                + userInfo.getOldTarif().get(0).getPrice() + " руб./п.";
+        String text = "В данный момент тариф не установлен. Для подключения тарифа нажмите в меню 'Сменить тариф'.";
+        if (userInfo.getNewTarif().getTarif() != null && !userInfo.getNewTarif().getTarif().isBlank()) {
+            text = "Текущий тариф - " + Decorator.bold(userInfo.getNewTarif().getTarif())
+                    + "\nСо скоростью " + userInfo.getNewTarif().getTspeed() + " Mbit/s • "
+                    + userInfo.getOldTarif().get(0).getPrice() + " руб./п.";
+        }
+        KeyboardFactory keyboardFactory = new KeyboardFactory()
+                .newLine("\uD83D\uDD03 Сменить тариф")
+                .newLine("◀\uFE0F Главное меню");
+
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
                 .text(text)
                 .parseMode(ParseMode.HTML)
+                .replyMarkup(keyboardFactory.getReplyKeyboard())
                 .build();
         return new MessageExecutor<>(sendMessage, context);
     }
@@ -1281,9 +1287,9 @@ public class TelegramMessageFactory {
         KeyboardFactory keyboardFactory = new KeyboardFactory()
                 .newLine("✅ Подключить доп.услугу");
 
-        if(userInfo.getOldTarif().size() <= 1) {
+        if (userInfo.getOldTarif().size() <= 1) {
             stringBuilder.append(Decorator.italic("Доп.услуги не подключены"));
-        }else{
+        } else {
             keyboardFactory.newLine("❌ Отключить доп.услугу");
             stringBuilder.append("Доп.услуги:\n");
             for (int i = 1; i < userInfo.getOldTarif().size(); i++) {
@@ -1303,10 +1309,28 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(sendMessage, context);
     }
 
+    public AbstractExecutor<Message> changeUserTariff(ApiBillingController.TotalUserInfo userInfo, List<UserTariff> tariffs) {
+        if(tariffs.isEmpty()){
+            return userMainMenu("Пока нет доступных тарифов для подключения");
+        }
+        KeyboardFactory keyboardFactory = new KeyboardFactory();
+        tariffs.forEach(service -> keyboardFactory.newLine(KeyboardFactory.IKButton.of(service.getName() + " " + service.getPriceLabel(), "change_user_tariff", service.getBaseName())));
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text("Какой тариф установить?")
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(keyboardFactory.getInlineKeyboard())
+                .build();
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
     public AbstractExecutor<Message> connectUserService(ApiBillingController.TotalUserInfo userInfo, List<UserTariff> services) {
-        KeyboardFactory keyboardFactory  = new KeyboardFactory();
+        if(services.isEmpty()){
+            return userMainMenu("Пока нет доступных доп.услуг для подключения");
+        }
+        KeyboardFactory keyboardFactory = new KeyboardFactory();
         services.forEach(service -> keyboardFactory.newLine(KeyboardFactory.IKButton.of(service.getName() + " " + service.getPriceLabel(), "connect_user_service", service.getBaseName())));
-        SendMessage sendMessage  = SendMessage.builder()
+        SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
                 .text("Какую услугу подключить?")
                 .parseMode(ParseMode.HTML)
@@ -1316,10 +1340,10 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> disconnectUserService(ApiBillingController.TotalUserInfo userInfo) {
-        final KeyboardFactory keyboardFactory   = new KeyboardFactory();
-        List<ApiBillingController.OldTarifItem> connectedServices  = userInfo.getOldTarif().stream().skip(1).toList();
-        connectedServices.forEach(service  -> keyboardFactory.newLine(KeyboardFactory.IKButton.of(service.getService(),  "disconnect_user_service", service.getService())));
-        SendMessage sendMessage   = SendMessage.builder()
+        final KeyboardFactory keyboardFactory = new KeyboardFactory();
+        List<ApiBillingController.OldTarifItem> connectedServices = userInfo.getOldTarif().stream().skip(1).toList();
+        connectedServices.forEach(service -> keyboardFactory.newLine(KeyboardFactory.IKButton.of(service.getService(), "disconnect_user_service", service.getService())));
+        SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
                 .text("Какую услугу отключить?")
                 .parseMode(ParseMode.HTML)
@@ -1329,7 +1353,7 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Serializable> userRequestResponse(Integer messageId, String text) {
-        KeyboardFactory keyboardFactory   = new KeyboardFactory();
+        KeyboardFactory keyboardFactory = new KeyboardFactory();
         keyboardFactory.newLine(KeyboardFactory.IKButton.of("Посмотреть активные запросы", "get_user_requests", ""));
         return new MessageExecutor<>(EditMessageText.builder()
                 .chatId(chatId)
@@ -1337,6 +1361,158 @@ public class TelegramMessageFactory {
                 .text(text)
                 .replyMarkup(keyboardFactory.getInlineKeyboard())
                 .parseMode("HTML")
+                .build(), context);
+    }
+
+    public AbstractExecutor<Serializable> editTextOfMessage(Integer messageId, String text) {
+        return new EditTextMessageExecutor(EditMessageText.builder()
+                .chatId(chatId)
+                .messageId(messageId)
+                .text(text)
+                .parseMode("HTML")
+                .build(), context);
+    }
+
+    public AbstractExecutor<Message> listOfUserRequests(Integer messageId, List<UserRequest> requests) throws TelegramApiException {
+        KeyboardFactory keyboardFactory = new KeyboardFactory()
+                .newLine("\uD83D\uDDD1 Отменить запросы")
+                .newLine("◀\uFE0F Главное меню");
+        StringBuilder stringBuilder = new StringBuilder();
+        stringBuilder.append(Decorator.bold("Запросы:\n"));
+        for (UserRequest request : requests) {
+            stringBuilder
+                    .append("• ")
+                    .append(request.getDescription())
+                    .append("\n");
+        }
+
+        String message = stringBuilder.toString();
+        if (message.length() > 4096) {
+            message = message.substring(0, 4096);
+        }
+
+
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text(message)
+                .replyMarkup(keyboardFactory.getReplyKeyboard())
+                .parseMode("HTML")
+                .build();
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<Message> listRemoveUserRequests(List<UserRequest> requests) {
+
+        if (requests.isEmpty()) {
+            return new MessageExecutor<>(SendMessage.builder()
+                    .chatId(chatId)
+                    .text("Запросы отсутствуют")
+                    .parseMode(ParseMode.HTML)
+                    .build(), context);
+        }
+
+        KeyboardFactory keyboardFactory = new KeyboardFactory();
+        for (UserRequest request : requests) {
+            keyboardFactory.newLine(KeyboardFactory.IKButton.of(request.getDescription(), "remove_user_request", request.getUserRequestId().toString()));
+        }
+        SendMessage sendMessage = SendMessage.builder()
+                .chatId(chatId)
+                .text("Какой запрос удалить?")
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(keyboardFactory.getInlineKeyboard())
+                .build();
+        return new MessageExecutor<>(sendMessage, context);
+    }
+
+    public AbstractExecutor<?> removeInlineButton(Message message, CallbackData data) {
+        List<List<InlineKeyboardButton>> keyboard = message.getReplyMarkup().getKeyboard().stream()
+                .map(row -> row.stream().filter(button -> !Objects.equals(button.getCallbackData(), data.toString())).toList())
+                .toList();
+        int numButtons = keyboard.stream()
+                .mapToInt(List::size)
+                .sum();
+        if (numButtons == 0) {
+            DeleteMessage deleteMessage = DeleteMessage.builder()
+                    .chatId(chatId)
+                    .messageId(message.getMessageId())
+                    .build();
+            return new MessageExecutor<>(deleteMessage, context);
+        }
+        EditMessageReplyMarkup editMessageReplyMarkup = EditMessageReplyMarkup.builder()
+                .chatId(chatId)
+                .messageId(message.getMessageId())
+                .replyMarkup(InlineKeyboardMarkup.builder().keyboard(keyboard).build())
+                .build();
+        return new MessageExecutor<>(editMessageReplyMarkup, context);
+    }
+
+    public AbstractExecutor<Message> userBalanceMenu(ApiBillingController.TotalUserInfo userInfo) {
+        SendMessage.SendMessageBuilder sendMessage = SendMessage.builder();
+        KeyboardFactory keyboardFactory = null;
+        StringBuilder messageBuilder = new StringBuilder();
+        double negativeBalance = Math.ceil(userInfo.getIbase().getMoney() < 0f ? Math.abs(userInfo.getIbase().getMoney()) : 0f);
+        long payAmount = Math.round(Math.max(negativeBalance, userInfo.getTotalCost()));
+        String payUrl = Decorator.url("Пополнить баланс", "http://127.0.0.1:4412/?form=open&login=" + userInfo.getUname() + "&amount=" + payAmount);
+        messageBuilder.append(Decorator.bold("Баланс: ")).append(userInfo.getIbase().getMoney()).append(" руб.\n");
+        SimpleDateFormat dateFormat = new SimpleDateFormat("dd-MM-yyyy");
+        switch (userInfo.getNewTarif().getUserStatus()) {
+            case NO_MONEY -> {
+                messageBuilder.append("В данный момент не достаточно средств на балансе для работы услуг. Можете воспользоваться услугой 'Отложенный платеж' или ")
+                        .append(payUrl);
+                keyboardFactory = new KeyboardFactory()
+                        .newLine("▶\uFE0F Включить отложенный платеж");
+            }
+            case ACTIVE -> {
+                messageBuilder.append("Интернет активен.");
+                if (userInfo.getNewTarif().getEdate() != null) {
+                    String formatted = dateFormat.format(userInfo.getNewTarif().getEdate());
+                    messageBuilder.append(" Следующее списание - ").append(formatted);
+                }
+                keyboardFactory = new KeyboardFactory()
+                        .newLine("\uD83D\uDED1 Приостановка обслуживания");
+            }
+            case DEFERRED_PAYMENT -> {
+                messageBuilder.append("В данный момент активна услуга 'Отложенный платеж'.").append(payUrl);
+            }
+            case DEFERRED_PAYMENT_IS_OVERDUE -> {
+                messageBuilder.append("Действие услуги 'Отложенный платеж' закончилось. ").append(payUrl);
+            }
+            case SUSPENDED -> {
+                messageBuilder.append("Действие услуг приостановлено. Чтобы воспользоваться интернетом возобновите обслуживание.");
+                keyboardFactory = new KeyboardFactory()
+                        .newLine("\uD83D\uDFE2 Возобновить обслуживание");
+            }
+            default -> {
+                messageBuilder.append("Логин деактивирован.");
+            }
+        }
+//        keyboardFactory  = new KeyboardFactory()
+//                .newLine("▶\uFE0F Включить отложенный платеж")
+//                .newLine("\uD83D\uDFE2 Возобновить обслуживание");
+        if (keyboardFactory != null)
+            keyboardFactory.newLine("◀\uFE0F Главное меню");
+
+        sendMessage.chatId(chatId)
+                .text(messageBuilder.toString())
+                .parseMode(ParseMode.HTML);
+        if (keyboardFactory != null) {
+            sendMessage.replyMarkup(keyboardFactory.getReplyKeyboard());
+        }
+        return new MessageExecutor<>(sendMessage.build(), context);
+    }
+
+    public AbstractExecutor<Message> userSuspendConfirmMenu(TelegramUserAuth userAccount) {
+        KeyboardFactory keyboardFactory = new KeyboardFactory()
+                .newLine(
+                        KeyboardFactory.IKButton.of("Нет", "suspend_not_confirmed", userAccount.getUserLogin()),
+                        KeyboardFactory.IKButton.of("Да", "suspend_confirmed", userAccount.getUserLogin())
+                );
+        String text = "Приостановка обслуживания отключит доступ в интернет. Вы уверены?";
+        return new MessageExecutor<>(SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(keyboardFactory.getInlineKeyboard())
                 .build(), context);
     }
 

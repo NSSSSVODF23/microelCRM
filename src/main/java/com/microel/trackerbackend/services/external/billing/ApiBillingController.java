@@ -967,6 +967,13 @@ public class ApiBillingController {
             u.uname = (String) map.get("uname");
             return u;
         }
+
+        public Integer getTotalCost() {
+            if (this.oldTarif != null && !this.oldTarif.isEmpty()) {
+                return Math.round(this.oldTarif.stream().map(OldTarifItem::getPrice).reduce(0f, Float::sum));
+            }
+            return 0;
+        }
     }
 
     @Getter
