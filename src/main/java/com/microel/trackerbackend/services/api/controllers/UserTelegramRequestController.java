@@ -105,7 +105,10 @@ public class UserTelegramRequestController {
 
     @GetMapping("request/unprocessed/count")
     public ResponseEntity<Long> getTlgUserRequestsCount() {
-        return ResponseEntity.ok(userRequestRepository.count((root, query, cb) -> cb.isNull(root.get("processedBy"))));
+        return ResponseEntity.ok(userRequestRepository.count((root, query, cb) -> cb.and(
+            cb.isNull(root.get("processedBy")),
+            cb.isFalse(root.get("deleted"))
+        )));
     }
 
     @PatchMapping("request/{id}/processed")
