@@ -1,4 +1,4 @@
-package com.microel.trackerbackend.storage.entities.userstlg;
+package com.microel.trackerbackend.storage.entities.users;
 
 import com.microel.trackerbackend.storage.entities.EmployeeIntervention;
 import com.microel.trackerbackend.storage.entities.team.Employee;

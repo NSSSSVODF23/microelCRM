@@ -1,7 +1,7 @@
 package com.microel.trackerbackend.services;
 
 import com.microel.trackerbackend.controllers.telegram.UserTelegramController;
-import com.microel.trackerbackend.storage.entities.userstlg.TelegramUserAuth;
+import com.microel.trackerbackend.storage.entities.users.TelegramUserAuth;
 import com.microel.trackerbackend.storage.repositories.TelegramUserAuthRepository;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;

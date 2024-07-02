@@ -1,8 +1,8 @@
 package com.microel.trackerbackend.storage.repositories;
 
-import com.microel.trackerbackend.storage.entities.users.UserRequest;
+import com.microel.trackerbackend.storage.entities.users.Review;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
-public interface UserRequestRepository extends JpaRepository<UserRequest, Long>, JpaSpecificationExecutor<UserRequest> {
+public interface ReviewRepository extends JpaRepository<Review, Long>, JpaSpecificationExecutor<Review> {
 }

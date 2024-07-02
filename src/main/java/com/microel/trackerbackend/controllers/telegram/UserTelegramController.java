@@ -13,9 +13,11 @@ import com.microel.trackerbackend.modules.transport.Credentials;
 import com.microel.trackerbackend.services.UserAccountService;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.billing.ApiBillingController;
-import com.microel.trackerbackend.storage.entities.userstlg.TelegramUserAuth;
-import com.microel.trackerbackend.storage.entities.userstlg.UserRequest;
-import com.microel.trackerbackend.storage.entities.userstlg.UserTariff;
+import com.microel.trackerbackend.storage.dispatchers.ReviewDispatcher;
+import com.microel.trackerbackend.storage.entities.users.Review;
+import com.microel.trackerbackend.storage.entities.users.TelegramUserAuth;
+import com.microel.trackerbackend.storage.entities.users.UserRequest;
+import com.microel.trackerbackend.storage.entities.users.UserTariff;
 import com.microel.trackerbackend.storage.repositories.UserRequestRepository;
 import com.microel.trackerbackend.storage.repositories.UserTariffRepository;
 import lombok.Getter;
@@ -51,7 +53,9 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -67,6 +71,8 @@ public class UserTelegramController {
     private final ApiBillingController apiBillingController;
     private final UserTariffRepository userTariffRepository;
     private final UserRequestRepository userRequestRepository;
+    private final Map<TelegramUserAuth, Mode> usersInMode = new ConcurrentHashMap<>();
+    private final ReviewDispatcher reviewDispatcher;
     private UserTelegramConf telegramConf;
     @Nullable
     private TelegramBotsApi api;
@@ -76,10 +82,11 @@ public class UserTelegramController {
     private BotSession mainBotSession;
 
     public UserTelegramController(Configuration configuration, StompController stompController, UserAccountService userAccountService, ApiBillingController apiBillingController, UserTariffRepository userTariffRepository,
-                                  UserRequestRepository userRequestRepository) {
+                                  UserRequestRepository userRequestRepository, ReviewDispatcher reviewDispatcher) {
         this.configuration = configuration;
         this.stompController = stompController;
         this.userAccountService = userAccountService;
+        this.reviewDispatcher = reviewDispatcher;
         try {
             telegramConf = configuration.load(UserTelegramConf.class);
             initializeMainBot();
@@ -142,7 +149,7 @@ public class UserTelegramController {
             return true;
         }));
 
-        mainBot.subscribe(new TelegramCallbackReactor("suspend_confirmed", (update, callbackData) ->{
+        mainBot.subscribe(new TelegramCallbackReactor("suspend_confirmed", (update, callbackData) -> {
             if (callbackData == null) return false;
             final Long chatId = update.getCallbackQuery().getFrom().getId();
             final Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
@@ -160,7 +167,7 @@ public class UserTelegramController {
             return true;
         }));
 
-        mainBot.subscribe(new TelegramCallbackReactor("suspend_not_confirmed", (update, callbackData) ->{
+        mainBot.subscribe(new TelegramCallbackReactor("suspend_not_confirmed", (update, callbackData) -> {
             if (callbackData == null) return false;
             final Long chatId = update.getCallbackQuery().getFrom().getId();
             final Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
@@ -230,18 +237,26 @@ public class UserTelegramController {
                 TelegramMessageFactory.create(chatId, mainBot).linkForUserAuth(chatId, hashWithSalt(chatId)).execute();
                 return false;
             }
-            try{
+            try {
                 if (handleMainMenuCommand(message, userAccount)) {
                     return true;
                 }
+                Mode userMode = getUserMode(userAccount);
+                if (userMode != null) {
+                    switch (userMode) {
+                        case REVIEW -> {
+                            return handleSendReview(message, userAccount);
+                        }
+                    }
+                }
                 sendUpdateToHub(update);
-            }catch  (Exception e) {
+            } catch (Exception e) {
                 throw new TelegramApiException(e.getMessage());
             }
             return true;
         }));
 
-        mainBot.subscribe(new TelegramEditMessageReactor(update  -> {
+        mainBot.subscribe(new TelegramEditMessageReactor(update -> {
             sendUpdateToHub(update);
             return true;
         }));
@@ -282,9 +297,26 @@ public class UserTelegramController {
         return true;
     }
 
-    public void sendUpdateToHub(Update update) {
-        RequestEntity.BodyBuilder request = RequestEntity.post(url("updates"));
-        restTemplate.exchange(request.body(update), Void.class);
+    public void sendUpdateToHub(Update update) throws TelegramApiException {
+        try {
+            RequestEntity.BodyBuilder request = RequestEntity.post(url("updates"));
+            restTemplate.exchange(request.body(update), Void.class);
+        } catch (Exception e) {
+            throw new TelegramApiException("Не удалось отправить сообщение, повторите попытку позже");
+        }
+    }
+
+    public void sendReviewNotification(Review review) throws TelegramApiException {
+        if (telegramConf == null || !telegramConf.isFilled()) {
+            System.out.println("Отсутствует конфигурация телеграмма");
+            return;
+        }
+        String chatId = telegramConf.getNotificationChannelId();
+        if (chatId == null || chatId.isBlank()) {
+            System.out.println("Чат для отправки DhcpIpRequestNotification отсутствует");
+            return;
+        }
+        TelegramMessageFactory.create(chatId, mainBot).reviewNotification(review).execute();
     }
 
     public UUID createNewChat(Long chatId, String chatName) {
@@ -346,6 +378,9 @@ public class UserTelegramController {
         String command = convertToCommand(message);
         if (command == null) return false;
         switch (command) {
+            case UserMenuCommands.MAIN_MENU, UserMenuCommands.CANCEL -> {
+                return handleShowMainMenu(message, userAccount);
+            }
             case UserMenuCommands.SHOW_TARIFF -> {
                 return handleTariffRequest(message, userAccount);
             }
@@ -364,9 +399,6 @@ public class UserTelegramController {
             case UserMenuCommands.DISCONNECT_SERVICE -> {
                 return handleDisconnectService(message, userAccount);
             }
-            case UserMenuCommands.MAIN_MENU -> {
-                return handleShowMainMenu(message, userAccount);
-            }
             case UserMenuCommands.CHANGE_TARIFF -> {
                 return handleChangeTariffRequest(message, userAccount);
             }
@@ -378,6 +410,9 @@ public class UserTelegramController {
             }
             case UserMenuCommands.ENABLE_DEFERRED_PAYMENT -> {
                 return handleEnableDeferredPayment(message, userAccount);
+            }
+            case UserMenuCommands.CREATE_REVIEW -> {
+                return handleCreateReview(message, userAccount);
             }
             default -> {
                 return false;
@@ -495,6 +530,44 @@ public class UserTelegramController {
         return true;
     }
 
+    private boolean handleCreateReview(Message message, TelegramUserAuth userAccount) throws TelegramApiException {
+        TelegramMessageFactory factory = TelegramMessageFactory.create(message.getChatId(), mainBot);
+        List<Review> todayReviews = reviewDispatcher.getTodayReviews(userAccount.getUserLogin());
+        if (todayReviews.size() > 4) {
+            factory.simpleMessage("Превышено количество отправляемых отзывов, повторите попытку позже").execute();
+            return true;
+        }
+
+        setUserMode(userAccount, Mode.REVIEW);
+
+        factory.createReview().execute();
+
+        return true;
+    }
+
+    private boolean handleSendReview(Message message, TelegramUserAuth userAccount) throws TelegramApiException {
+        clearUserMode(userAccount);
+        TelegramMessageFactory factory = TelegramMessageFactory.create(message.getChatId(), mainBot);
+        Review review = reviewDispatcher.createReview(userAccount.getUserLogin(), message.getText(), "Telegram");
+        sendReviewNotification(review);
+        stompController.updateUserReview(UpdateCarrier.from(EventType.CREATE, review));
+        factory.userMainMenu("Отзыв отправлен").execute();
+        return true;
+    }
+
+    public void setUserMode(TelegramUserAuth userAccount, Mode mode) {
+        usersInMode.compute(userAccount, (k, v) -> mode);
+    }
+
+    @Nullable
+    public Mode getUserMode(TelegramUserAuth userAccount) {
+        return usersInMode.getOrDefault(userAccount, null);
+    }
+
+    public void clearUserMode(TelegramUserAuth userAccount) {
+        usersInMode.remove(userAccount);
+    }
+
     public Message sendMessage(SendMessage message) throws TelegramApiException {
         if (mainBot == null || message == null) return null;
         return mainBot.execute(message);
@@ -550,6 +623,9 @@ public class UserTelegramController {
         }
     }
 
+    public enum Mode {
+        REVIEW
+    }
 
     @Getter
     @Setter

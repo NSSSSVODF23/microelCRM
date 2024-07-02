@@ -1,4 +1,4 @@
-package com.microel.trackerbackend.misc;
+package com.microel.trackerbackend.misc.dhcp;
 
 import lombok.Getter;
 import lombok.Setter;

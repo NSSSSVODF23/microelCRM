@@ -11,7 +11,8 @@ import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
 import com.microel.trackerbackend.misc.Async;
-import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.misc.dhcp.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.misc.dhcp.VpnStateNotificationBody;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.services.FilesWatchService;
 import com.microel.trackerbackend.services.ServerTimings;
@@ -2363,6 +2364,20 @@ public class TelegramController {
         if (employee.getTelegramUserId() == null || employee.getTelegramUserId().isBlank())
             throw new ResponseException("Не установлен telegram id для пользователя " + employee.getFullName());
         return TelegramMessageFactory.create(employee.getTelegramUserId(), mainBot);
+    }
+
+    public void sendVpnStateChangeNotification(VpnStateNotificationBody body, DhcpBinding dhcpBinding) throws TelegramApiException {
+        if (telegramConf == null || !telegramConf.isFilled()) {
+            log.warn("Отсутствует конфигурация телеграмма");
+            return;
+        }
+        String chatId = telegramConf.getDhcpNotificationChatId();
+        if (chatId == null || chatId.isBlank()) {
+            log.warn("Чат для отправки VpnStateNotification отсутствует");
+            return;
+        }
+
+        TelegramMessageFactory.create(chatId, mainBot).vpnStateNotification(body, dhcpBinding).execute();
     }
 
     public enum OperatingMode {

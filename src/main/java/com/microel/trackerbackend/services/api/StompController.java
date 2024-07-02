@@ -1,7 +1,5 @@
 package com.microel.trackerbackend.services.api;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microel.tdo.UpdateCarrier;
 import com.microel.tdo.pon.Worker;
 import com.microel.tdo.pon.events.OntStatusChangeEvent;
@@ -11,7 +9,6 @@ import com.microel.trackerbackend.controllers.configuration.entity.UserTelegramC
 import com.microel.trackerbackend.misc.*;
 import com.microel.trackerbackend.misc.task.counting.*;
 import com.microel.trackerbackend.services.RemoteTelnetService;
-import com.microel.trackerbackend.services.ServerTimings;
 import com.microel.trackerbackend.services.api.controllers.ProxyRemoteConnectionController;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
@@ -50,8 +47,9 @@ import com.microel.trackerbackend.storage.entities.team.notification.Notificatio
 import com.microel.trackerbackend.storage.entities.team.util.Department;
 import com.microel.trackerbackend.storage.entities.team.util.Position;
 import com.microel.trackerbackend.storage.entities.templating.Wireframe;
-import com.microel.trackerbackend.storage.entities.userstlg.UserRequest;
-import com.microel.trackerbackend.storage.entities.userstlg.UserTariff;
+import com.microel.trackerbackend.storage.entities.users.Review;
+import com.microel.trackerbackend.storage.entities.users.UserRequest;
+import com.microel.trackerbackend.storage.entities.users.UserTariff;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
@@ -565,5 +563,9 @@ public class StompController {
 
     public void updateTlgUserRequest(UpdateCarrier<UserRequest> updateCarrier) {
         sendAll(updateCarrier, "telegram-user-request");
+    }
+
+    public void updateUserReview(UpdateCarrier<Review> updateCarrier) {
+        sendAll(updateCarrier, "user-review");
     }
 }

@@ -8,9 +8,9 @@ import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.storage.dispatchers.EmployeeDispatcher;
 import com.microel.trackerbackend.storage.entities.EmployeeIntervention;
 import com.microel.trackerbackend.storage.entities.team.Employee;
-import com.microel.trackerbackend.storage.entities.userstlg.TelegramUserAuth;
-import com.microel.trackerbackend.storage.entities.userstlg.UserRequest;
-import com.microel.trackerbackend.storage.entities.userstlg.UserTariff;
+import com.microel.trackerbackend.storage.entities.users.TelegramUserAuth;
+import com.microel.trackerbackend.storage.entities.users.UserRequest;
+import com.microel.trackerbackend.storage.entities.users.UserTariff;
 import com.microel.trackerbackend.storage.repositories.TelegramUserAuthRepository;
 import com.microel.trackerbackend.storage.repositories.UserRequestRepository;
 import com.microel.trackerbackend.storage.repositories.UserTariffRepository;
@@ -18,16 +18,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
-import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
 import javax.persistence.criteria.Predicate;
 import javax.servlet.http.HttpServletRequest;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 @Controller
 @RequestMapping("api/private/user/telegram")

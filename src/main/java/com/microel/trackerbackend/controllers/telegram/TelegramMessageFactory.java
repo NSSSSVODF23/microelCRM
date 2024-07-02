@@ -3,7 +3,8 @@ package com.microel.trackerbackend.controllers.telegram;
 import com.microel.tdo.pon.OpticalLineTerminal;
 import com.microel.tdo.pon.events.OntStatusChangeEvent;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
-import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.misc.dhcp.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.misc.dhcp.VpnStateNotificationBody;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.external.RestPage;
 import com.microel.trackerbackend.services.external.acp.types.DhcpBinding;
@@ -27,9 +28,10 @@ import com.microel.trackerbackend.storage.entities.team.Employee;
 import com.microel.trackerbackend.storage.entities.team.util.TelegramOptions;
 import com.microel.trackerbackend.storage.entities.templating.WireframeFieldType;
 import com.microel.trackerbackend.storage.entities.templating.model.ModelItem;
-import com.microel.trackerbackend.storage.entities.userstlg.TelegramUserAuth;
-import com.microel.trackerbackend.storage.entities.userstlg.UserRequest;
-import com.microel.trackerbackend.storage.entities.userstlg.UserTariff;
+import com.microel.trackerbackend.storage.entities.users.Review;
+import com.microel.trackerbackend.storage.entities.users.TelegramUserAuth;
+import com.microel.trackerbackend.storage.entities.users.UserRequest;
+import com.microel.trackerbackend.storage.entities.users.UserTariff;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import com.microel.trackerbackend.storage.exceptions.IllegalMediaType;
 import lombok.AllArgsConstructor;
@@ -484,23 +486,35 @@ public class TelegramMessageFactory {
                 "MAC: " + body.getMac() + "\n" +
                 "VLAN: " + body.getVlan() + "\n";
 
-//        if(body.getSwitches() != null){
-//            messageBuilder.append("\n").append(Decorator.bold( "Список коммутаторов:")).append("\n");
-//            for(DhcpIpRequestNotificationBody.SwitchInfo switchInfo : body.getSwitches()) {
-//                messageBuilder
-//                        .append("<pre>")
-//                        .append(switchInfo.getName()).append(" ")
-//                        .append(switchInfo.getIpaddress()).append(" ")
-//                        .append(switchInfo.getModel()).append(" ")
-//                        .append(switchInfo.getStreet()).append("-").append(switchInfo.getHouse())
-//                        .append("</pre>")
-//                        .append("\n");
-//            }
-//        }
-
         SendMessage message = new SendMessage(chatId, messageBuilder);
         message.setParseMode(ParseMode.HTML);
         return new MessageExecutor<>(message, context);
+    }
+
+    public AbstractExecutor<Message> vpnStateNotification(VpnStateNotificationBody body, @Nullable DhcpBinding dhcpBinding) {
+        StringBuilder builder = new StringBuilder();
+        if (body.getState()) {
+            builder.append("\uD83D\uDFE2 ").append(Decorator.bold("Устройство подключилось к VPN\n"));
+        } else {
+            builder.append("\uD83D\uDD34 ").append(Decorator.bold("Устройство отключилось от VPN\n"));
+        }
+        if (dhcpBinding != null) {
+            builder.append("Логин: ").append(dhcpBinding.getAuthName()).append("\n");
+            builder.append("Адрес: ").append(dhcpBinding.getStreetName()).append(" ").append(dhcpBinding.getHouseNum()).append("\n");
+        } else {
+            builder.append("Логин: ").append(Decorator.italic("IP в ACP не найден")).append("\n");
+        }
+        builder.append("DHCP IP: ").append(body.getSrcIp()).append("\n");
+        builder.append("IP Устройства: ").append(body.getSelfIp()).append("\n");
+        if (!body.getState()) {
+            builder.append("Время соединения: ").append(body.getConnection()).append("\n");
+            builder.append("Трафик (In/Out): ").append(body.getTraffic()).append("\n");
+        }
+        return new MessageExecutor<>(SendMessage.builder()
+                .chatId(chatId)
+                .text(builder.toString())
+                .parseMode(ParseMode.HTML)
+                .build(), context);
     }
 
     public AbstractExecutor<Message> addressSuggestions(List<House> houseList, String callbackPrefix) {
@@ -1251,7 +1265,8 @@ public class TelegramMessageFactory {
     public AbstractExecutor<Message> userMainMenu(String message) {
         KeyboardFactory keyboardFactory = new KeyboardFactory()
                 .newLine("\uD83D\uDCB0 Проверить баланс")
-                .newLine("\uD83D\uDCC8 Активный тариф", "\uD83D\uDCFA Активные доп.услуги");
+                .newLine("\uD83D\uDCC8 Активный тариф", "\uD83D\uDCFA Активные доп.услуги")
+                .newLine("⭐\uFE0F Пожелания и отзывы");
 
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
@@ -1310,7 +1325,7 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> changeUserTariff(ApiBillingController.TotalUserInfo userInfo, List<UserTariff> tariffs) {
-        if(tariffs.isEmpty()){
+        if (tariffs.isEmpty()) {
             return userMainMenu("Пока нет доступных тарифов для подключения");
         }
         KeyboardFactory keyboardFactory = new KeyboardFactory();
@@ -1325,7 +1340,7 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> connectUserService(ApiBillingController.TotalUserInfo userInfo, List<UserTariff> services) {
-        if(services.isEmpty()){
+        if (services.isEmpty()) {
             return userMainMenu("Пока нет доступных доп.услуг для подключения");
         }
         KeyboardFactory keyboardFactory = new KeyboardFactory();
@@ -1468,11 +1483,12 @@ public class TelegramMessageFactory {
                     String formatted = dateFormat.format(userInfo.getNewTarif().getEdate());
                     messageBuilder.append(" Следующее списание - ").append(formatted);
                 }
+                messageBuilder.append("\n Так же можно ").append(payUrl);
                 keyboardFactory = new KeyboardFactory()
                         .newLine("\uD83D\uDED1 Приостановка обслуживания");
             }
             case DEFERRED_PAYMENT -> {
-                messageBuilder.append("В данный момент активна услуга 'Отложенный платеж'.").append(payUrl);
+                messageBuilder.append("В данный момент активна услуга 'Отложенный платеж'. ").append(payUrl);
             }
             case DEFERRED_PAYMENT_IS_OVERDUE -> {
                 messageBuilder.append("Действие услуги 'Отложенный платеж' закончилось. ").append(payUrl);
@@ -1513,6 +1529,31 @@ public class TelegramMessageFactory {
                 .text(text)
                 .parseMode(ParseMode.HTML)
                 .replyMarkup(keyboardFactory.getInlineKeyboard())
+                .build(), context);
+    }
+
+    public AbstractExecutor<Message> createReview() {
+        KeyboardFactory keyboardFactory = new KeyboardFactory()
+                .newLine(
+                        "Отмена"
+                );
+        String text = "Напишите пожелание или отзыв следующим сообщением:";
+        return new MessageExecutor<>(SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(keyboardFactory.getReplyKeyboard())
+                .build(), context);
+    }
+
+    public AbstractExecutor<Message> reviewNotification(Review review) {
+        String text = "⭐\uFE0F Пользователь " + review.getUserLogin() + " оставил отзыв\n"
+                + "Источник: " + Decorator.bold(review.getSource()) + "\n"
+                + "Текст отзыва: " + Decorator.italic(review.getText()) + " @Elena_lexx";
+        return new MessageExecutor<>(SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .parseMode(ParseMode.HTML)
                 .build(), context);
     }
 

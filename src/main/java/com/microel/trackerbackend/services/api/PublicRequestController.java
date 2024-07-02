@@ -2,7 +2,8 @@ package com.microel.trackerbackend.services.api;
 
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.controllers.telegram.UserTelegramController;
-import com.microel.trackerbackend.misc.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.misc.dhcp.DhcpIpRequestNotificationBody;
+import com.microel.trackerbackend.misc.dhcp.VpnStateNotificationBody;
 import com.microel.trackerbackend.modules.transport.Credentials;
 import com.microel.trackerbackend.parsers.commutator.ra.DES28RemoteAccess;
 import com.microel.trackerbackend.security.AuthorizationProvider;
@@ -129,6 +130,19 @@ public class PublicRequestController {
             telegramController.sendDhcpIpRequestNotification(body);
             return ResponseEntity.ok().build();
         } catch (TelegramApiException e) {
+            return ResponseEntity.ok().build();
+        }
+    }
+
+    @PostMapping("out/vpn/state-change/notification")
+    public ResponseEntity<Void> outVpnStateChangeNotification(@RequestBody VpnStateNotificationBody body) {
+        try {
+            DhcpBinding dhcpBinding = acpClient.getLastBindings(0, (short) 1, null, null, body.getSrcIp(), null,
+                    null, null).stream().findFirst().orElse(null);
+            telegramController.sendVpnStateChangeNotification(body, dhcpBinding);
+            return ResponseEntity.ok().build();
+        } catch (TelegramApiException e) {
+            System.out.println(e);
             return ResponseEntity.ok().build();
         }
     }
