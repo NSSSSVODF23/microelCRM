@@ -510,6 +510,7 @@ public class UserTelegramController {
     }
 
     private boolean handleShowMainMenu(Message message, TelegramUserAuth userAccount) throws TelegramApiException {
+        clearUserMode(userAccount);
         TelegramMessageFactory.create(message.getChatId(), mainBot).userMainMenu("Главное меню").execute();
         return true;
     }
