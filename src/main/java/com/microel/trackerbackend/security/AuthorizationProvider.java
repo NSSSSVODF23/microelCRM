@@ -16,7 +16,9 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import javax.crypto.SecretKey;
 import javax.servlet.http.Cookie;
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.time.Instant;
 import java.util.*;
@@ -24,11 +26,14 @@ import java.util.*;
 @Slf4j
 @Service
 public class AuthorizationProvider {
-    public final static long JWS_EXPIRATION = 3_600_000L;
+    public final static long JWS_EXPIRATION = 10_577_000_000L;
+//    public final static long JWS_EXPIRATION = 3_600_000L;
 //    public final static long JWS_EXPIRATION = 30_000L;
     public final static long JWS_REFRESH_EXPIRATION = 2_592_000_000L;
-    private final static Key secretKey = Keys.secretKeyFor(SignatureAlgorithm.HS256);
-    private final static Key secretKeyRefresh = Keys.secretKeyFor(SignatureAlgorithm.HS256);
+    private static final SecretKey secretKey = Keys.hmacShaKeyFor("kw><r%GIi72f_qY!D=.._Vl`.tz,k&2UQb\"M%Y.X\"cPYE4umIzXAVQUs{(2[<W{".getBytes(StandardCharsets.UTF_8));
+    private static final SecretKey secretKeyRefresh = Keys.hmacShaKeyFor("kw><r%GIi72f_qY!D=.._Vl`.tz,k&2UQb\"M%Y.X\"cPYE4umIzXAVQUs{(2[<W{".getBytes(StandardCharsets.UTF_8));
+//    private final static Key secretKey = Keys.secretKeyFor(SignatureAlgorithm.HS256);
+//    private final static Key secretKeyRefresh = Keys.secretKeyFor(SignatureAlgorithm.HS256);
     private final EmployeeDispatcher employeeDispatcher;
     private final PasswordService passwordService;
 
@@ -68,7 +73,6 @@ public class AuthorizationProvider {
                 .signWith(secretKeyRefresh)
                 .compact();
     }
-
 
     private static Claims parseToken(String token) throws JwsTokenParseError {
         try {

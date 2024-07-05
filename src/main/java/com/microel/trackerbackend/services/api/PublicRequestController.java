@@ -62,7 +62,7 @@ public class PublicRequestController {
             }
 
             response.addCookie(tokenChain.getTokenChain().getTokenCookie());
-            response.addCookie(tokenChain.getTokenChain().getRefreshTokenCookie());
+//            response.addCookie(tokenChain.getTokenChain().getRefreshTokenCookie());
 
             return ResponseEntity.ok(tokenChain);
 
