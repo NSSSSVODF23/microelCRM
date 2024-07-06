@@ -34,7 +34,13 @@ public class Security {
                 .and()
                 .authorizeHttpRequests(
                         authz -> authz
-                                .antMatchers("/api/public/**", "api/internal/**", "/api/ws/**").permitAll()
+                                .antMatchers(
+                                        "/api/public/**",
+                                        "/api/internal/**",
+                                        "/api/ws/**",
+                                        "/socket",
+                                        "api/private/sensor"
+                                ).permitAll()
                                 .anyRequest().authenticated()
                                 .and()
                                 .addFilterAfter(tokenFilter, UsernamePasswordAuthenticationFilter.class)

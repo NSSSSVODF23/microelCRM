@@ -126,15 +126,16 @@ public class AuthorizationProvider {
         String login = claims.getSubject();
         boolean isExpired = Instant.now().isAfter(claims.getExpiration().toInstant());
         if (isExpired && withExpired) return false;
-        Employee employeeByLogin = null;
-        try {
-            employeeByLogin = employeeDispatcher.getEmployee(login);
-        } catch (EntryNotFound e) {
-            return false;
-        }
-        boolean isDeleted = employeeByLogin.getDeleted();
-        boolean isAccessChanged = !Objects.equals(employeeByLogin.getAccess(), claims.get("access", Integer.class));
-        return !isDeleted && !isAccessChanged;
+        return true;
+//        Employee employeeByLogin = null;
+//        try {
+//            employeeByLogin = employeeDispatcher.getEmployee(login);
+//        } catch (EntryNotFound e) {
+//            return false;
+//        }
+//        boolean isDeleted = employeeByLogin.getDeleted();
+//        boolean isAccessChanged = !Objects.equals(employeeByLogin.getAccess(), claims.get("access", Integer.class));
+//        return !isDeleted && !isAccessChanged;
     }
 
     public Boolean refreshTokenValidate(String refreshToken) {
