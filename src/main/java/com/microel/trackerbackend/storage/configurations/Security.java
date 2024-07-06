@@ -38,7 +38,7 @@ public class Security {
                                         "/api/internal/**",
                                         "/api/ws/**",
                                         "/socket",
-                                        "/api/private/sensor/temperature"
+                                        "/api/private/sensor/**"
                                 ).permitAll()
                                 .anyRequest().authenticated()
                                 .and()
