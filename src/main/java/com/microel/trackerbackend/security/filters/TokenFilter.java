@@ -38,7 +38,6 @@ public class TokenFilter extends GenericFilterBean {
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         String jwt = getJwtFromRequest((HttpServletRequest) servletRequest);
-        System.out.println("Вызван фильтр запроса");
         if(jwt != null){
             Boolean isTokenValid = authorizationProvider.tokenValidate(jwt, true);
             if  (isTokenValid)  {
