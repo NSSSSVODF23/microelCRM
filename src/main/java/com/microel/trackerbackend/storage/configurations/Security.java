@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.storage.configurations;
 
+import com.microel.trackerbackend.security.AuthorizationProvider;
 import com.microel.trackerbackend.security.filters.TokenFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,13 +13,11 @@ import org.springframework.security.web.authentication.www.BasicAuthenticationFi
 
 @Configuration
 public class Security {
+        private final AuthorizationProvider authorizationProvider;
 
-    private final TokenFilter tokenFilter;
-
-    public Security(TokenFilter tokenFilter) {
-        this.tokenFilter = tokenFilter;
+    public Security(AuthorizationProvider authorizationProvider) {
+        this.authorizationProvider = authorizationProvider;
     }
-
 //    private final JwtTokenFilter jwtTokenFilter;
 //
 //    public Security(JwtTokenFilter jwtTokenFilter) {
@@ -39,11 +38,11 @@ public class Security {
                                         "/api/internal/**",
                                         "/api/ws/**",
                                         "/socket",
-                                        "api/private/sensor"
+                                        "/api/private/sensor"
                                 ).permitAll()
                                 .anyRequest().authenticated()
                                 .and()
-                                .addFilterAfter(tokenFilter, UsernamePasswordAuthenticationFilter.class)
+                                .addFilterAfter(new TokenFilter(authorizationProvider), UsernamePasswordAuthenticationFilter.class)
                 )
 //                .authorizeRequests()
 //                .anyRequest().permitAll().and()
