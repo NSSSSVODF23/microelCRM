@@ -3,6 +3,8 @@ package com.microel.trackerbackend.controllers.telegram;
 import com.microel.tdo.pon.OpticalLineTerminal;
 import com.microel.tdo.pon.events.OntStatusChangeEvent;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
+import com.microel.trackerbackend.misc.autosupport.schema.AutoSupportStorage;
+import com.microel.trackerbackend.misc.autosupport.schema.Node;
 import com.microel.trackerbackend.misc.dhcp.DhcpIpRequestNotificationBody;
 import com.microel.trackerbackend.misc.dhcp.VpnStateNotificationBody;
 import com.microel.trackerbackend.services.api.ResponseException;
@@ -1266,7 +1268,7 @@ public class TelegramMessageFactory {
         KeyboardFactory keyboardFactory = new KeyboardFactory()
                 .newLine("\uD83D\uDCB0 Проверить баланс")
                 .newLine("\uD83D\uDCC8 Активный тариф", "\uD83D\uDCFA Активные доп.услуги")
-                .newLine("⭐\uFE0F Пожелания и отзывы");
+                .newLine("⭐\uFE0F Пожелания и отзывы").newLine("У меня проблема");
 
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
@@ -1554,6 +1556,22 @@ public class TelegramMessageFactory {
                 .chatId(chatId)
                 .text(text)
                 .parseMode(ParseMode.HTML)
+                .build(), context);
+    }
+
+    public AbstractExecutor<Message> autoSupportMessage(Node node, AutoSupportStorage storage) {
+        String message = Node.prepareMessage(node.getMessageTemplate(), storage);
+        KeyboardFactory keyboardFactory = new KeyboardFactory();
+        if (node.getType() == Node.NodeType.NORMAL && !Objects.isNull(node.getChildren()) && !node.getChildren().isEmpty()) {
+            for (Node child : node.getChildren()) {
+                keyboardFactory.newLine(KeyboardFactory.IKButton.of(child.getName(), "as", child.getId().toString()));
+            }
+        }
+        return new MessageExecutor<>(SendMessage.builder()
+                .chatId(chatId)
+                .text(message)
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(keyboardFactory.getInlineKeyboard())
                 .build(), context);
     }
 

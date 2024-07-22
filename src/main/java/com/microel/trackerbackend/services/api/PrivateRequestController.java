@@ -1,6 +1,9 @@
 package com.microel.trackerbackend.services.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.microel.trackerbackend.controllers.configuration.Configuration;
+import com.microel.trackerbackend.controllers.configuration.FailedToReadConfigurationException;
+import com.microel.trackerbackend.controllers.configuration.entity.AutoSupportNodes;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
 import com.microel.trackerbackend.controllers.configuration.entity.UserTelegramConf;
 import com.microel.trackerbackend.controllers.telegram.TelegramController;
@@ -9,6 +12,10 @@ import com.microel.trackerbackend.controllers.telegram.Utils;
 import com.microel.trackerbackend.misc.*;
 import com.microel.trackerbackend.misc.accounting.MonthlySalaryReportTable;
 import com.microel.trackerbackend.misc.accounting.TDocumentFactory;
+import com.microel.trackerbackend.misc.autosupport.schema.predicates.PredicateType;
+import com.microel.trackerbackend.misc.autosupport.schema.predicates.PredicatesMetadataProvider;
+import com.microel.trackerbackend.misc.autosupport.schema.preprocessors.PreprocessorMetadataProvider;
+import com.microel.trackerbackend.misc.autosupport.schema.preprocessors.PreprocessorType;
 import com.microel.trackerbackend.misc.network.NetworkRemoteControl;
 import com.microel.trackerbackend.misc.sorting.TaskJournalSortingTypes;
 import com.microel.trackerbackend.parsers.addresses.AddressParser;
@@ -62,7 +69,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.*;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import reactor.core.publisher.Mono;
@@ -80,7 +87,7 @@ import java.util.List;
 import java.util.*;
 import java.util.stream.Collectors;
 
-@Controller
+@RestController
 @Slf4j
 @RequestMapping("api/private")
 public class PrivateRequestController {
@@ -114,6 +121,9 @@ public class PrivateRequestController {
     private final PhyPhoneService phyPhoneService;
     private final OldTrackerService oldTrackerService;
     private final TaskTypeDirectoryRepository taskTypeDirectoryRepository;
+    private final Configuration configuration;
+    private final PreprocessorMetadataProvider preprocessorMetadataProvider;
+    private final PredicatesMetadataProvider predicatesMetadataProvider;
 
     public PrivateRequestController(WireframeDispatcher wireframeDispatcher, TaskDispatcher taskDispatcher,
                                     StreetDispatcher streetDispatcher, HouseDispatcher houseDispatcher, CityDispatcher cityDispatcher,
@@ -129,7 +139,7 @@ public class PrivateRequestController {
                                     PaidWorkDispatcher paidWorkDispatcher, WorkCalculationDispatcher workCalculationDispatcher,
                                     WorkingDayDispatcher workingDayDispatcher, ClientEquipmentDispatcher clientEquipmentDispatcher,
                                     FilesWatchService filesWatchService, PhyPhoneService phyPhoneService,
-                                    OldTrackerService oldTrackerService, TaskTypeDirectoryRepository taskTypeDirectoryRepository) {
+                                    OldTrackerService oldTrackerService, TaskTypeDirectoryRepository taskTypeDirectoryRepository, Configuration configuration, PreprocessorMetadataProvider preprocessorMetadataProvider, PredicatesMetadataProvider predicatesMetadataProvider) {
         this.wireframeDispatcher = wireframeDispatcher;
         this.taskDispatcher = taskDispatcher;
         this.streetDispatcher = streetDispatcher;
@@ -160,6 +170,9 @@ public class PrivateRequestController {
         this.phyPhoneService = phyPhoneService;
         this.oldTrackerService = oldTrackerService;
         this.taskTypeDirectoryRepository = taskTypeDirectoryRepository;
+        this.configuration = configuration;
+        this.preprocessorMetadataProvider = preprocessorMetadataProvider;
+        this.predicatesMetadataProvider = predicatesMetadataProvider;
     }
 
     // Получает список доступных наблюдателей из базы данных
@@ -1158,6 +1171,36 @@ public class PrivateRequestController {
             throw new ResponseException(e.getMessage());
         } catch (IOException e) {
             throw new TelegramBotNotInitialized(e.getMessage());
+        }
+    }
+
+    @GetMapping("auto-support/preprocessors-outputs")
+    public ResponseEntity<Map<PreprocessorType, List<String>>> getPreprocessorsOutputs() {
+        return ResponseEntity.ok(preprocessorMetadataProvider.getAllOutputs());
+    }
+
+    @GetMapping("auto-support/predicates-arguments")
+    public ResponseEntity<Map<PredicateType, List<String>>> getPredicatesArguments() {
+        return ResponseEntity.ok(predicatesMetadataProvider.getAllArguments());
+    }
+
+    @GetMapping("configuration/auto-support-nodes")
+    public ResponseEntity<AutoSupportNodes> getAutoSupportNodes() {
+        try {
+            final AutoSupportNodes nodes = configuration.load(AutoSupportNodes.class);
+            return ResponseEntity.ok(nodes);
+        }catch (FailedToReadConfigurationException e){
+            throw new ResponseException("Не удалось загрузить конфигурацию");
+        }
+    }
+
+    @PostMapping("configuration/auto-support-nodes")
+    public ResponseEntity<Void> updateAutoSupportNodes(@RequestBody AutoSupportNodes nodes) {
+        try {
+            userTelegramController.changeAutoSupportNodes(nodes);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            throw new ResponseException(e.getMessage());
         }
     }
 

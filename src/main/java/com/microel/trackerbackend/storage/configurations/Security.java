@@ -38,7 +38,9 @@ public class Security {
                                         "/api/internal/**",
                                         "/api/ws/**",
                                         "/socket",
-                                        "/api/private/sensor/**"
+                                        "/api/private/sensor/**",
+                                        "/swagger-ui/**",
+                                        "/v3/**"
                                 ).permitAll()
                                 .anyRequest().authenticated()
                                 .and()

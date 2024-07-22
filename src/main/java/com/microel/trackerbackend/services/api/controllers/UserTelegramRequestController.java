@@ -18,14 +18,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.*;
 
 import javax.persistence.criteria.Predicate;
 import javax.servlet.http.HttpServletRequest;
 import java.util.*;
 
-@Controller
+@RestController
 @RequestMapping("api/private/user/telegram")
 public class UserTelegramRequestController {
     private final UserTariffRepository userTariffRepository;

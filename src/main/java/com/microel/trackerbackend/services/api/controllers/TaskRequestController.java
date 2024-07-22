@@ -40,7 +40,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.util.Pair;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
@@ -50,7 +50,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
-@Controller
+@RestController
 @Slf4j
 @RequestMapping("api/private/task")
 public class TaskRequestController {

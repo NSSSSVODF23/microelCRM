@@ -1,5 +1,6 @@
 package com.microel.trackerbackend;
 
+import com.microel.trackerbackend.misc.Async;
 import com.microel.trackerbackend.services.external.acp.AcpClient;
 import com.microel.trackerbackend.services.external.acp.CommutatorsAvailabilityCheckService;
 import com.microel.trackerbackend.storage.dispatchers.TaskDispatcher;
@@ -20,15 +21,15 @@ import java.net.MalformedURLException;
 @Slf4j
 public class BackendApplication {
     public BackendApplication(AcpClient acpClient, CommutatorsAvailabilityCheckService commutatorsAvailabilityCheckService, TaskDispatcher taskDispatcher) throws MalformedURLException, XmlRpcException {
-        try {
-            Video4j.init();
-            log.info("Библиотека video4j инициализирована");
-        } catch (RuntimeException e) {
-            log.warn("Библиотека video4j не инициализирована: {}", e.getMessage());
-        }
-        TZDATA.init();
-//        taskDispatcher.initializeLastComments();
-//        System.out.println(acpClient.getBindingsByLogin("16111630"));
+        Async.of(()->{
+            try {
+                Video4j.init();
+                log.info("Библиотека video4j инициализирована");
+            } catch (RuntimeException e) {
+                log.warn("Библиотека video4j не инициализирована: {}", e.getMessage());
+            }
+            TZDATA.init();
+        });
     }
 
     public static void main(String[] args) {

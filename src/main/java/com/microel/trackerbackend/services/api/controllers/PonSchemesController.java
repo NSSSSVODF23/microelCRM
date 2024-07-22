@@ -8,13 +8,13 @@ import com.microel.trackerbackend.services.external.pon.PonextenderClient;
 import com.microel.trackerbackend.storage.dispatchers.EmployeeDispatcher;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
 
-@Controller
+@RestController
 @RequestMapping("api/private/pon/scheme")
 public class PonSchemesController {
 

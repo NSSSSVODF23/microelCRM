@@ -10,7 +10,7 @@ import com.microel.trackerbackend.controllers.telegram.TelegramController;
 import com.microel.trackerbackend.services.api.StompController;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,7 +18,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.util.List;
 
-@Controller
+@RestController
 @Slf4j
 @RequestMapping("api/internal")
 public class InternalRequestController {

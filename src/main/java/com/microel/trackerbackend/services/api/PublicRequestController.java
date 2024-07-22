@@ -18,7 +18,7 @@ import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.exceptions.IllegalFields;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.*;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
@@ -28,7 +28,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.Map;
 
-@Controller
+@RestController
 @RequestMapping("api/public")
 public class PublicRequestController {
 

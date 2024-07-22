@@ -4,7 +4,7 @@ import com.microel.tdo.network.NetworkMediaGroup;
 import com.microel.tdo.network.NetworkSendPhoto;
 import com.microel.trackerbackend.controllers.telegram.UserTelegramController;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,7 +22,7 @@ import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import java.io.Serializable;
 import java.util.List;
 
-@Controller
+@RestController
 @RequestMapping("/api/public/telegram")
 public class HubProxyTelegramController {
     private final UserTelegramController userTelegramController;

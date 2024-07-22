@@ -4,12 +4,13 @@ import org.springframework.lang.Nullable;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class CallbackData {
-    private String prefix;
-    private String data;
+    private final String prefix;
+    private final String data;
 
     public CallbackData(String prefix, String data) {
         this.prefix = prefix;
@@ -55,6 +56,15 @@ public class CallbackData {
         try {
             return Integer.parseInt(data);
         }catch (NumberFormatException e){
+            return null;
+        }
+    }
+
+    @Nullable
+    public UUID getUUID(){
+        try {
+            return UUID.fromString(data);
+        }catch (Exception e){
             return null;
         }
     }

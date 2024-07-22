@@ -1,6 +1,9 @@
 package com.microel.trackerbackend.services.api.controllers;
 
 import com.microel.trackerbackend.misc.ListItem;
+import com.microel.trackerbackend.misc.autosupport.schema.Node;
+import com.microel.trackerbackend.misc.autosupport.schema.predicates.PredicateType;
+import com.microel.trackerbackend.misc.autosupport.schema.preprocessors.PreprocessorType;
 import com.microel.trackerbackend.services.FilesWatchService;
 import com.microel.trackerbackend.services.external.billing.BillingPayType;
 import com.microel.trackerbackend.storage.entities.team.notification.NotificationType;
@@ -14,7 +17,7 @@ import com.microel.trackerbackend.storage.entities.templating.model.dto.FieldIte
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -23,7 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@Controller
+@RestController
 @Slf4j
 @RequestMapping("api/private/types")
 public class TypesRequestController {
@@ -75,6 +78,21 @@ public class TypesRequestController {
     @GetMapping("notification")
     public ResponseEntity<List<Map<String, String>>> getNotificationTypes() {
         return ResponseEntity.ok(NotificationType.getList());
+    }
+
+    @GetMapping("auto-support-node")
+    public ResponseEntity<List<Map<String, String>>> getAutoSupportNodeTypes() {
+        return ResponseEntity.ok(Node.NodeType.getList());
+    }
+
+    @GetMapping("auto-support/preprocessor")
+    public ResponseEntity<List<Map<String, String>>> getAutoSupportPreprocessorTypes() {
+        return ResponseEntity.ok(PreprocessorType.getList());
+    }
+
+    @GetMapping("auto-support/predicate")
+    public ResponseEntity<List<Map<String, String>>> getAutoSupportPredicateTypes() {
+        return ResponseEntity.ok(PredicateType.getList());
     }
 
     @GetMapping("connection-service/suggestions")

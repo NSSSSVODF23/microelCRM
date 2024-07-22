@@ -6,12 +6,12 @@ import com.microel.trackerbackend.storage.dispatchers.TemperatureSensorsDispatch
 import com.microel.trackerbackend.storage.entities.sensors.temperature.TemperatureRange;
 import com.microel.trackerbackend.storage.entities.sensors.temperature.TemperatureSensor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@Controller
+@RestController
 @RequestMapping("api/private/sensor")
 public class SensorRequestController {
 

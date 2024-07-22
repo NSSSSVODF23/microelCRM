@@ -6,13 +6,13 @@ import com.microel.trackerbackend.storage.entities.task.TypesOfContracts;
 import com.microel.trackerbackend.storage.entities.team.Employee;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
 
-@Controller
+@RestController
 @Slf4j
 @RequestMapping("api/private/contract")
 public class ContractsRequestController {

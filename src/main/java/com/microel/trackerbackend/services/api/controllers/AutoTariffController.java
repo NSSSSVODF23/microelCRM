@@ -14,7 +14,7 @@ import com.microel.trackerbackend.storage.repositories.WireframeRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.*;
 
 import javax.persistence.criteria.Predicate;
@@ -22,7 +22,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;
 
-@Controller
+@RestController
 @Slf4j
 @RequestMapping("api/private/auto-tariff")
 public class AutoTariffController {

@@ -294,6 +294,7 @@ public class FilesWatchService {
     }
 
     @Transactional
+    @Async
     public void syncPath(Path path) {
         File file = path.toFile();
         if (file.isDirectory()) {

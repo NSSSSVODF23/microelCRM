@@ -7,8 +7,14 @@ import com.microel.tdo.network.NetworkSendPhoto;
 import com.microel.trackerbackend.controllers.configuration.Configuration;
 import com.microel.trackerbackend.controllers.configuration.FailedToReadConfigurationException;
 import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigurationException;
+import com.microel.trackerbackend.controllers.configuration.entity.AutoSupportNodes;
 import com.microel.trackerbackend.controllers.configuration.entity.UserTelegramConf;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
+import com.microel.trackerbackend.misc.Async;
+import com.microel.trackerbackend.misc.autosupport.AutoSupportContext;
+import com.microel.trackerbackend.misc.autosupport.SendingNodeException;
+import com.microel.trackerbackend.misc.autosupport.schema.AutoSupportSession;
+import com.microel.trackerbackend.misc.autosupport.schema.AutoSupportStorage;
 import com.microel.trackerbackend.modules.transport.Credentials;
 import com.microel.trackerbackend.services.UserAccountService;
 import com.microel.trackerbackend.services.api.StompController;
@@ -61,6 +67,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static java.lang.Thread.sleep;
+
 @Service
 public class UserTelegramController {
     private final RestTemplate restTemplate = new RestTemplateBuilder().build();
@@ -71,9 +79,12 @@ public class UserTelegramController {
     private final ApiBillingController apiBillingController;
     private final UserTariffRepository userTariffRepository;
     private final UserRequestRepository userRequestRepository;
-    private final Map<TelegramUserAuth, Mode> usersInMode = new ConcurrentHashMap<>();
+    private final Map<Long, Mode> usersInMode = new ConcurrentHashMap<>();
+    private final Map<Long, AutoSupportSession> autoSupportModels = new ConcurrentHashMap<>();
     private final ReviewDispatcher reviewDispatcher;
+    private final AutoSupportContext autoSupportContext;
     private UserTelegramConf telegramConf;
+    private AutoSupportNodes autoSupportNodes;
     @Nullable
     private TelegramBotsApi api;
     @Nullable
@@ -82,24 +93,17 @@ public class UserTelegramController {
     private BotSession mainBotSession;
 
     public UserTelegramController(Configuration configuration, StompController stompController, UserAccountService userAccountService, ApiBillingController apiBillingController, UserTariffRepository userTariffRepository,
-                                  UserRequestRepository userRequestRepository, ReviewDispatcher reviewDispatcher) {
+                                  UserRequestRepository userRequestRepository, ReviewDispatcher reviewDispatcher, AutoSupportContext autoSupportContext) {
         this.configuration = configuration;
         this.stompController = stompController;
         this.userAccountService = userAccountService;
         this.reviewDispatcher = reviewDispatcher;
-        try {
-            telegramConf = configuration.load(UserTelegramConf.class);
-            initializeMainBot();
-        } catch (FailedToReadConfigurationException e) {
-            System.out.println("Конфигурация для Telegram не найдена");
-        } catch (TelegramApiException e) {
-            System.out.println("Ошибка Telegram API " + e.getMessage());
-        } catch (IOException e) {
-            System.out.println(e.getMessage());
-        }
+        this.autoSupportContext = autoSupportContext;
+        this.autoSupportNodes = configuration.load(AutoSupportNodes.class);
         this.apiBillingController = apiBillingController;
         this.userTariffRepository = userTariffRepository;
         this.userRequestRepository = userRequestRepository;
+        initialize();
     }
 
     private String hashWithSalt(Long input) {
@@ -110,6 +114,27 @@ public class UserTelegramController {
 
     private void initializeApi() throws TelegramApiException {
         if (api == null) api = new TelegramBotsApi(DefaultBotSession.class);
+    }
+
+    public void initialize() {
+        Async.of(()-> {
+            try {
+                telegramConf = configuration.load(UserTelegramConf.class);
+                initializeMainBot();
+            } catch (FailedToReadConfigurationException e) {
+                System.out.println("Конфигурация для Telegram не найдена");
+            } catch (TelegramApiException e) {
+                System.out.println("Ошибка Telegram API " + e.getMessage());
+                try {
+                    sleep(5000);
+                    initialize();
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+            } catch (IOException e) {
+                System.out.println(e.getMessage());
+            }
+        });
     }
 
     public void initializeMainBot() throws TelegramApiException, IOException {
@@ -229,6 +254,25 @@ public class UserTelegramController {
             return true;
         }));
 
+        mainBot.subscribe(new TelegramCallbackReactor("as", (update, callbackData) -> {
+            if (callbackData == null || callbackData.getUUID() == null) return false;
+            final Long chatId = update.getCallbackQuery().getFrom().getId();
+            final Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            AutoSupportSession autoSupportSession = autoSupportModels.get(chatId);
+            if (autoSupportSession == null) {
+                TelegramMessageFactory.create(chatId, mainBot).answerCallback(update.getCallbackQuery().getId(),"Ошибка сервера").execute();
+                return false;
+            }
+            autoSupportSession.callbackUpdate(chatId, callbackData, ()->{
+                try {
+                    TelegramMessageFactory.create(chatId, mainBot).answerCallback(update.getCallbackQuery().getId(),null).execute();
+                } catch (TelegramApiException e) {
+                    System.out.println(e.getMessage());
+                }
+            });
+            return true;
+        }));
+
         mainBot.subscribe(new TelegramMessageReactor(update -> {
             Message message = update.getMessage();
             Long chatId = message.getChatId();
@@ -241,11 +285,21 @@ public class UserTelegramController {
                 if (handleMainMenuCommand(message, userAccount)) {
                     return true;
                 }
-                Mode userMode = getUserMode(userAccount);
+                Mode userMode = getUserMode(userAccount.getUserId());
                 if (userMode != null) {
                     switch (userMode) {
                         case REVIEW -> {
                             return handleSendReview(message, userAccount);
+                        }
+                        case AUTO_SUPPORT -> {
+                            AutoSupportSession model = autoSupportModels.get(userAccount.getUserId());
+                            if (model != null){
+                                model.textUpdate(update, userAccount.getUserId());
+                                return true;
+                            }else{
+                                clearUserMode(userAccount.getUserId());
+                                return false;
+                            }
                         }
                     }
                 }
@@ -342,6 +396,11 @@ public class UserTelegramController {
         initializeMainBot();
     }
 
+    public void changeAutoSupportNodes(AutoSupportNodes nodes) {
+        configuration.save(nodes);
+        this.autoSupportNodes = nodes;
+    }
+
     public Boolean checkSecret(UserTelegramCredentials credentials) {
         return hashWithSalt(credentials.getId()).equals(credentials.getSc());
     }
@@ -414,10 +473,31 @@ public class UserTelegramController {
             case UserMenuCommands.CREATE_REVIEW -> {
                 return handleCreateReview(message, userAccount);
             }
+            case UserMenuCommands.I_HAVE_A_PROBLEM -> {
+                return handleIHaveAProblem(message, userAccount);
+            }
             default -> {
                 return false;
             }
         }
+    }
+
+    private boolean handleIHaveAProblem(Message message, TelegramUserAuth userAccount) {
+        TelegramMessageFactory factory = TelegramMessageFactory.create(message.getChatId(), mainBot);
+        AutoSupportSession autoSupportSession = new AutoSupportSession(autoSupportContext, new AutoSupportStorage(), autoSupportNodes.getDefaultNodes(), factory);
+        setAutoSupportModel(userAccount.getUserId(), autoSupportSession);
+        setUserMode(userAccount.getUserId(), Mode.AUTO_SUPPORT);
+        try {
+            autoSupportSession.sendInitialNode(userAccount.getUserId());
+            autoSupportSession.onClose(()->{
+                clearUserMode(userAccount.getUserId());
+                clearAutoSupportModel(userAccount.getUserId());
+                System.out.println("Конец сессии auto support");
+            });
+        }catch (SendingNodeException e){
+            System.out.println(e.getMessage());
+        }
+        return true;
     }
 
     private boolean handleEnableDeferredPayment(Message message, TelegramUserAuth userAccount) throws TelegramApiException {
@@ -510,7 +590,7 @@ public class UserTelegramController {
     }
 
     private boolean handleShowMainMenu(Message message, TelegramUserAuth userAccount) throws TelegramApiException {
-        clearUserMode(userAccount);
+        clearUserMode(userAccount.getUserId());
         TelegramMessageFactory.create(message.getChatId(), mainBot).userMainMenu("Главное меню").execute();
         return true;
     }
@@ -539,7 +619,7 @@ public class UserTelegramController {
             return true;
         }
 
-        setUserMode(userAccount, Mode.REVIEW);
+        setUserMode(userAccount.getUserId(), Mode.REVIEW);
 
         factory.createReview().execute();
 
@@ -547,7 +627,7 @@ public class UserTelegramController {
     }
 
     private boolean handleSendReview(Message message, TelegramUserAuth userAccount) throws TelegramApiException {
-        clearUserMode(userAccount);
+        clearUserMode(userAccount.getUserId());
         TelegramMessageFactory factory = TelegramMessageFactory.create(message.getChatId(), mainBot);
         Review review = reviewDispatcher.createReview(userAccount.getUserLogin(), message.getText(), "Telegram");
         sendReviewNotification(review);
@@ -556,17 +636,30 @@ public class UserTelegramController {
         return true;
     }
 
-    public void setUserMode(TelegramUserAuth userAccount, Mode mode) {
-        usersInMode.compute(userAccount, (k, v) -> mode);
+    public void setUserMode(Long userId, Mode mode) {
+        usersInMode.compute(userId, (k, v) -> mode);
     }
 
     @Nullable
-    public Mode getUserMode(TelegramUserAuth userAccount) {
-        return usersInMode.getOrDefault(userAccount, null);
+    public Mode getUserMode(Long userId) {
+        return usersInMode.getOrDefault(userId, null);
     }
 
-    public void clearUserMode(TelegramUserAuth userAccount) {
-        usersInMode.remove(userAccount);
+    public void clearUserMode(Long userId) {
+        usersInMode.remove(userId);
+    }
+
+    public void setAutoSupportModel(Long userId, AutoSupportSession model) {
+        autoSupportModels.put(userId, model);
+    }
+
+    @Nullable
+    public AutoSupportSession getAutoSupportModel(Long userId) {
+        return autoSupportModels.getOrDefault(userId, null);
+    }
+
+    public void clearAutoSupportModel(Long userId) {
+        autoSupportModels.remove(userId);
     }
 
     public Message sendMessage(SendMessage message) throws TelegramApiException {
@@ -625,7 +718,8 @@ public class UserTelegramController {
     }
 
     public enum Mode {
-        REVIEW
+        REVIEW,
+        AUTO_SUPPORT
     }
 
     @Getter
@@ -633,5 +727,12 @@ public class UserTelegramController {
     public static class UserTelegramCredentials extends Credentials {
         private Long id;
         private String sc;
+
+        public static UserTelegramCredentials from(Long userId, String login) {
+            UserTelegramCredentials credentials = new UserTelegramCredentials();
+            credentials.setId(userId);
+            credentials.setLogin(login);
+            return credentials;
+        }
     }
 }

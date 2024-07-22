@@ -8,6 +8,7 @@ import com.microel.trackerbackend.controllers.configuration.Configuration;
 import com.microel.trackerbackend.controllers.configuration.FailedToReadConfigurationException;
 import com.microel.trackerbackend.controllers.configuration.FailedToWriteConfigurationException;
 import com.microel.trackerbackend.controllers.configuration.entity.TelegramConf;
+import com.microel.trackerbackend.controllers.configuration.entity.UserTelegramConf;
 import com.microel.trackerbackend.controllers.telegram.handle.Decorator;
 import com.microel.trackerbackend.controllers.telegram.reactor.*;
 import com.microel.trackerbackend.misc.Async;
@@ -153,21 +154,33 @@ public class TelegramController {
         this.acpClient = acpClient;
         this.filesWatchService = filesWatchService;
         this.ponextenderClient = ponextenderClient;
-        try {
-            telegramConf = configuration.load(TelegramConf.class);
-            initializeMainBot();
-        } catch (FailedToReadConfigurationException e) {
-            log.warn("Конфигурация для Telegram не найдена");
-        } catch (TelegramApiException e) {
-            log.error("Ошибка Telegram API " + e.getMessage());
-        } catch (IOException e) {
-            log.error(e.getMessage());
-        }
         this.commentRepository = commentRepository;
         this.modelItemRepository = modelItemRepository;
         this.telegramOptionsRepository = telegramOptionsRepository;
         this.autoTariffRepository = autoTariffRepository;
         this.attachmentRepository = attachmentRepository;
+        initialize();
+    }
+
+    public void initialize() {
+        Async.of(()-> {
+            try {
+                telegramConf = configuration.load(TelegramConf.class);
+                initializeMainBot();
+            } catch (FailedToReadConfigurationException e) {
+                System.out.println("Конфигурация для Telegram не найдена");
+            } catch (TelegramApiException e) {
+                System.out.println("Ошибка Telegram API " + e.getMessage());
+                try {
+                    sleep(5000);
+                    initialize();
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
+            } catch (IOException e) {
+                System.out.println(e.getMessage());
+            }
+        });
     }
 
     private void initializeApi() throws TelegramApiException {

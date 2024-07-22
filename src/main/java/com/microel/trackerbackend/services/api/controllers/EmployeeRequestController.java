@@ -13,13 +13,13 @@ import com.microel.trackerbackend.storage.exceptions.EditingNotPossible;
 import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
 
-@Controller
+@RestController
 @RequestMapping("api/private/employee")
 public class EmployeeRequestController {
 

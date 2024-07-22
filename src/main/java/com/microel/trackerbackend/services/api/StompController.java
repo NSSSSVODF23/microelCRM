@@ -51,7 +51,7 @@ import com.microel.trackerbackend.storage.entities.users.Review;
 import com.microel.trackerbackend.storage.entities.users.UserRequest;
 import com.microel.trackerbackend.storage.entities.users.UserTariff;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
@@ -59,7 +59,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-@Controller
+@RestController
 public class StompController {
     private final SimpMessagingTemplate stompBroker;
 

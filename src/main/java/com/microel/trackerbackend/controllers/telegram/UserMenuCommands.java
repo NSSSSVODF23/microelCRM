@@ -14,6 +14,8 @@ public class UserMenuCommands {
     public static final String REMOVE_REQUESTS  =  "Отменить запросы";
     public static final String ENABLE_DEFERRED_PAYMENT = "Включить отложенный платеж";
     public static final String CREATE_REVIEW = "Пожелания и отзывы";
+    public static final String I_HAVE_A_PROBLEM = "У меня проблема";
+
     private UserMenuCommands() {
     }
 }

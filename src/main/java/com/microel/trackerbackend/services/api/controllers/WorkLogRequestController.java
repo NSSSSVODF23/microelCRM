@@ -21,7 +21,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.*;
 
 import javax.persistence.criteria.Join;
@@ -34,7 +34,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Collectors;
 
-@Controller
+@RestController
 @Slf4j
 @RequestMapping("api/private/work-log")
 public class WorkLogRequestController {
