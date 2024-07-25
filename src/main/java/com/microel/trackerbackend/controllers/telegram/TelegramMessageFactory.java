@@ -464,6 +464,11 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(SendMessage.builder().chatId(chatId).text("Меню очищено").replyMarkup(clearKeyboardMarkup).build(), context);
     }
 
+    public AbstractExecutor<Serializable> clearInlineKeyboardMenu(Integer messageId) {
+        InlineKeyboardMarkup keyboardMarkup = InlineKeyboardMarkup.builder().clearKeyboard().build();
+        return new MessageExecutor<>(EditMessageReplyMarkup.builder().chatId(chatId).messageId(messageId).replyMarkup(keyboardMarkup).build(), context);
+    }
+
     public AbstractExecutor<Message> closeWorkLogMessage() {
         List<InlineKeyboardButton> inlineKeyboardButtons = List.of(
                 InlineKeyboardButton.builder().text("\uD83D\uDCC4 Отправить отчет").callbackData("#send_report").build(),
@@ -1181,6 +1186,19 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(sendMessage, context);
     }
 
+    public AbstractExecutor<Message> cancelReplyMenu(String text) {
+        KeyboardFactory keyboardFactory = new KeyboardFactory()
+                .newLine(
+                        "Отмена"
+                );
+        return new MessageExecutor<>(SendMessage.builder()
+                .chatId(chatId)
+                .text(text)
+                .parseMode(ParseMode.HTML)
+                .replyMarkup(keyboardFactory.getReplyKeyboard())
+                .build(), context);
+    }
+
     public AbstractExecutor<Message> billingUserSetup(ApiBillingController.TotalUserInfo userInfo, Employee manager, Long taskClassId, String taskTypeId) {
         StringBuilder stringBuilder = new StringBuilder();
 
@@ -1268,7 +1286,7 @@ public class TelegramMessageFactory {
         KeyboardFactory keyboardFactory = new KeyboardFactory()
                 .newLine("\uD83D\uDCB0 Проверить баланс")
                 .newLine("\uD83D\uDCC8 Активный тариф", "\uD83D\uDCFA Активные доп.услуги")
-                .newLine("⭐\uFE0F Пожелания и отзывы").newLine("У меня проблема");
+                .newLine("⭐\uFE0F Пожелания и отзывы").newLine("⚠\uFE0F У меня проблема");
 
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
@@ -1390,7 +1408,7 @@ public class TelegramMessageFactory {
                 .build(), context);
     }
 
-    public AbstractExecutor<Message> listOfUserRequests(Integer messageId, List<UserRequest> requests) throws TelegramApiException {
+    public AbstractExecutor<Message> listOfUserRequests(List<UserRequest> requests) {
         KeyboardFactory keyboardFactory = new KeyboardFactory()
                 .newLine("\uD83D\uDDD1 Отменить запросы")
                 .newLine("◀\uFE0F Главное меню");
@@ -1399,7 +1417,7 @@ public class TelegramMessageFactory {
         for (UserRequest request : requests) {
             stringBuilder
                     .append("• ")
-                    .append(request.getDescription())
+                    .append(request.getTitle())
                     .append("\n");
         }
 
@@ -1430,7 +1448,7 @@ public class TelegramMessageFactory {
 
         KeyboardFactory keyboardFactory = new KeyboardFactory();
         for (UserRequest request : requests) {
-            keyboardFactory.newLine(KeyboardFactory.IKButton.of(request.getDescription(), "remove_user_request", request.getUserRequestId().toString()));
+            keyboardFactory.newLine(KeyboardFactory.IKButton.of(request.getTitle(), "remove_user_request", request.getUserRequestId().toString()));
         }
         SendMessage sendMessage = SendMessage.builder()
                 .chatId(chatId)
@@ -1560,13 +1578,31 @@ public class TelegramMessageFactory {
     }
 
     public AbstractExecutor<Message> autoSupportMessage(Node node, AutoSupportStorage storage) {
-        String message = Node.prepareMessage(node.getMessageTemplate(), storage);
+        String message = "";
         KeyboardFactory keyboardFactory = new KeyboardFactory();
-        if (node.getType() == Node.NodeType.NORMAL && !Objects.isNull(node.getChildren()) && !node.getChildren().isEmpty()) {
-            for (Node child : node.getChildren()) {
-                keyboardFactory.newLine(KeyboardFactory.IKButton.of(child.getName(), "as", child.getId().toString()));
+        switch (node.getType()) {
+            case NORMAL -> {
+                message = Node.prepareMessage(node.getMessageTemplate(), storage);
+                List<Node> children = node.getChildren();
+                if(Objects.nonNull(children)) {
+                    if (node.getType() == Node.Type.NORMAL && !children.isEmpty()) {
+                        for (Node child : children) {
+                            keyboardFactory.newLine(KeyboardFactory.IKButton.of(child.getName(), "as", child.getId().toString()));
+                        }
+                    }
+                }
             }
+            case TICKET -> {
+                if(node.getHasPhoneTyped()){
+                    message = Node.prepareMessage(node.getMessageTemplate(), storage);
+                }else{
+                    message = "Для возможности уточнения дополнительной информации введите ваш контактный номер телефона:";
+                    keyboardFactory.newLine(KeyboardFactory.IKButton.of("Без номера телефона", "as_no_phone", ""));
+                }
+            }
+            default -> {}
         }
+
         return new MessageExecutor<>(SendMessage.builder()
                 .chatId(chatId)
                 .text(message)

@@ -1,14 +1,15 @@
-package com.microel.trackerbackend.misc.autosupport.schema.predicates;
+package com.microel.trackerbackend.misc.autosupport.schema.predicates.impl;
 
 import com.microel.trackerbackend.misc.autosupport.AutoSupportContext;
-import com.microel.trackerbackend.misc.autosupport.schema.AutoSupportStorage;
+import com.microel.trackerbackend.misc.autosupport.schema.predicates.IPredicate;
+import com.microel.trackerbackend.misc.autosupport.schema.predicates.PredicateType;
 
 import java.util.List;
 import java.util.Map;
 
 import static com.microel.trackerbackend.misc.autosupport.schema.predicates.PredicateType.USER_CREDENTIALS;
 
-public class UserCredentialsPredicate implements IPredicate{
+public class UserCredentialsPredicate implements IPredicate {
     @Override
     public PredicateType type() {
         return USER_CREDENTIALS;

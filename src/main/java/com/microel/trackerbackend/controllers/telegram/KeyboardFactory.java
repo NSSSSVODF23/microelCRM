@@ -42,6 +42,7 @@ public class KeyboardFactory {
     public ReplyKeyboardMarkup getReplyKeyboard() {
         return ReplyKeyboardMarkup.builder()
                 .keyboard(keyboard)
+                .resizeKeyboard(true)
                 .build();
     }
 

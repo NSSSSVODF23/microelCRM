@@ -36,6 +36,7 @@ public class AutoSupportSession {
 
     public void sendInitialNode(Long userId) {
         currentNode = initialNode;
+        currentNode.setHasPhoneTyped(false);
         runNode(currentNode, userId);
     }
 
@@ -54,8 +55,18 @@ public class AutoSupportSession {
             return;
         }
         currentNode = children;
+        currentNode.setHasPhoneTyped(false);
         runNode(currentNode, userId);
         afterRunNode.run();
+    }
+
+    public void phoneNumberRejected(Long userId) {
+        if (currentNode == null) {
+            handleClose();
+            return;
+        }
+        currentNode.setHasPhoneTyped(true);
+        runNode(currentNode, userId);
     }
 
     public void textUpdate(Update update, Long userId) {
@@ -66,88 +77,121 @@ public class AutoSupportSession {
         if (isAwaitingInput()) {
             String text = update.getMessage().getText();
             storage.getInputResults().compute(awaitingInput, (k, v) -> text);
-            System.out.println("Input storage: " + storage.getInputResults());
-            List<Node> children = currentNode.getChildren();
-            if (children == null || children.isEmpty()) {
-                handleClose();
-                return;
-            }
-            currentNode = children.get(0);
             awaitingInput = null;
-            runNode(currentNode, userId);
+            if (Objects.equals(currentNode.getType(), Node.Type.INPUT)){
+                List<Node> children = currentNode.getChildren();
+                if (children == null || children.isEmpty()) {
+                    handleClose();
+                    return;
+                }
+                currentNode = children.get(0);
+                currentNode.setHasPhoneTyped(false);
+                runNode(currentNode, userId);
+            } else if (Objects.equals(currentNode.getType(), Node.Type.TICKET)) {
+                currentNode.setHasPhoneTyped(true);
+                runNode(currentNode, userId);
+            }
         } else {
+            currentNode.setHasPhoneTyped(false);
             runNode(currentNode, userId);
         }
     }
 
     private void runNode(Node runningNode, Long userId) {
         if (currentNode == null) return;
-        List<Node> children = runningNode.getChildren();
         switch (runningNode.getType()) {
-            case NORMAL -> {
-                try {
-                    runningNode.doPreprocess(context, storage, userId);
-                    runningNode.send(storage, userChatFactory);
-                    if (runningNode.getChildren() == null || runningNode.getChildren().isEmpty()) {
-                        handleClose();
-                    }
-                } catch (Exception e) {
-                    System.out.println(e.getMessage());
-                    handleClose();
-                }
-            }
-            case REDIRECT -> {
-                final UUID redirectId = runningNode.getRedirectId();
-                if (redirectId == null) {
-                    handleClose();
-                    return;
-                }
-                final Node foundNode = findInNodesById(redirectId, initialNode);
-                if (foundNode == null) {
-                    handleClose();
-                    return;
-                }
-                currentNode = foundNode;
+            case NORMAL -> runNormalNode(runningNode, userId);
+            case REDIRECT -> runRedirectNode(runningNode, userId);
+            case TRUNK -> runTrunkNode(runningNode, userId);
+            case PREDICATE -> runPredicateNode(runningNode, userId);
+            case INPUT -> runInputNode(runningNode, userId);
+            case TICKET -> runTicketNode(runningNode, userId);
+        }
+    }
+
+    private void runNormalNode(Node runningNode, Long userId) {
+        try {
+            runningNode.doPreprocess(context, storage, userId);
+            runningNode.send(storage, userChatFactory);
+        } catch (Exception e) {
+            handleClose();
+        }
+        List<Node> children = runningNode.getChildren();
+        if (children == null || children.isEmpty()) {
+            handleClose();
+        }
+    }
+
+    private void runRedirectNode(Node runningNode, Long userId) {
+        final UUID redirectId = runningNode.getRedirectId();
+        if (redirectId == null) {
+            handleClose();
+            return;
+        }
+        final Node foundNode = findInNodesById(redirectId, initialNode);
+        if (foundNode == null) {
+            handleClose();
+            return;
+        }
+        currentNode = foundNode;
+        currentNode.setHasPhoneTyped(false);
+        runNode(currentNode, userId);
+    }
+
+    private void runTrunkNode(Node runningNode, Long userId) {
+        List<Node> children = runningNode.getChildren();
+        if (children == null || children.isEmpty()) {
+            handleClose();
+            return;
+        }
+        currentNode = children.get(0);
+        currentNode.setHasPhoneTyped(false);
+        runNode(currentNode, userId);
+    }
+
+    private void runPredicateNode(Node runningNode, Long userId) {
+        try {
+            if (runningNode.getPredicateRedirection() == null) return;
+            final boolean isPassed = runningNode.doPredicate(context, storage, userId);
+            Node nextNode = null;
+            if (isPassed)
+                nextNode = runningNode.getPredicatePassedNode();
+            else
+                nextNode = runningNode.getPredicateFailedNode();
+            if (nextNode != null) {
+                currentNode = nextNode;
+                currentNode.setHasPhoneTyped(false);
                 runNode(currentNode, userId);
+            } else {
+                handleClose();
             }
-            case TRUNK -> {
-                if (children == null || children.isEmpty()) {
-                    handleClose();
-                    return;
-                }
-                currentNode = children.get(0);
-                runNode(currentNode, userId);
+        } catch (Exception e) {
+            handleClose();
+        }
+    }
+
+    private void runInputNode(Node runningNode, Long userId) {
+        try {
+            runningNode.doPreprocess(context, storage, userId);
+            runningNode.send(storage, userChatFactory);
+            awaitingInput = runningNode.getId();
+        } catch (Exception e) {
+            handleClose();
+        }
+    }
+
+    private void runTicketNode(Node runningNode, Long userId) {
+        try {
+            if(runningNode.getHasPhoneTyped()){
+                runningNode.doCreateTicket(context, storage, userId);
+                runningNode.send(storage, userChatFactory);
+                handleClose();
+            }else{
+                runningNode.send(storage, userChatFactory);
+                awaitingInput = runningNode.getId();
             }
-            case PREDICATE -> {
-                try {
-                    if (currentNode.getPredicateRedirection() == null) return;
-                    final Boolean isPassed = runningNode.doPredicate(context, storage, userId);
-                    Node nextNode = null;
-                    if (isPassed)
-                        nextNode = currentNode.getPredicatePassedNode();
-                    else
-                        nextNode = currentNode.getPredicateFailedNode();
-                    if (nextNode != null) {
-                        currentNode = nextNode;
-                        runNode(currentNode, userId);
-                    } else {
-                        handleClose();
-                    }
-                } catch (Exception e) {
-                    System.out.println(e.getMessage());
-                    handleClose();
-                }
-            }
-            case INPUT -> {
-                try {
-                    runningNode.doPreprocess(context, storage, userId);
-                    runningNode.send(storage, userChatFactory);
-                    awaitingInput = runningNode.getId();
-                } catch (Exception e) {
-                    System.out.println(e.getMessage());
-                    handleClose();
-                }
-            }
+        } catch (Exception e) {
+            handleClose();
         }
     }
 

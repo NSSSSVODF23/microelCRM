@@ -20,11 +20,13 @@ import com.microel.trackerbackend.services.UserAccountService;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.billing.ApiBillingController;
 import com.microel.trackerbackend.storage.dispatchers.ReviewDispatcher;
+import com.microel.trackerbackend.storage.dispatchers.UserRequestDispatcher;
 import com.microel.trackerbackend.storage.entities.users.Review;
 import com.microel.trackerbackend.storage.entities.users.TelegramUserAuth;
 import com.microel.trackerbackend.storage.entities.users.UserRequest;
 import com.microel.trackerbackend.storage.entities.users.UserTariff;
-import com.microel.trackerbackend.storage.repositories.UserRequestRepository;
+import com.microel.trackerbackend.storage.exceptions.AlreadyExists;
+import com.microel.trackerbackend.storage.exceptions.EntryNotFound;
 import com.microel.trackerbackend.storage.repositories.UserTariffRepository;
 import lombok.Getter;
 import lombok.Setter;
@@ -78,11 +80,11 @@ public class UserTelegramController {
     private final String authSalt = "3xv23sj*NYDgNHk43m(Z1P6P4:PW?s/i";
     private final ApiBillingController apiBillingController;
     private final UserTariffRepository userTariffRepository;
-    private final UserRequestRepository userRequestRepository;
     private final Map<Long, Mode> usersInMode = new ConcurrentHashMap<>();
-    private final Map<Long, AutoSupportSession> autoSupportModels = new ConcurrentHashMap<>();
+    private final Map<Long, AutoSupportSession> autoSupportSessions = new ConcurrentHashMap<>();
     private final ReviewDispatcher reviewDispatcher;
     private final AutoSupportContext autoSupportContext;
+    private final UserRequestDispatcher userRequestDispatcher;
     private UserTelegramConf telegramConf;
     private AutoSupportNodes autoSupportNodes;
     @Nullable
@@ -92,17 +94,20 @@ public class UserTelegramController {
     @Nullable
     private BotSession mainBotSession;
 
-    public UserTelegramController(Configuration configuration, StompController stompController, UserAccountService userAccountService, ApiBillingController apiBillingController, UserTariffRepository userTariffRepository,
-                                  UserRequestRepository userRequestRepository, ReviewDispatcher reviewDispatcher, AutoSupportContext autoSupportContext) {
+    public UserTelegramController(Configuration configuration, StompController stompController, UserAccountService userAccountService, ApiBillingController apiBillingController, UserTariffRepository userTariffRepository, ReviewDispatcher reviewDispatcher, AutoSupportContext autoSupportContext, UserRequestDispatcher userRequestDispatcher) {
         this.configuration = configuration;
         this.stompController = stompController;
         this.userAccountService = userAccountService;
         this.reviewDispatcher = reviewDispatcher;
         this.autoSupportContext = autoSupportContext;
-        this.autoSupportNodes = configuration.load(AutoSupportNodes.class);
+        this.userRequestDispatcher = userRequestDispatcher;
+        try {
+            this.autoSupportNodes = configuration.load(AutoSupportNodes.class);
+        } catch (Exception e) {
+            System.out.println("Конфигурация для Telegram не найдена");
+        }
         this.apiBillingController = apiBillingController;
         this.userTariffRepository = userTariffRepository;
-        this.userRequestRepository = userRequestRepository;
         initialize();
     }
 
@@ -117,7 +122,7 @@ public class UserTelegramController {
     }
 
     public void initialize() {
-        Async.of(()-> {
+        Async.of(() -> {
             try {
                 telegramConf = configuration.load(UserTelegramConf.class);
                 initializeMainBot();
@@ -202,17 +207,11 @@ public class UserTelegramController {
             return true;
         }));
 
-        mainBot.subscribe(new TelegramCallbackReactor("connect_user_service", (update, callbackData) ->
-                createUserRequest(update, callbackData, UserRequest.Type.APPEND_SERVICE)
-        ));
+        mainBot.subscribe(new TelegramCallbackReactor("connect_user_service", (update, callbackData) -> createUserRequest(update, callbackData, "Подключение услуги", UserRequest.Type.APPEND_SERVICE)));
 
-        mainBot.subscribe(new TelegramCallbackReactor("disconnect_user_service", (update, callbackData) ->
-                createUserRequest(update, callbackData, UserRequest.Type.REMOVE_SERVICE)
-        ));
+        mainBot.subscribe(new TelegramCallbackReactor("disconnect_user_service", (update, callbackData) -> createUserRequest(update, callbackData, "Удаление услуги", UserRequest.Type.REMOVE_SERVICE)));
 
-        mainBot.subscribe(new TelegramCallbackReactor("change_user_tariff", (update, callbackData) ->
-                createUserRequest(update, callbackData, UserRequest.Type.REPLACE_TARIFF)
-        ));
+        mainBot.subscribe(new TelegramCallbackReactor("change_user_tariff", (update, callbackData) -> createUserRequest(update, callbackData, "Изменение тарифа", UserRequest.Type.REPLACE_TARIFF)));
 
         mainBot.subscribe(new TelegramCallbackReactor("get_user_requests", (update, callbackData) -> {
             if (callbackData == null) return false;
@@ -225,30 +224,26 @@ public class UserTelegramController {
                 return false;
             }
             // Ищем нереализованные запросы
-            List<UserRequest> existedRequests = userRequestRepository.findAll((root, query, cb) -> cb.and(
-                    cb.equal(root.get("userLogin"), userAccount.getUserLogin()),
-                    cb.isNull(root.get("processedBy")),
-                    cb.isFalse(root.get("deleted"))
-            ));
+            List<UserRequest> existedRequests = userRequestDispatcher.getUnprocessedRequestsByLogin(userAccount.getUserLogin());
             factory.deleteMessage(messageId).execute();
-            factory.listOfUserRequests(messageId, existedRequests).execute();
+            factory.listOfUserRequests(existedRequests).execute();
             return true;
         }));
 
         mainBot.subscribe(new TelegramCallbackReactor("remove_user_request", (update, callbackData) -> {
             if (callbackData == null || callbackData.getLong() == null) return false;
             final Long chatId = update.getCallbackQuery().getFrom().getId();
-            final Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
             final TelegramUserAuth userAccount = userAccountService.getUserAccount(chatId);
             TelegramMessageFactory factory = TelegramMessageFactory.create(chatId, mainBot);
             if (userAccount == null) {
                 factory.linkForUserAuth(chatId, hashWithSalt(chatId)).execute();
                 return false;
             }
-            UserRequest userRequest = userRequestRepository.findById(callbackData.getLong()).orElseThrow(() -> new TelegramApiException("Произошла ошибка"));
-            userRequest.setDeleted(true);
-            userRequest = userRequestRepository.save(userRequest);
-            stompController.updateTlgUserRequest(UpdateCarrier.from(EventType.DELETE, userRequest));
+            try {
+                userRequestDispatcher.cancelRequest(callbackData.getLong());
+            } catch (EntryNotFound e) {
+                throw new TelegramApiException(e);
+            }
             factory.answerCallback(update.getCallbackQuery().getId(), "Запрос успешно отменен").execute();
             factory.removeInlineButton(update.getCallbackQuery().getMessage(), callbackData).execute();
             return true;
@@ -258,18 +253,34 @@ public class UserTelegramController {
             if (callbackData == null || callbackData.getUUID() == null) return false;
             final Long chatId = update.getCallbackQuery().getFrom().getId();
             final Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
-            AutoSupportSession autoSupportSession = autoSupportModels.get(chatId);
+            AutoSupportSession autoSupportSession = autoSupportSessions.get(chatId);
             if (autoSupportSession == null) {
-                TelegramMessageFactory.create(chatId, mainBot).answerCallback(update.getCallbackQuery().getId(),"Ошибка сервера").execute();
+                TelegramMessageFactory.create(chatId, mainBot).answerCallback(update.getCallbackQuery().getId(), "Ошибка сервера").execute();
                 return false;
             }
-            autoSupportSession.callbackUpdate(chatId, callbackData, ()->{
+            autoSupportSession.callbackUpdate(chatId, callbackData, () -> {
+                final TelegramMessageFactory factory = TelegramMessageFactory.create(chatId, mainBot);
                 try {
-                    TelegramMessageFactory.create(chatId, mainBot).answerCallback(update.getCallbackQuery().getId(),null).execute();
+                    factory.clearInlineKeyboardMenu(messageId).execute();
+                    factory.answerCallback(update.getCallbackQuery().getId(), null).execute();
                 } catch (TelegramApiException e) {
                     System.out.println(e.getMessage());
                 }
             });
+            return true;
+        }));
+
+        mainBot.subscribe(new TelegramCallbackReactor("as_no_phone", (update, callbackData) -> {
+            final Long chatId = update.getCallbackQuery().getFrom().getId();
+            final Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
+            final TelegramMessageFactory factory = TelegramMessageFactory.create(chatId, mainBot);
+            AutoSupportSession autoSupportSession = autoSupportSessions.get(chatId);
+            if (autoSupportSession == null) {
+                factory.answerCallback(update.getCallbackQuery().getId(), "Ошибка сервера").execute();
+                return false;
+            }
+            autoSupportSession.phoneNumberRejected(chatId);
+            factory.clearInlineKeyboardMenu(messageId).execute();
             return true;
         }));
 
@@ -292,11 +303,11 @@ public class UserTelegramController {
                             return handleSendReview(message, userAccount);
                         }
                         case AUTO_SUPPORT -> {
-                            AutoSupportSession model = autoSupportModels.get(userAccount.getUserId());
-                            if (model != null){
-                                model.textUpdate(update, userAccount.getUserId());
+                            AutoSupportSession session = autoSupportSessions.get(userAccount.getUserId());
+                            if (session != null) {
+                                session.textUpdate(update, userAccount.getUserId());
                                 return true;
-                            }else{
+                            } else {
                                 clearUserMode(userAccount.getUserId());
                                 return false;
                             }
@@ -316,7 +327,7 @@ public class UserTelegramController {
         }));
     }
 
-    private boolean createUserRequest(Update update, @Nullable CallbackData callbackData, UserRequest.Type requestType) throws TelegramApiException {
+    private boolean createUserRequest(Update update, @Nullable CallbackData callbackData, String title, UserRequest.Type type) throws TelegramApiException {
         if (callbackData == null) return false;
         final Long chatId = update.getCallbackQuery().getFrom().getId();
         final Integer messageId = update.getCallbackQuery().getMessage().getMessageId();
@@ -326,29 +337,19 @@ public class UserTelegramController {
             factory.linkForUserAuth(chatId, hashWithSalt(chatId)).execute();
             return false;
         }
-        UserTariff userTariff = userTariffRepository.findAll((root, query, cb) -> cb.and(
-                cb.equal(root.get("baseName"), callbackData.getString()),
-                cb.isFalse(root.get("deleted"))
-        )).stream().findFirst().orElseThrow(() -> new TelegramApiException("Произошла ошибка"));
+        UserTariff userTariff = userTariffRepository.findAll((root, query, cb) -> cb.and(cb.equal(root.get("baseName"),
+                callbackData.getString()), cb.isFalse(root.get("deleted")))).stream().findFirst().orElseThrow(() -> new TelegramApiException("Произошла ошибка"));
 
-        String requestDescription = requestType.getLabel() + " " + userTariff.getName();
-
-        // Ищем похожие нереализованные запросы
-        List<UserRequest> existedRequests = userRequestRepository.findAll((root, query, cb) -> cb.and(
-                cb.equal(root.get("userLogin"), userAccount.getUserLogin()),
-                cb.equal(root.get("description"), requestDescription),
-                cb.isNull(root.get("processedBy")),
-                cb.isFalse(root.get("deleted"))
-        ));
-        if (!existedRequests.isEmpty()) {
+        String requestDescription = title + " " + userTariff.getName();
+        try {
+            UserRequest userRequest = userRequestDispatcher.createRequest(userAccount.getUserLogin(), type, title, requestDescription,
+                    UserRequest.Source.TELEGRAM, chatId.toString(), null);
+            factory.userRequestResponse(messageId, "Успешно создан запрос - " + userRequest.getDescription()).execute();
+            return true;
+        } catch (AlreadyExists e) {
             factory.userRequestResponse(messageId, "Данный запрос уже существует").execute();
             return false;
         }
-        UserRequest userRequest = UserRequest.of(userAccount.getUserLogin(), requestType, requestDescription, "telegram");
-        userRequest = userRequestRepository.save(userRequest);
-        factory.userRequestResponse(messageId, "Успешно создан запрос - " + requestType.getLabel()).execute();
-        stompController.updateTlgUserRequest(UpdateCarrier.from(EventType.CREATE, userRequest));
-        return true;
     }
 
     public void sendUpdateToHub(Update update) throws TelegramApiException {
@@ -485,16 +486,21 @@ public class UserTelegramController {
     private boolean handleIHaveAProblem(Message message, TelegramUserAuth userAccount) {
         TelegramMessageFactory factory = TelegramMessageFactory.create(message.getChatId(), mainBot);
         AutoSupportSession autoSupportSession = new AutoSupportSession(autoSupportContext, new AutoSupportStorage(), autoSupportNodes.getDefaultNodes(), factory);
-        setAutoSupportModel(userAccount.getUserId(), autoSupportSession);
+        setAutoSupportSession(userAccount.getUserId(), autoSupportSession);
         setUserMode(userAccount.getUserId(), Mode.AUTO_SUPPORT);
         try {
+            factory.cancelReplyMenu("Вы находитесь в меню 'Автоматический помощник'. Следуйте дальнейшим инструкциям или нажмите кнопку 'Отмена'").execute();
             autoSupportSession.sendInitialNode(userAccount.getUserId());
-            autoSupportSession.onClose(()->{
+            autoSupportSession.onClose(() -> {
                 clearUserMode(userAccount.getUserId());
                 clearAutoSupportModel(userAccount.getUserId());
-                System.out.println("Конец сессии auto support");
+                try {
+                    factory.userMainMenu("Главное меню").execute();
+                } catch (TelegramApiException e) {
+                    throw new SendingNodeException(e.getMessage());
+                }
             });
-        }catch (SendingNodeException e){
+        } catch (SendingNodeException | TelegramApiException e) {
             System.out.println(e.getMessage());
         }
         return true;
@@ -530,32 +536,23 @@ public class UserTelegramController {
 
     private boolean handleListRemoveRequests(Message message, TelegramUserAuth userAccount) throws TelegramApiException {
         // Ищем нереализованные запросы
-        List<UserRequest> existedRequests = userRequestRepository.findAll((root, query, cb) -> cb.and(
-                cb.equal(root.get("userLogin"), userAccount.getUserLogin()),
-                cb.isNull(root.get("processedBy")),
-                cb.isFalse(root.get("deleted"))
-        ));
+        List<UserRequest> existedRequests = userRequestDispatcher.getUnprocessedRequestsByLogin(userAccount.getUserLogin());
         TelegramMessageFactory.create(message.getChatId(), mainBot).listRemoveUserRequests(existedRequests).execute();
         return true;
     }
 
     private boolean handleConnectService(Message message, TelegramUserAuth userAccount) throws TelegramApiException {
         ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(userAccount.getUserLogin());
-        List<String> alreadyConnectedServices = userInfo.getOldTarif().stream().skip(1)
-                .map(ApiBillingController.OldTarifItem::getService)
-                .toList();
-        List<UserTariff> services = userTariffRepository.findAll(
-                (root, query, cb) -> {
-                    List<Predicate> predicates = new ArrayList<>();
-                    predicates.add(cb.isTrue(root.get("isService")));
-                    predicates.add(cb.isFalse(root.get("deleted")));
-                    if (!alreadyConnectedServices.isEmpty())
-                        predicates.add(root.get("baseName").in(alreadyConnectedServices).not());
+        List<String> alreadyConnectedServices = userInfo.getOldTarif().stream().skip(1).map(ApiBillingController.OldTarifItem::getService).toList();
+        List<UserTariff> services = userTariffRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isTrue(root.get("isService")));
+            predicates.add(cb.isFalse(root.get("deleted")));
+            if (!alreadyConnectedServices.isEmpty())
+                predicates.add(root.get("baseName").in(alreadyConnectedServices).not());
 
-                    return cb.and(predicates.toArray(Predicate[]::new));
-                },
-                Sort.by(Sort.Direction.ASC, "isService", "price")
-        );
+            return cb.and(predicates.toArray(Predicate[]::new));
+        }, Sort.by(Sort.Direction.ASC, "isService", "price"));
         TelegramMessageFactory.create(message.getChatId(), mainBot).connectUserService(userInfo, services).execute();
         return true;
     }
@@ -591,6 +588,7 @@ public class UserTelegramController {
 
     private boolean handleShowMainMenu(Message message, TelegramUserAuth userAccount) throws TelegramApiException {
         clearUserMode(userAccount.getUserId());
+        clearAutoSupportModel(userAccount.getUserId());
         TelegramMessageFactory.create(message.getChatId(), mainBot).userMainMenu("Главное меню").execute();
         return true;
     }
@@ -599,14 +597,7 @@ public class UserTelegramController {
         ApiBillingController.TotalUserInfo userInfo = apiBillingController.getUserInfo(userAccount.getUserLogin());
         String currentTariff = userInfo.getOldTarif().get(0).getService();
 
-        List<UserTariff> services = userTariffRepository.findAll(
-                (root, query, cb) -> cb.and(
-                        cb.isFalse(root.get("deleted")),
-                        cb.isFalse(root.get("isService")),
-                        cb.notEqual(root.get("baseName"), currentTariff)
-                ),
-                Sort.by(Sort.Direction.ASC, "isService", "price")
-        );
+        List<UserTariff> services = userTariffRepository.findAll((root, query, cb) -> cb.and(cb.isFalse(root.get("deleted")), cb.isFalse(root.get("isService")), cb.notEqual(root.get("baseName"), currentTariff)), Sort.by(Sort.Direction.ASC, "isService", "price"));
         TelegramMessageFactory.create(message.getChatId(), mainBot).changeUserTariff(userInfo, services).execute();
         return true;
     }
@@ -649,17 +640,17 @@ public class UserTelegramController {
         usersInMode.remove(userId);
     }
 
-    public void setAutoSupportModel(Long userId, AutoSupportSession model) {
-        autoSupportModels.put(userId, model);
+    public void setAutoSupportSession(Long userId, AutoSupportSession session) {
+        autoSupportSessions.put(userId, session);
     }
 
     @Nullable
     public AutoSupportSession getAutoSupportModel(Long userId) {
-        return autoSupportModels.getOrDefault(userId, null);
+        return autoSupportSessions.getOrDefault(userId, null);
     }
 
     public void clearAutoSupportModel(Long userId) {
-        autoSupportModels.remove(userId);
+        autoSupportSessions.remove(userId);
     }
 
     public Message sendMessage(SendMessage message) throws TelegramApiException {
@@ -718,8 +709,7 @@ public class UserTelegramController {
     }
 
     public enum Mode {
-        REVIEW,
-        AUTO_SUPPORT
+        REVIEW, AUTO_SUPPORT
     }
 
     @Getter

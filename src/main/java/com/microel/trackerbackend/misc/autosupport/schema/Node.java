@@ -1,17 +1,16 @@
 package com.microel.trackerbackend.misc.autosupport.schema;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.microel.trackerbackend.controllers.telegram.TelegramMessageFactory;
 import com.microel.trackerbackend.misc.autosupport.AutoSupportContext;
 import com.microel.trackerbackend.misc.autosupport.SendingNodeException;
-import com.microel.trackerbackend.misc.autosupport.schema.predicates.AuthUserPredicate;
 import com.microel.trackerbackend.misc.autosupport.schema.predicates.IPredicate;
 import com.microel.trackerbackend.misc.autosupport.schema.predicates.PredicateType;
-import com.microel.trackerbackend.misc.autosupport.schema.predicates.UserCredentialsPredicate;
+import com.microel.trackerbackend.misc.autosupport.schema.predicates.impl.*;
 import com.microel.trackerbackend.misc.autosupport.schema.preprocessors.IPreprocessor;
 import com.microel.trackerbackend.misc.autosupport.schema.preprocessors.PreprocessorType;
 import com.microel.trackerbackend.misc.autosupport.schema.preprocessors.UserInfoPreprocessor;
-import com.microel.trackerbackend.storage.entities.team.notification.NotificationType;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.lang.Nullable;
@@ -28,10 +27,11 @@ import java.util.stream.Stream;
 
 @Getter
 @Setter
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Node {
     private UUID id;
     private String name;
-    private NodeType type;
+    private Type type;
     @Nullable
     private List<PreprocessorType> preprocessorTypes;
     @Nullable
@@ -45,16 +45,15 @@ public class Node {
     @Nullable
     private String messageTemplate;
     @Nullable
+    private String ticketTitle;
+    @Nullable
+    private String ticketTemplate;
+    @Nullable
     private UUID parent;
     @Nullable
     private List<Node> children;
-
     @JsonIgnore
-    @Nullable
-    public Node getChildrenById(UUID id) {
-        if (children == null) return null;
-        return children.stream().filter(node -> node.getId().equals(id)).findFirst().orElse(null);
-    }
+    private Boolean hasPhoneTyped = false; // Для обработки ноды Ticket
 
     public static IPreprocessor createPreprocessor(PreprocessorType type) {
         return switch (type) {
@@ -66,6 +65,11 @@ public class Node {
         return switch (type) {
             case USER_CREDENTIALS -> new UserCredentialsPredicate();
             case AUTH_USER -> new AuthUserPredicate();
+            case POSITIVE_BALANCE -> new PositiveBalancePredicate();
+            case DEFERRED_PAYMENT -> new DeferredPaymentPredicate();
+            case HAS_AUTH_HARDWARE -> new HasAuthHardwarePredicate();
+            case HAS_ONLINE_HARDWARE -> new HasOnlineHardwarePredicate();
+            case IS_LARGE_UPTIME -> new IsLargeUptimePredicate();
         };
     }
 
@@ -78,15 +82,13 @@ public class Node {
         while (matcher.find()) {
             final String token = matcher.group(1);
             final String[] subTokens = token.split(":");
-            if(subTokens.length == 2) {
-                final String tokenType = subTokens[0];
+            if (subTokens.length == 2) {
                 final UUID inputNodeId = UUID.fromString(subTokens[1]);
                 String replacement = storage.getInputResults().get(inputNodeId);
                 if (replacement != null) {
                     matcher.appendReplacement(result, replacement);
                 }
-            }else if (subTokens.length == 3) {
-                final String tokenType = subTokens[0];
+            } else if (subTokens.length == 3) {
                 final UUID preprocessNodeId = UUID.fromString(subTokens[1]);
                 final String preprocessNodeKey = subTokens[2];
                 String replacement = storage.getPreprocessResults().get(preprocessNodeId).get(preprocessNodeKey);
@@ -102,9 +104,16 @@ public class Node {
     }
 
     @JsonIgnore
+    @Nullable
+    public Node getChildrenById(UUID id) {
+        if (children == null) return null;
+        return children.stream().filter(node -> node.getId().equals(id)).findFirst().orElse(null);
+    }
+
+    @JsonIgnore
     private List<IPreprocessor> getProcessorList() {
         if (preprocessorTypes == null) return List.of();
-        return preprocessorTypes.stream().map(Node::createPreprocessor).collect(Collectors.toList());
+        return preprocessorTypes.stream().map(Node::createPreprocessor).toList();
     }
 
     @JsonIgnore
@@ -128,6 +137,10 @@ public class Node {
         return predicate.evaluate(context, storage.getPredicateArgsByMap(getPredicateArgumentsToTokensMap()), userId);
     }
 
+    public void doCreateTicket(AutoSupportContext context, AutoSupportStorage storage, Long userId) {
+        context.createUserRequest(this, storage, userId);
+    }
+
     public void send(AutoSupportStorage storage, TelegramMessageFactory factory) {
         try {
             factory.autoSupportMessage(this, storage).execute();
@@ -138,34 +151,39 @@ public class Node {
 
     @JsonIgnore
     @Nullable
-    public Node getPredicatePassedNode(){
-        if(predicateRedirection == null) return null;
-        if(children == null || children.isEmpty()) return null;
-        if(!predicateRedirection.containsKey(1)) return null;
+    public Node getPredicatePassedNode() {
+        if (predicateRedirection == null) return null;
+        if (children == null || children.isEmpty()) return null;
+        if (!predicateRedirection.containsKey(1)) return null;
         return children.stream().filter(node -> Objects.equals(node.getId(), predicateRedirection.get(1))).findFirst().orElse(null);
     }
 
     @JsonIgnore
     @Nullable
-    public Node getPredicateFailedNode(){
-        if(predicateRedirection == null) return null;
-        if(children == null || children.isEmpty()) return null;
-        if(!predicateRedirection.containsKey(0)) return null;
+    public Node getPredicateFailedNode() {
+        if (predicateRedirection == null) return null;
+        if (children == null || children.isEmpty()) return null;
+        if (!predicateRedirection.containsKey(0)) return null;
         return children.stream().filter(node -> Objects.equals(node.getId(), predicateRedirection.get(0))).findFirst().orElse(null);
     }
 
     @Getter
-    public enum NodeType {
+    public enum Type {
         NORMAL("NORMAL"),
         PREDICATE("PREDICATE"),
         INPUT("INPUT"),
         TRUNK("TRUNK"),
-        REDIRECT("REDIRECT");
+        REDIRECT("REDIRECT"),
+        TICKET("TICKET");
 
         private final String type;
 
-        NodeType(String type) {
+        Type(String type) {
             this.type = type;
+        }
+
+        public static List<Map<String, String>> getList() {
+            return Stream.of(Type.values()).map(value -> Map.of("label", value.getLabel(), "value", value.getType())).toList();
         }
 
         public String getLabel() {
@@ -175,12 +193,9 @@ public class Node {
                 case INPUT -> "Нода ввода";
                 case TRUNK -> "Нода перехода";
                 case REDIRECT -> "Нода перенаправления";
+                case TICKET -> "Нода заявки";
                 default -> "Неизвестный тип уведомления";
             };
-        }
-
-        public static List<Map<String,String>> getList(){
-            return Stream.of(NodeType.values()).map(value->Map.of("label", value.getLabel(), "value", value.getType())).toList();
         }
     }
 }

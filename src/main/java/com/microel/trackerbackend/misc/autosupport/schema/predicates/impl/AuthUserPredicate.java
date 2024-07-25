@@ -1,15 +1,16 @@
-package com.microel.trackerbackend.misc.autosupport.schema.predicates;
+package com.microel.trackerbackend.misc.autosupport.schema.predicates.impl;
 
 import com.microel.trackerbackend.controllers.telegram.UserTelegramController;
 import com.microel.trackerbackend.misc.autosupport.AutoSupportContext;
+import com.microel.trackerbackend.misc.autosupport.schema.predicates.IPredicate;
+import com.microel.trackerbackend.misc.autosupport.schema.predicates.PredicateType;
 
 import java.util.List;
 import java.util.Map;
 
 import static com.microel.trackerbackend.misc.autosupport.schema.predicates.PredicateType.AUTH_USER;
-import static com.microel.trackerbackend.misc.autosupport.schema.predicates.PredicateType.USER_CREDENTIALS;
 
-public class AuthUserPredicate implements IPredicate{
+public class AuthUserPredicate implements IPredicate {
     @Override
     public PredicateType type() {
         return AUTH_USER;
@@ -25,7 +26,7 @@ public class AuthUserPredicate implements IPredicate{
         try {
             context.getUserAccountService().doSaveUserAccount(UserTelegramController.UserTelegramCredentials.from(userId, params.get("username")));
             return true;
-        }catch (Exception e) {
+        } catch (Exception e) {
             return false;
         }
     }

@@ -126,6 +126,11 @@ public class UserTelegramRequestController {
         return ResponseEntity.ok().build();
     }
 
+    @GetMapping("new-chat")
+    public ResponseEntity<List<UUID>> createNewChat(@RequestParam Long chatId) {
+        return ResponseEntity.ok(List.of(userTelegramController.createNewChat(chatId, chatId.toString())));
+    }
+
     @GetMapping("new-chat/{login}")
     public ResponseEntity<List<UUID>> createNewChat(@PathVariable String login) {
         List<TelegramUserAuth> userAuthList = telegramUserAuthRepository.findAll((root, query, cb) -> cb.and(
@@ -138,4 +143,6 @@ public class UserTelegramRequestController {
                         .toList()
         );
     }
+
+
 }

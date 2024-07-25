@@ -24,7 +24,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @RestController
 @Slf4j
@@ -82,7 +81,7 @@ public class TypesRequestController {
 
     @GetMapping("auto-support-node")
     public ResponseEntity<List<Map<String, String>>> getAutoSupportNodeTypes() {
-        return ResponseEntity.ok(Node.NodeType.getList());
+        return ResponseEntity.ok(Node.Type.getList());
     }
 
     @GetMapping("auto-support/preprocessor")
@@ -101,7 +100,7 @@ public class TypesRequestController {
                 ConnectionService.getList()
                         .stream()
                         .filter(service -> service.get("label").toLowerCase().contains(query != null ? query.toLowerCase() : ""))
-                        .collect(Collectors.toList())
+                        .toList()
         );
     }
 }
