@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/microeltrackertest
+    username: postgres
+    password: gjkjcfnsq
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      auto-commit: true
+  jpa:
+#    database-platform: com.microel.trackerbackend.storage.CustomPostgresDialect
+    open-in-view: true
+    hibernate:
+      ddl-auto: update
+server:
+  error:
+    include-message: always

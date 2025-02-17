@@ -1,5 +1,6 @@
 package com.microel.trackerbackend.services.external.billing.directaccess.bases;
 
+import com.microel.billing.transport.dataobject.EditUserForm;
 import com.microel.trackerbackend.modules.transport.DateRange;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.controllers.BillingRequestController;
@@ -13,7 +14,6 @@ import org.jsoup.HttpStatusException;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import org.springframework.boot.autoconfigure.data.web.SpringDataWebProperties;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -23,8 +23,6 @@ import java.io.IOException;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.HashMap;
-import java.util.HashMap;
 import java.util.HashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -208,11 +206,11 @@ public class Base1783 extends DirectBaseSession implements DirectBaseAccess {
     private void authSuccessfulCheck(Connection.Response response) throws IOException {
         Document document = response.bufferUp().parse();
         if (document.body().text().isEmpty() || document.body().text().contains("Код ошибки")) {
-            throw new ResponseException("Не авторизованный запрос " + getHost() + " " + getCredentials());
+            throw new ResponseException("Не авторизованный запрос");
         }
     }
 
-    public void userEdit(String login, BillingRequestController.EditUserForm form) {
+    public void userEdit(String login, EditUserForm form) {
         UserInfo userInfo = selectTargetUser(login);
         UserInfo changedUserInfo = userInfo.copy();
         changedUserInfo.setAddress(form.getAddress());

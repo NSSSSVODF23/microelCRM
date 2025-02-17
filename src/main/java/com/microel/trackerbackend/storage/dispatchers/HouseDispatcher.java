@@ -201,7 +201,7 @@ public class HouseDispatcher {
                 predicates.add(cb.isNull(root.get("build")));
 
             predicates.add(cb.equal(root.get("street"), street));
-            predicates.add(cb.equal(root.get("deleted"), false));
+            predicates.add(cb.isFalse(root.get("deleted")));
             if(id != null) predicates.add(cb.notEqual(root.get("houseId"), id));
 
             return cb.and(predicates.toArray(Predicate[]::new));

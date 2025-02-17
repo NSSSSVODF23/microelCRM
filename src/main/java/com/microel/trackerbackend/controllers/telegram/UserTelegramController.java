@@ -52,6 +52,7 @@ import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
 import org.telegram.telegrambots.meta.api.objects.media.InputMediaPhoto;
+import org.telegram.telegrambots.meta.api.objects.payments.PreCheckoutQuery;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.BotSession;
 import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
@@ -155,12 +156,27 @@ public class UserTelegramController {
     private void initializeChatCommands() throws IOException, TelegramApiException {
         if (mainBot == null) throw new IOException("Telegram Bot не инициализирован");
 
-        List<BotCommand> commands = List.of(new BotCommand("home", "Главное меню"));
+        List<BotCommand> commands = List.of(
+                new BotCommand("home", "Главное меню"),
+                new BotCommand("payment", "Оплата")
+        );
         SetMyCommands setMyCommands = SetMyCommands.builder().commands(commands).build();
         mainBot.execute(setMyCommands);
 
 
         mainBot.subscribe(new TelegramChatJoinReactor(update -> {
+            System.out.println(update);
+            return true;
+        }));
+
+        mainBot.subscribe(new TelegramPreCheckoutReactor(update -> {
+            PreCheckoutQuery query = update.getPreCheckoutQuery();
+            Long chatId = update.getPreCheckoutQuery().getFrom().getId();
+            TelegramMessageFactory.create(chatId, mainBot).answerPreCheckoutQuery(query.getId()).execute();
+            return true;
+        }));
+
+        mainBot.subscribe(new TelegramSuccessfulPaymentReactor(update -> {
             System.out.println(update);
             return true;
         }));
@@ -176,6 +192,13 @@ public class UserTelegramController {
             Message message = update.getMessage();
             if (!isAuth(message.getChatId())) return false;
             TelegramMessageFactory.create(message.getChatId(), mainBot).userMainMenu("Главное меню").execute();
+            return true;
+        }));
+
+        mainBot.subscribe(new TelegramCommandReactor("/payment", update -> {
+            Message message = update.getMessage();
+            if (!isAuth(message.getChatId())) return false;
+            TelegramMessageFactory.create(message.getChatId(), mainBot).sendInvoice("390540012:LIVE:54343").execute();
             return true;
         }));
 

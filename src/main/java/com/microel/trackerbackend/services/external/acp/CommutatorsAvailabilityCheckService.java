@@ -3,11 +3,9 @@ package com.microel.trackerbackend.services.external.acp;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
 import com.microel.trackerbackend.services.external.acp.types.Switch;
-import com.microel.trackerbackend.services.external.acp.types.SwitchBaseInfo;
 import com.microel.trackerbackend.services.external.acp.types.SwitchModel;
 import com.microel.trackerbackend.storage.dispatchers.AcpCommutatorDispatcher;
 import com.microel.trackerbackend.storage.entities.acp.commutator.AcpCommutator;
-import org.hibernate.Hibernate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -84,7 +82,7 @@ public class CommutatorsAvailabilityCheckService {
 //                        stompController.updateAcpCommutator(updatedCommutator);
 //                        stompController.updateBaseCommutator(SwitchBaseInfo.from(comm, cachedModels.get(comm.getSwmodelId().intValue())));
                     }
-                }catch (Exception e){
+                } catch (Exception e) {
                     System.out.println("Ошибка в потоке обновления статуса: " + e.getMessage());
                 }
             });

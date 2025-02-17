@@ -39,20 +39,19 @@ import com.microel.trackerbackend.storage.exceptions.IllegalMediaType;
 import lombok.AllArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.lang.Nullable;
-import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
-import org.telegram.telegrambots.meta.api.methods.BotApiMethod;
-import org.telegram.telegrambots.meta.api.methods.ParseMode;
-import org.telegram.telegrambots.meta.api.methods.PartialBotApiMethod;
+import org.telegram.telegrambots.meta.api.methods.*;
 import org.telegram.telegrambots.meta.api.methods.send.*;
 import org.telegram.telegrambots.meta.api.methods.updatingmessages.*;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.media.InputMedia;
+import org.telegram.telegrambots.meta.api.objects.payments.LabeledPrice;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardRemove;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardButton;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.KeyboardRow;
+import org.telegram.telegrambots.meta.api.objects.webapp.WebAppInfo;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import javax.validation.constraints.NotNull;
@@ -1282,6 +1281,31 @@ public class TelegramMessageFactory {
         return new MessageExecutor<>(sendMessage, context);
     }
 
+    public AbstractExecutor<Message> sendInvoice(String providerToken) {
+        final SendInvoice sendInvoice = new SendInvoice(chatId, "Microel-оплата", "Оплата интернета через Telegram", chatId.toString(),
+                providerToken, "testing_start_parameter", "RUB", List.of(new LabeledPrice("Интернет", 100*100)));
+        sendInvoice.setNeedPhoneNumber(true);
+        sendInvoice.setNeedShippingAddress(false);
+        sendInvoice.setNeedName(false);
+        sendInvoice.setIsFlexible(false);
+        InlineKeyboardButton payButton = new InlineKeyboardButton("Оплатить");
+        payButton.setPay(true);
+        sendInvoice.setReplyMarkup(new InlineKeyboardMarkup(List.of(List.of(payButton))));
+        return new MessageExecutor<>(
+                sendInvoice
+                , context);
+    }
+
+    public AbstractExecutor<Serializable> answerPreCheckoutQuery(String queryId) {
+        return new PreCheckoutAnswerExecutor(
+                AnswerPreCheckoutQuery.builder()
+                        .preCheckoutQueryId(queryId)
+                        .ok(true)
+                        .build(),
+                context
+        );
+    }
+
     public AbstractExecutor<Message> userMainMenu(String message) {
         KeyboardFactory keyboardFactory = new KeyboardFactory()
                 .newLine("\uD83D\uDCB0 Проверить баланс")
@@ -1584,7 +1608,7 @@ public class TelegramMessageFactory {
             case NORMAL -> {
                 message = Node.prepareMessage(node.getMessageTemplate(), storage);
                 List<Node> children = node.getChildren();
-                if(Objects.nonNull(children)) {
+                if (Objects.nonNull(children)) {
                     if (node.getType() == Node.Type.NORMAL && !children.isEmpty()) {
                         for (Node child : children) {
                             keyboardFactory.newLine(KeyboardFactory.IKButton.of(child.getName(), "as", child.getId().toString()));
@@ -1593,14 +1617,15 @@ public class TelegramMessageFactory {
                 }
             }
             case TICKET -> {
-                if(node.getHasPhoneTyped()){
+                if (node.getHasPhoneTyped()) {
                     message = Node.prepareMessage(node.getMessageTemplate(), storage);
-                }else{
+                } else {
                     message = "Для возможности уточнения дополнительной информации введите ваш контактный номер телефона:";
                     keyboardFactory.newLine(KeyboardFactory.IKButton.of("Без номера телефона", "as_no_phone", ""));
                 }
             }
-            default -> {}
+            default -> {
+            }
         }
 
         return new MessageExecutor<>(SendMessage.builder()
@@ -1795,6 +1820,19 @@ public class TelegramMessageFactory {
         private final MainBot context;
 
         public CallbackAnswerExecutor(AnswerCallbackQuery message, MainBot context) {
+            this.message = message;
+            this.context = context;
+        }
+
+        public Serializable execute() throws TelegramApiException {
+            return context.execute(message);
+        }
+    }
+    public static class PreCheckoutAnswerExecutor implements AbstractExecutor<Serializable> {
+        private final AnswerPreCheckoutQuery message;
+        private final MainBot context;
+
+        public PreCheckoutAnswerExecutor(AnswerPreCheckoutQuery message, MainBot context) {
             this.message = message;
             this.context = context;
         }

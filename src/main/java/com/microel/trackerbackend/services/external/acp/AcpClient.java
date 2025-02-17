@@ -36,7 +36,6 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import javax.validation.constraints.NotNull;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.*;
@@ -509,14 +508,14 @@ public class AcpClient {
         }
     }
 
-    private synchronized boolean appendCommutatorInUpdatePool(@NotNull Switch commutator) {
+    private synchronized boolean appendCommutatorInUpdatePool(Switch commutator) {
         boolean isNotAppend = !commutatorPoolInTheProcessOfUpdating.add(RemoteUpdatingCommutatorItem.of(commutator));
         if (isNotAppend) throw new ResponseException("Коммутатор уже обновляется");
         stompController.updateCommutatorUpdatePool(commutatorPoolInTheProcessOfUpdating);
         return isNotAppend;
     }
 
-    private synchronized void removeCommutatorFromUpdatePool(@NotNull Switch commutator) {
+    private synchronized void removeCommutatorFromUpdatePool(Switch commutator) {
         boolean isRemoved = commutatorPoolInTheProcessOfUpdating.removeIf(sw -> Objects.equals(sw.id, commutator.getId()));
         if (isRemoved) stompController.updateCommutatorUpdatePool(commutatorPoolInTheProcessOfUpdating);
     }

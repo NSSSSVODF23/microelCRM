@@ -79,11 +79,6 @@ public class DateRange {
         return Timestamp.valueOf(now.minusDays(1).atStartOfDay());
     }
 
-    private static Timestamp getEndYesterday() {
-        LocalDate now = LocalDate.now();
-        return Timestamp.valueOf(now.atStartOfDay());
-    }
-
     private static Timestamp getStartThisWeek() {
         LocalDate now = LocalDate.now();
         return Timestamp.valueOf(now.with(DayOfWeek.MONDAY).atStartOfDay());
@@ -139,7 +134,7 @@ public class DateRange {
     }
 
     public static DateRange yesterday() {
-        return DateRange.of(getStartYesterday(), getEndYesterday());
+        return DateRange.of(getStartYesterday(), getStartToday());
     }
 
     public static DateRange thisWeek() {
@@ -217,7 +212,7 @@ public class DateRange {
                     return getEndToday();
                 }
                 case YESTERDAY -> {
-                    return getEndYesterday();
+                    return getStartToday();
                 }
                 case THIS_WEEK -> {
                     return getEndThisWeek();
@@ -244,8 +239,8 @@ public class DateRange {
 
     /**
      * Подбирает список TimeFrame по заданному времени
-     * @param target
-     * @return
+     * @param target Timestamp
+     * @return List<TimeFrame>
      */
     public static List<TimeFrame> recognizeTimeFrame(Timestamp target){
         List<TimeFrame> list = new ArrayList<>();

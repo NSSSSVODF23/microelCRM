@@ -32,19 +32,17 @@ public class BillingConf implements AbstractConfiguration {
         if (login == null || login.isBlank()) return false;
         if (password == null || password.isBlank()) return false;
         if (daemonName == null || daemonName.isBlank()) return false;
-        if (selfIp == null || selfIp.isBlank()) return false;
-        return true;
+        return selfIp != null && !selfIp.isBlank();
     }
 
     @Override
     public String toString() {
-        String sb = "BillingConf{" +
+        return "BillingConf{" +
                 "host='" + host + '\'' +
                 ", port=" + port +
                 ", login='" + login + '\'' +
                 ", password='" + password + '\'' +
                 ", daemonName='" + daemonName + '\'' +
                 '}';
-        return sb;
     }
 }

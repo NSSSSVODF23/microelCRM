@@ -12,12 +12,15 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.cloud.openfeign.EnableFeignClients;
+
 
 import java.net.MalformedURLException;
 
 @SpringBootApplication
 @EnableTransactionManagement
 @EnableScheduling
+//@EnableFeignClients(basePackages = {"com.microel.billing.transport"})
 @Slf4j
 public class BackendApplication {
     public BackendApplication(AcpClient acpClient, CommutatorsAvailabilityCheckService commutatorsAvailabilityCheckService, TaskDispatcher taskDispatcher) throws MalformedURLException, XmlRpcException {

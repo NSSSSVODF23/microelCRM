@@ -1,5 +1,7 @@
 package com.microel.trackerbackend.services.api.controllers;
 
+import com.microel.billing.transport.dataobject.EditUserForm;
+import com.microel.billing.transport.dataobject.LoginFieldInfo;
 import com.microel.trackerbackend.controllers.configuration.entity.BillingConf;
 import com.microel.trackerbackend.services.api.ResponseException;
 import com.microel.trackerbackend.services.api.StompController;
@@ -125,7 +127,7 @@ public class BillingRequestController {
         Employee employee = employeeDispatcher.getEmployeeFromRequest(request);
 
         String desiredLogin = null;
-        if(loginFieldInfo.isOrg){
+        if(loginFieldInfo.getIsOrg()){
             Date date = new Date(); // получаем текущую дату
             SimpleDateFormat formatter = new SimpleDateFormat("yyMMdd"); // устанавливаем формат даты
             String currentDate = formatter.format(date); // форматируем дату в строку
@@ -190,7 +192,7 @@ public class BillingRequestController {
                 addressField.getAddressData(),
                 fioField.getStringData(),
                 phoneField.getPhoneData().values().iterator().next(),
-                loginFieldInfo.isOrg ? Base1785.UserType.ORG : Base1785.UserType.PHY
+                loginFieldInfo.getIsOrg() ? Base1785.UserType.ORG : Base1785.UserType.PHY
         );
 
         base.login();
@@ -495,20 +497,5 @@ public class BillingRequestController {
         } catch (MalformedURLException e) {
             throw new IllegalFields("Не верный Url адрес");
         }
-    }
-
-    @Getter
-    @Setter
-    public static class LoginFieldInfo {
-        private Long modelItemId;
-        private Boolean isOrg;
-    }
-
-    @Data
-    public static class EditUserForm {
-        private String address;
-        private String fullName;
-        private String phone;
-        private String comment;
     }
 }

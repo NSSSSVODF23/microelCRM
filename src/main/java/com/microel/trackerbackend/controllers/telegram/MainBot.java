@@ -68,7 +68,16 @@ public class MainBot extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
-        List<TelegramReactorType> sortExample = List.of(TelegramReactorType.CHAT_JOIN_REQUEST, TelegramReactorType.COMMAND, TelegramReactorType.PROMPT, TelegramReactorType.CALLBACK, TelegramReactorType.MESSAGE, TelegramReactorType.EDIT_MESSAGE);
+        List<TelegramReactorType> sortExample = List.of(
+                TelegramReactorType.CHAT_JOIN_REQUEST,
+                TelegramReactorType.COMMAND,
+                TelegramReactorType.PROMPT,
+                TelegramReactorType.CALLBACK,
+                TelegramReactorType.MESSAGE,
+                TelegramReactorType.EDIT_MESSAGE,
+                TelegramReactorType.PRE_CHECKOUT,
+                TelegramReactorType.SUCCESSFUL_PAYMENT
+        );
         List<TelegramUpdateSubscribe> subscriptions = reactors.values().stream().sorted(Comparator.comparing(o -> sortExample.indexOf(o.getReactor().getType()))).toList();
         for (TelegramUpdateSubscribe subscribe : subscriptions) {
             boolean isHandled = false;
@@ -84,7 +93,10 @@ public class MainBot extends TelegramLongPollingBot {
                     }
                     case COMMAND -> {
                         TelegramCommandReactor cmdReactor = (TelegramCommandReactor) reactor;
-                        if (update.hasMessage() && update.getMessage().isCommand()) {
+                        if (update.hasMessage()
+                                && update.getMessage().isCommand()
+                                && !update.getMessage().hasSuccessfulPayment()
+                        ) {
                             if (!cmdReactor.getTargetCommand().equals(update.getMessage().getText())) continue;
                             if ((isHandled = cmdReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
@@ -92,7 +104,11 @@ public class MainBot extends TelegramLongPollingBot {
                     }
                     case PROMPT -> {
                         TelegramPromptReactor promptReactor = (TelegramPromptReactor) reactor;
-                        if (update.hasMessage() && !update.getMessage().isCommand() && promptReactor.getTargetPrompt().equals(update.getMessage().getText())) {
+                        if (update.hasMessage()
+                                && !update.getMessage().isCommand()
+                                && promptReactor.getTargetPrompt().equals(update.getMessage().getText())
+                                && !update.getMessage().hasSuccessfulPayment()
+                        ) {
                             if ((isHandled = promptReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
@@ -118,29 +134,58 @@ public class MainBot extends TelegramLongPollingBot {
                     }
                     case MESSAGE -> {
                         TelegramMessageReactor messageReactor = (TelegramMessageReactor) reactor;
-                        if (update.hasMessage() && !update.getMessage().isCommand() && update.getMessage().getChat().isUserChat()) {
+                        if (update.hasMessage()
+                                && !update.getMessage().isCommand()
+                                && update.getMessage().getChat().isUserChat()
+                                && !update.getMessage().hasSuccessfulPayment()
+                        ) {
                             if ((isHandled = messageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
                     }
                     case EDIT_MESSAGE -> {
                         TelegramEditMessageReactor editMessageReactor = (TelegramEditMessageReactor) reactor;
-                        if (update.hasEditedMessage() && update.getEditedMessage().getChat().isUserChat()) {
+                        if (update.hasEditedMessage()
+                                && update.getEditedMessage().getChat().isUserChat()
+                                && !update.getMessage().hasSuccessfulPayment()
+                        ) {
                             if ((isHandled = editMessageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
                     }
                     case GROUP_MESSAGE -> {
                         TelegramGroupMessageReactor messageReactor = (TelegramGroupMessageReactor) reactor;
-                        if (update.hasMessage() && !update.getMessage().isCommand() && (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat())) {
+                        if (update.hasMessage()
+                                && !update.getMessage().isCommand()
+                                && (update.getMessage().getChat().isGroupChat() || update.getMessage().getChat().isSuperGroupChat())
+                                && !update.getMessage().hasSuccessfulPayment()
+                        ) {
                             if ((isHandled = messageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
                     }
                     case GROUP_EDIT_MESSAGE -> {
                         TelegramGroupEditMessageReactor editMessageReactor = (TelegramGroupEditMessageReactor) reactor;
-                        if (update.hasEditedMessage() && !update.getEditedMessage().isCommand() && (update.getEditedMessage().getChat().isGroupChat() || update.getEditedMessage().getChat().isSuperGroupChat())) {
+                        if (update.hasEditedMessage()
+                                && !update.getEditedMessage().isCommand()
+                                && (update.getEditedMessage().getChat().isGroupChat() || update.getEditedMessage().getChat().isSuperGroupChat())
+                                && !update.getMessage().hasSuccessfulPayment()
+                        ) {
                             if ((isHandled = editMessageReactor.getHandler().handle(update)) && subscribe.getIsOnce())
+                                subscribe.unsubscribe();
+                        }
+                    }
+                    case PRE_CHECKOUT -> {
+                        TelegramPreCheckoutReactor preCheckoutReactor = (TelegramPreCheckoutReactor) reactor;
+                        if(update.hasPreCheckoutQuery()) {
+                            if ((isHandled = preCheckoutReactor.getHandler().handle(update)) && subscribe.getIsOnce())
+                                subscribe.unsubscribe();
+                        }
+                    }
+                    case SUCCESSFUL_PAYMENT -> {
+                        TelegramSuccessfulPaymentReactor successfulPaymentReactor = (TelegramSuccessfulPaymentReactor) reactor;
+                        if (update.getMessage().hasSuccessfulPayment()) {
+                            if ((isHandled = successfulPaymentReactor.getHandler().handle(update)) && subscribe.getIsOnce())
                                 subscribe.unsubscribe();
                         }
                     }

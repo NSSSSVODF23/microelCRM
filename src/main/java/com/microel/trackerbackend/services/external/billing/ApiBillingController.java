@@ -437,12 +437,7 @@ public class ApiBillingController {
         rqMap.clear();
         rqMap.put(0, "WDaemon.php");
 
-//        rqMap.put("skey", "abc");
-//        rqMap.put("uname_live", "1");
-//        rqMap.put("__call", "UsersByLogin");
         rqMap.put("help", "");
-//        rqMap.put("__ip", "10.1.3.150");
-//        rqMap.put("__person", "root:10.1.3.150");
 
         calculateSign();
         System.out.println(argsMap);
@@ -455,7 +450,6 @@ public class ApiBillingController {
             throw new BillingAuthenticationException("Нет заданной конфигурации подключения к биллингу");
         }
         CRC32 sign = new CRC32();
-//        sign.update((serializer.serialize(rqMap) + "130").getBytes());
         sign.update((serializer.serialize(rqMap) + billingConf.getPassword()).getBytes());
         argsMap.put("__sign", String.valueOf(sign.getValue()));
     }

@@ -265,7 +265,7 @@ public class Base1785 extends DirectBaseSession implements DirectBaseAccess {
     private void authSuccessfulCheck(Connection.Response response) throws IOException {
         Document document = response.bufferUp().parse();
         if (document.body().children().isEmpty() || document.body().text().contains("adm_auth.operator_not_found")) {
-            throw new ResponseException("Не авторизованный запрос " + getHost() + " " + getCredentials());
+            throw new ResponseException("Не авторизованный запрос");
         }
     }
 

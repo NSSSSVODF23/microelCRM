@@ -1,9 +1,12 @@
 package com.microel.trackerbackend.storage.entities.templating;
 
+import lombok.Getter;
+
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
+@Getter
 public enum AdvertisingSource {
     RESUMPTION("RESUMPTION"),
     LOSS("LOSS"),
@@ -17,16 +20,14 @@ public enum AdvertisingSource {
     SMS("SMS"),
     INTERNET("INTERNET"),
     MANAGER("MANAGER"),
-    EARLYUSED("EARLYUSED");
+    EARLYUSED("EARLYUSED"),
+    AGENT("AGENT"),
+    ONPILLAR("ONPILLAR");
 
     private final String value;
 
     AdvertisingSource(String value) {
         this.value = value;
-    }
-
-    public String getValue() {
-        return value;
     }
 
     public String getLabel() {
@@ -44,6 +45,8 @@ public enum AdvertisingSource {
             case INTERNET -> "Интернет";
             case MANAGER -> "Менеджер";
             case EARLYUSED -> "Ранее пользовался";
+            case AGENT -> "Агент";
+            case ONPILLAR -> "Реклама на столбе";
         };
     }
 
